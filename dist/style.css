@@ -192,11 +192,6 @@
     background: rgba(76, 175, 80, 0.1);
 }
 
-/* 선택된 페르소나도 호버 시 주황색 */
-.persona-item.selected:hover {
-    border-color: #f8a427 !important;
-}
-
 /* 페르소나 삭제 버튼 */
 .persona-delete-btn {
     position: absolute;
