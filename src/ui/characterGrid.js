@@ -6,7 +6,6 @@ import { api } from '../api/sillyTavern.js';
 import { cache } from '../data/cache.js';
 import { storage } from '../data/storage.js';
 import { store } from '../data/store.js';
-import { lastChatCache } from '../data/lastChatCache.js';
 import { escapeHtml } from '../utils/textUtils.js';
 import { createTouchClickHandler, debounce } from '../utils/eventHelpers.js';
 import { showToast } from './notifications.js';
@@ -307,9 +306,9 @@ async function sortCharacters(characters, sortOption) {
             return (a.name || '').localeCompare(b.name || '', 'ko');
         }
         
-        // 기본: 최근 채팅순 (lastChatCache 우선 사용)
-        const aDate = lastChatCache.getForSort(a);
-        const bDate = lastChatCache.getForSort(b);
+        // 기본: 최근 채팅순 (SillyTavern의 date_last_chat 사용)
+        const aDate = a.date_last_chat || 0;
+        const bDate = b.date_last_chat || 0;
         return bDate - aDate;
     });
     

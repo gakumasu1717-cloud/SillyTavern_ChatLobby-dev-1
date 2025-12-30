@@ -6,7 +6,6 @@ import { CONFIG } from './config.js';
 import { cache } from './data/cache.js';
 import { storage } from './data/storage.js';
 import { store } from './data/store.js';
-import { lastChatCache } from './data/lastChatCache.js';
 import { api } from './api/sillyTavern.js';
 import { createLobbyHTML } from './ui/templates.js';
 import { renderPersonaBar } from './ui/personaBar.js';
@@ -114,23 +113,9 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                 cache.invalidate('chats');
                 // 리렌더 제거 - 삭제는 deleteChat에서 element.remove()로 처리
             },
-            // 메시지 전송 시 해당 캐릭터의 마지막 채팅 시간 갱신
-            onMessageSent: () => {
-                const context = api.getContext();
-                const currentChar = context?.characters?.[context?.characterId];
-                if (currentChar?.avatar) {
-                    lastChatCache.updateNow(currentChar.avatar);
-                    console.log('[ChatLobby] Message sent, updated lastChatCache for:', currentChar.name);
-                }
-            },
-            // 메시지 수신 시에도 갱신
-            onMessageReceived: () => {
-                const context = api.getContext();
-                const currentChar = context?.characters?.[context?.characterId];
-                if (currentChar?.avatar) {
-                    lastChatCache.updateNow(currentChar.avatar);
-                }
-            }
+            // 메시지 전송/수신 이벤트 (현재 미사용)
+            onMessageSent: () => {},
+            onMessageReceived: () => {}
         };
         
         // 이벤트 등록
@@ -313,13 +298,8 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
             // 채팅 패널 닫기 (이전 캐릭터 선택 상태 클리어)
             closeChatPanel();
             
-            // 마지막 채팅 시간 캐시 초기화 후 렌더링 (한 번에 같이)
+            // 캐릭터 목록 가져오기
             const characters = api.getCharacters();
-            
-            // 캐시 초기화가 필요하면 먼저 완료
-            if (characters.length > 0 && !lastChatCache.initialized) {
-                await lastChatCache.initializeAll(characters);
-            }
             
             // 페르소나 바와 캐릭터 그리드를 동시에 렌더링 (한 번에 같이)
             await Promise.all([
@@ -387,18 +367,11 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
     window.ChatLobby = window.ChatLobby || {};
     window.ChatLobby.refresh = async function() {
         cache.invalidateAll();
-        lastChatCache.clear();  // 마지막 채팅 캐시도 클리어
         
         // SillyTavern의 캐릭터 목록 강제 갱신
         const context = api.getContext();
         if (typeof context?.getCharacters === 'function') {
             await context.getCharacters();
-        }
-        
-        // 마지막 채팅 시간 캐시 재초기화
-        const characters = api.getCharacters();
-        if (characters.length > 0) {
-            await lastChatCache.initializeAll(characters);
         }
         
         await renderPersonaBar();
