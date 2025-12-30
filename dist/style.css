@@ -1047,13 +1047,14 @@
 .chat-folder-tag {
     display: inline-flex;
     align-items: center;
-    padding: 2px 8px;
-    border-radius: 12px;
-    background: rgba(var(--lobby-accent), 0.2) !important;
-    color: rgb(var(--lobby-accent)) !important;
-    font-size: 0.75em;
-    font-weight: 500;
+    height: 22px;
+    padding: 0 10px;
+    border-radius: var(--radius-full);
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-muted);
+    font-size: 11px;
     white-space: nowrap;
+    flex-shrink: 0;
 }
 
 /* 체크박스 */
