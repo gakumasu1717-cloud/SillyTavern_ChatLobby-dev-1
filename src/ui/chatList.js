@@ -239,6 +239,10 @@ export async function renderChatList(character) {
  * @param {string} charAvatar
  */
 function renderChats(container, rawChats, charAvatar) {
+    // 🔍 디버그: 들어온 원본 데이터 확인
+    console.log('[renderChats DEBUG] rawChats 첫 번째:', rawChats?.[0]);
+    console.log('[renderChats DEBUG] rawChats[0].chat_items:', rawChats?.[0]?.chat_items);
+    
     // 배열로 변환
     let chatArray = normalizeChats(rawChats);
     
