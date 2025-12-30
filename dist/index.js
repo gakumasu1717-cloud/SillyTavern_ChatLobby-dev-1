@@ -1356,7 +1356,7 @@ ${message}` : message;
                         <select id="chat-lobby-char-sort" title="\uCE90\uB9AD\uD130 \uC815\uB82C">
                             <option value="recent">\u{1F552} \uCD5C\uADFC \uCC44\uD305\uC21C</option>
                             <option value="name">\u{1F524} \uC774\uB984\uC21C</option>
-                            <option value="chats">\uFFFD \uBA54\uC2DC\uC9C0 \uC218</option>
+                            <option value="chats">\u{1F4AC} \uBA54\uC2DC\uC9C0 \uC218</option>
                         </select>
                     </div>
                     
