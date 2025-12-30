@@ -1517,6 +1517,71 @@
     color: var(--text-dim);
 }
 
+/* 날짜 퀴즈 */
+.date-select-wrap {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin: 30px 0;
+}
+
+.date-select {
+    padding: 12px 20px;
+    font-size: 1.1em;
+    background: var(--lobby-bg-card);
+    color: var(--text-primary);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    cursor: pointer;
+    min-width: 100px;
+}
+
+.date-select:focus {
+    border-color: var(--lobby-accent);
+    outline: none;
+}
+
+/* 날짜 결과 */
+.date-reveal {
+    margin: 25px 0;
+    padding: 20px 40px;
+    background: linear-gradient(135deg, rgba(229, 9, 20, 0.2), rgba(255, 100, 100, 0.1));
+    border-radius: 12px;
+    border: 1px solid rgba(229, 9, 20, 0.3);
+}
+
+.date-value {
+    font-size: 1.5em;
+    font-weight: bold;
+    color: var(--lobby-accent);
+}
+
+.period-comment {
+    font-size: 1.1em;
+    color: var(--text-secondary);
+    margin: 15px 0;
+}
+
+.daily-stats {
+    margin-top: 30px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+}
+
+.daily-stats p {
+    color: var(--text-muted);
+    margin: 5px 0;
+}
+
+.daily-value {
+    font-size: 2.5em;
+    font-weight: bold;
+    color: var(--lobby-accent);
+    display: block;
+    margin: 10px 0;
+}
+
 /* 메시지 비교 */
 .message-compare {
     display: flex;
@@ -2136,15 +2201,16 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     align-items: center;
     gap: 8px;
     padding: 10px 15px;
-    color: #fff;
-    background: var(--lobby-accent);
+    color: #e0e0e0;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 5px;
     margin: 5px;
     font-weight: var(--font-weight-medium);
 }
 
 #option_chat_lobby:hover {
-    opacity: 0.9;
+    background: rgba(255, 255, 255, 0.15);
 }
 
 /* 상단바 버튼 숨김 */

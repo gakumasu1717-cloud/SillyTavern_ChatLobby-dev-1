@@ -25,6 +25,8 @@ let funFactsData = {};
 /** 유저 선택/입력 */
 let userGuessChar = null;
 let userGuessMessages = 0;
+let userGuessMonth = null;
+let userGuessYear = null;
 
 // ============================================
 // 메인 함수
@@ -39,6 +41,8 @@ export async function openStatsView() {
     currentStep = 0;
     userGuessChar = null;
     userGuessMessages = 0;
+    userGuessMonth = null;
+    userGuessYear = null;
     
     const container = document.getElementById('chat-lobby-main');
     if (!container) return;
@@ -241,7 +245,9 @@ function showStep(step) {
         case 3: showQuizResult(container); break;
         case 4: showMessageQuiz(container); break;
         case 5: showMessageResult(container); break;
-        case 6: showFinalStats(container); break;
+        case 6: showDateQuiz(container); break;
+        case 7: showDateResult(container); break;
+        case 8: showFinalStats(container); break;
         default: closeStatsView();
     }
 }
@@ -259,13 +265,13 @@ function showIntro(container) {
     `;
     
     container.querySelector('[data-action="next"]').addEventListener('click', () => showStep(2));
-    container.querySelector('[data-action="skip"]').addEventListener('click', () => showStep(6));
+    container.querySelector('[data-action="skip"]').addEventListener('click', () => showStep(8));
 }
 
 // Step 2: 캐릭터 맞추기 퀴즈
 function showQuiz(container) {
     if (rankingsData.length < 3) {
-        showStep(6); // 캐릭터 부족하면 바로 결과
+        showStep(8); // 캐릭터 부족하면 바로 결과
         return;
     }
     
@@ -395,14 +401,131 @@ function showMessageResult(container) {
                     <span class="compare-value">${guess.toLocaleString()}개</span>
                 </div>
             </div>
-            <button class="wrapped-btn primary" data-action="next">결과 보기</button>
+            <button class="wrapped-btn primary" data-action="next">다음</button>
         </div>
     `;
     
     container.querySelector('[data-action="next"]').addEventListener('click', () => showStep(6));
 }
 
-// Step 6: 최종 통계 - 넷플릭스 스타일 강화
+// Step 6: 첨 대화 날짜 퀴즈
+function showDateQuiz(container) {
+    const top = rankingsData[0];
+    
+    // 첨 대화 날짜가 없으면 건너뛰기
+    if (!funFactsData.oldestDate) {
+        showStep(8);
+        return;
+    }
+    
+    const currentYear = new Date().getFullYear();
+    const years = [];
+    for (let y = currentYear; y >= currentYear - 3; y--) {
+        years.push(y);
+    }
+    
+    const months = [
+        '1월', '2월', '3월', '4월', '5월', '6월',
+        '7월', '8월', '9월', '10월', '11월', '12월'
+    ];
+    
+    container.innerHTML = `
+        <div class="wrapped-step date-quiz-step">
+            <div class="wrapped-emoji">📅</div>
+            <h2>그럼... 언제 채팅을<br>시작하셨는지 기억하세요?</h2>
+            <p class="wrapped-subtitle">첨 대화를 시작한 시기를 맞춰보세요!</p>
+            <div class="date-select-wrap">
+                <select id="year-guess" class="date-select">
+                    <option value="">년도</option>
+                    ${years.map(y => `<option value="${y}">${y}년</option>`).join('')}
+                </select>
+                <select id="month-guess" class="date-select">
+                    <option value="">월</option>
+                    ${months.map((m, i) => `<option value="${i + 1}">${m}</option>`).join('')}
+                </select>
+            </div>
+            <button class="wrapped-btn primary" data-action="submit">확인하기</button>
+        </div>
+    `;
+    
+    const yearSelect = container.querySelector('#year-guess');
+    const monthSelect = container.querySelector('#month-guess');
+    const btn = container.querySelector('[data-action="submit"]');
+    
+    btn.addEventListener('click', () => {
+        userGuessYear = parseInt(yearSelect.value) || null;
+        userGuessMonth = parseInt(monthSelect.value) || null;
+        showStep(7);
+    });
+}
+
+// Step 7: 첨 대화 날짜 결과 + 하루 평균
+function showDateResult(container) {
+    const actualDate = funFactsData.oldestDate;
+    const top = rankingsData[0];
+    
+    const actualYear = actualDate.getFullYear();
+    const actualMonth = actualDate.getMonth() + 1;
+    
+    // 정답 판정
+    const isCorrectYear = userGuessYear === actualYear;
+    const isCorrectMonth = userGuessMonth === actualMonth;
+    const isExact = isCorrectYear && isCorrectMonth;
+    const isClose = isCorrectYear && Math.abs(userGuessMonth - actualMonth) <= 1;
+    
+    // 기간 계산
+    const today = new Date();
+    const daysDiff = Math.ceil((today - actualDate) / (1000 * 60 * 60 * 24));
+    const monthsDiff = Math.floor(daysDiff / 30);
+    
+    // 기간에 따른 멘트
+    let periodComment = '';
+    if (monthsDiff >= 12) {
+        periodComment = `벨써 ${Math.floor(monthsDiff / 12)}년이 넘었네요! 오래된 인연이에요 ✨`;
+    } else if (monthsDiff >= 6) {
+        periodComment = '반년 넘게 함께했네요! 꽤 친해졌겠어요 💜';
+    } else if (monthsDiff >= 2) {
+        periodComment = '만난 지 꼔 지났네요! 아직 새로운 이야기가 많겠어요 💗';
+    } else {
+        periodComment = '아직 새로운 인연이네요! 앞으로가 기대돼요 🌟';
+    }
+    
+    let emoji, title;
+    if (isExact) {
+        emoji = '🎯';
+        title = '완벽해요!';
+    } else if (isClose) {
+        emoji = '👍';
+        title = '거의 맞추셨어요!';
+    } else {
+        emoji = '😅';
+        title = '아쉬워요!';
+    }
+    
+    const dateStr = actualDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+    
+    container.innerHTML = `
+        <div class="wrapped-step date-result-step">
+            <div class="wrapped-emoji">${emoji}</div>
+            <h2>${title}</h2>
+            <p class="wrapped-subtitle">${escapeHtml(top?.name || '')}과의 시작은</p>
+            <div class="date-reveal">
+                <span class="date-value">${dateStr}</span>
+            </div>
+            <p class="period-comment">${periodComment}</p>
+            <div class="daily-stats">
+                <p>그렇게 보면... 하루에</p>
+                <span class="daily-value">${funFactsData.avgChatsPerDay}</span>
+                <p>챗을 한 셈이네요!</p>
+            </div>
+            <button class="wrapped-btn primary" data-action="next">결과 보기</button>
+        </div>
+    `;
+    
+    container.querySelector('[data-action="next"]').addEventListener('click', () => showStep(8));
+}
+
+// Step 8: 최종 통계 - 넷플릭스 스타일 강화
 function showFinalStats(container) {
     const medals = ['🥇', '🥈', '🥉'];
     const top = rankingsData[0];

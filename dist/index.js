@@ -3002,12 +3002,16 @@ ${message}` : message;
   var funFactsData = {};
   var userGuessChar = null;
   var userGuessMessages = 0;
+  var userGuessMonth = null;
+  var userGuessYear = null;
   async function openStatsView() {
     if (isStatsOpen) return;
     isStatsOpen = true;
     currentStep = 0;
     userGuessChar = null;
     userGuessMessages = 0;
+    userGuessMonth = null;
+    userGuessYear = null;
     const container = document.getElementById("chat-lobby-main");
     if (!container) return;
     const leftPanel = document.getElementById("chat-lobby-left");
@@ -3159,6 +3163,12 @@ ${message}` : message;
         showMessageResult(container);
         break;
       case 6:
+        showDateQuiz(container);
+        break;
+      case 7:
+        showDateResult(container);
+        break;
+      case 8:
         showFinalStats(container);
         break;
       default:
@@ -3176,11 +3186,11 @@ ${message}` : message;
         </div>
     `;
     container.querySelector('[data-action="next"]').addEventListener("click", () => showStep(2));
-    container.querySelector('[data-action="skip"]').addEventListener("click", () => showStep(6));
+    container.querySelector('[data-action="skip"]').addEventListener("click", () => showStep(8));
   }
   function showQuiz(container) {
     if (rankingsData.length < 3) {
-      showStep(6);
+      showStep(8);
       return;
     }
     const top3 = rankingsData.slice(0, 3);
@@ -3289,10 +3299,115 @@ ${message}` : message;
                     <span class="compare-value">${guess.toLocaleString()}\uAC1C</span>
                 </div>
             </div>
-            <button class="wrapped-btn primary" data-action="next">\uACB0\uACFC \uBCF4\uAE30</button>
+            <button class="wrapped-btn primary" data-action="next">\uB2E4\uC74C</button>
         </div>
     `;
     container.querySelector('[data-action="next"]').addEventListener("click", () => showStep(6));
+  }
+  function showDateQuiz(container) {
+    const top = rankingsData[0];
+    if (!funFactsData.oldestDate) {
+      showStep(8);
+      return;
+    }
+    const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+    const years = [];
+    for (let y = currentYear; y >= currentYear - 3; y--) {
+      years.push(y);
+    }
+    const months = [
+      "1\uC6D4",
+      "2\uC6D4",
+      "3\uC6D4",
+      "4\uC6D4",
+      "5\uC6D4",
+      "6\uC6D4",
+      "7\uC6D4",
+      "8\uC6D4",
+      "9\uC6D4",
+      "10\uC6D4",
+      "11\uC6D4",
+      "12\uC6D4"
+    ];
+    container.innerHTML = `
+        <div class="wrapped-step date-quiz-step">
+            <div class="wrapped-emoji">\u{1F4C5}</div>
+            <h2>\uADF8\uB7FC... \uC5B8\uC81C \uCC44\uD305\uC744<br>\uC2DC\uC791\uD558\uC168\uB294\uC9C0 \uAE30\uC5B5\uD558\uC138\uC694?</h2>
+            <p class="wrapped-subtitle">\uCCA8 \uB300\uD654\uB97C \uC2DC\uC791\uD55C \uC2DC\uAE30\uB97C \uB9DE\uCDB0\uBCF4\uC138\uC694!</p>
+            <div class="date-select-wrap">
+                <select id="year-guess" class="date-select">
+                    <option value="">\uB144\uB3C4</option>
+                    ${years.map((y) => `<option value="${y}">${y}\uB144</option>`).join("")}
+                </select>
+                <select id="month-guess" class="date-select">
+                    <option value="">\uC6D4</option>
+                    ${months.map((m, i) => `<option value="${i + 1}">${m}</option>`).join("")}
+                </select>
+            </div>
+            <button class="wrapped-btn primary" data-action="submit">\uD655\uC778\uD558\uAE30</button>
+        </div>
+    `;
+    const yearSelect = container.querySelector("#year-guess");
+    const monthSelect = container.querySelector("#month-guess");
+    const btn = container.querySelector('[data-action="submit"]');
+    btn.addEventListener("click", () => {
+      userGuessYear = parseInt(yearSelect.value) || null;
+      userGuessMonth = parseInt(monthSelect.value) || null;
+      showStep(7);
+    });
+  }
+  function showDateResult(container) {
+    const actualDate = funFactsData.oldestDate;
+    const top = rankingsData[0];
+    const actualYear = actualDate.getFullYear();
+    const actualMonth = actualDate.getMonth() + 1;
+    const isCorrectYear = userGuessYear === actualYear;
+    const isCorrectMonth = userGuessMonth === actualMonth;
+    const isExact = isCorrectYear && isCorrectMonth;
+    const isClose = isCorrectYear && Math.abs(userGuessMonth - actualMonth) <= 1;
+    const today = /* @__PURE__ */ new Date();
+    const daysDiff = Math.ceil((today - actualDate) / (1e3 * 60 * 60 * 24));
+    const monthsDiff = Math.floor(daysDiff / 30);
+    let periodComment = "";
+    if (monthsDiff >= 12) {
+      periodComment = `\uBCA8\uC368 ${Math.floor(monthsDiff / 12)}\uB144\uC774 \uB118\uC5C8\uB124\uC694! \uC624\uB798\uB41C \uC778\uC5F0\uC774\uC5D0\uC694 \u2728`;
+    } else if (monthsDiff >= 6) {
+      periodComment = "\uBC18\uB144 \uB118\uAC8C \uD568\uAED8\uD588\uB124\uC694! \uAF64 \uCE5C\uD574\uC84C\uACA0\uC5B4\uC694 \u{1F49C}";
+    } else if (monthsDiff >= 2) {
+      periodComment = "\uB9CC\uB09C \uC9C0 \uAF14 \uC9C0\uB0AC\uB124\uC694! \uC544\uC9C1 \uC0C8\uB85C\uC6B4 \uC774\uC57C\uAE30\uAC00 \uB9CE\uACA0\uC5B4\uC694 \u{1F497}";
+    } else {
+      periodComment = "\uC544\uC9C1 \uC0C8\uB85C\uC6B4 \uC778\uC5F0\uC774\uB124\uC694! \uC55E\uC73C\uB85C\uAC00 \uAE30\uB300\uB3FC\uC694 \u{1F31F}";
+    }
+    let emoji, title;
+    if (isExact) {
+      emoji = "\u{1F3AF}";
+      title = "\uC644\uBCBD\uD574\uC694!";
+    } else if (isClose) {
+      emoji = "\u{1F44D}";
+      title = "\uAC70\uC758 \uB9DE\uCD94\uC168\uC5B4\uC694!";
+    } else {
+      emoji = "\u{1F605}";
+      title = "\uC544\uC26C\uC6CC\uC694!";
+    }
+    const dateStr = actualDate.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" });
+    container.innerHTML = `
+        <div class="wrapped-step date-result-step">
+            <div class="wrapped-emoji">${emoji}</div>
+            <h2>${title}</h2>
+            <p class="wrapped-subtitle">${escapeHtml(top?.name || "")}\uACFC\uC758 \uC2DC\uC791\uC740</p>
+            <div class="date-reveal">
+                <span class="date-value">${dateStr}</span>
+            </div>
+            <p class="period-comment">${periodComment}</p>
+            <div class="daily-stats">
+                <p>\uADF8\uB807\uAC8C \uBCF4\uBA74... \uD558\uB8E8\uC5D0</p>
+                <span class="daily-value">${funFactsData.avgChatsPerDay}</span>
+                <p>\uCC57\uC744 \uD55C \uC148\uC774\uB124\uC694!</p>
+            </div>
+            <button class="wrapped-btn primary" data-action="next">\uACB0\uACFC \uBCF4\uAE30</button>
+        </div>
+    `;
+    container.querySelector('[data-action="next"]').addEventListener("click", () => showStep(8));
   }
   function showFinalStats(container) {
     const medals = ["\u{1F947}", "\u{1F948}", "\u{1F949}"];
