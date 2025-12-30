@@ -293,7 +293,7 @@ function isFavoriteChar(char) {
 async function sortCharacters(characters, sortOption) {
     
     if (sortOption === 'chats') {
-        // 채팅 수 정렬 - 배치로 API 호출 (동시 요청 제한)
+        // 메시지 수 정렬 - 배치로 API 호출 (동시 요청 제한)
         const BATCH_SIZE = 5;
         const results = [];
         
@@ -301,15 +301,17 @@ async function sortCharacters(characters, sortOption) {
             const batch = characters.slice(i, i + BATCH_SIZE);
             const batchResults = await Promise.all(
                 batch.map(async (char) => {
-                    // 캐시 먼저 확인
-                    let count = cache.get('chatCounts', char.avatar);
+                    // 캐시 먼저 확인 (메시지 수)
+                    let count = cache.get('messageCounts', char.avatar);
                     
-                    // 캐시 없으면 API 호출
+                    // 캐시 없으면 API 호출해서 채팅 가져오고 메시지 수 계산
                     if (typeof count !== 'number') {
                         try {
-                            count = await api.getChatCount(char.avatar);
+                            const chats = await api.fetchChatsForCharacter(char.avatar);
+                            // fetchChatsForCharacter에서 이미 messageCounts를 캐시에 저장함
+                            count = cache.get('messageCounts', char.avatar) || 0;
                         } catch (e) {
-                            console.error('[CharacterGrid] Failed to get chat count for:', char.name, e);
+                            console.error('[CharacterGrid] Failed to get message count for:', char.name, e);
                             count = 0;
                         }
                     }
@@ -326,12 +328,12 @@ async function sortCharacters(characters, sortOption) {
                 return isFavoriteChar(a.char) ? -1 : 1;
             }
             
-            // 2. 채팅 수 내림차순 (같으면 이름순)
+            // 2. 메시지 수 내림차순 (같으면 이름순)
             if (b.count !== a.count) {
                 return b.count - a.count;
             }
             
-            // 3. 채팅 수 같으면 이름순
+            // 3. 메시지 수 같으면 이름순
             return (a.char.name || '').localeCompare(b.char.name || '', 'ko');
         });
         

@@ -1356,7 +1356,7 @@ ${message}` : message;
                         <select id="chat-lobby-char-sort" title="\uCE90\uB9AD\uD130 \uC815\uB82C">
                             <option value="recent">\u{1F552} \uCD5C\uADFC \uCC44\uD305\uC21C</option>
                             <option value="name">\u{1F524} \uC774\uB984\uC21C</option>
-                            <option value="chats">\u{1F4AC} \uCC44\uD305 \uC218</option>
+                            <option value="chats">\uFFFD \uBA54\uC2DC\uC9C0 \uC218</option>
                         </select>
                     </div>
                     
@@ -2389,12 +2389,13 @@ ${message}` : message;
         const batch = characters.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.all(
           batch.map(async (char) => {
-            let count = cache.get("chatCounts", char.avatar);
+            let count = cache.get("messageCounts", char.avatar);
             if (typeof count !== "number") {
               try {
-                count = await api.getChatCount(char.avatar);
+                const chats = await api.fetchChatsForCharacter(char.avatar);
+                count = cache.get("messageCounts", char.avatar) || 0;
               } catch (e) {
-                console.error("[CharacterGrid] Failed to get chat count for:", char.name, e);
+                console.error("[CharacterGrid] Failed to get message count for:", char.name, e);
                 count = 0;
               }
             }
