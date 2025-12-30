@@ -234,6 +234,8 @@ ${message}` : message;
         // 캐릭터별 채팅 목록
         chatCounts: /* @__PURE__ */ new Map(),
         // 캐릭터별 채팅 수
+        messageCounts: /* @__PURE__ */ new Map(),
+        // 캐릭터별 메시지 수
         personas: null,
         // 페르소나 목록
         characters: null
@@ -242,6 +244,7 @@ ${message}` : message;
       this.timestamps = {
         chats: /* @__PURE__ */ new Map(),
         chatCounts: /* @__PURE__ */ new Map(),
+        messageCounts: /* @__PURE__ */ new Map(),
         personas: 0,
         characters: 0
       };
@@ -1462,7 +1465,7 @@ ${message}` : message;
                 <h2>Chat Lobby</h2>
                 <div class="header-actions">
                     <button id="chat-lobby-theme-toggle" data-action="toggle-theme" title="\uD14C\uB9C8 \uC804\uD658">${savedTheme === "light" ? "\u{1F319}" : "\u2600\uFE0F"}</button>
-                    <button id="chat-lobby-stats" data-action="open-stats" title="Wrapped \uD1B5\uACC4">\u{1F4CA} Wrapped</button>
+                    <button id="chat-lobby-stats" data-action="open-stats" title="Wrapped \uD1B5\uACC4">\u{1F4CA}</button>
                     <button id="chat-lobby-import-char" data-action="import-char" title="\uCE90\uB9AD\uD130 \uAC00\uC838\uC624\uAE30">\u{1F4E5}</button>
                     <button id="chat-lobby-refresh" data-action="refresh" title="\uC0C8\uB85C\uACE0\uCE68">\u{1F504}</button>
                     <button id="chat-lobby-add-persona" data-action="add-persona" title="\uD398\uB974\uC18C\uB098 \uCD94\uAC00">\u{1F464}</button>
@@ -3977,19 +3980,6 @@ ${message}` : message;
         }, 500);
       } else {
         showToast("\uD398\uB974\uC18C\uB098 \uC0DD\uC131 \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4", "error");
-      }
-    }
-    async function handleImportCharacter() {
-      const importBtn = document.getElementById("external_import_button") || document.getElementById("character_import_button") || document.querySelector('[data-i18n="Import"]');
-      if (importBtn) {
-        importBtn.click();
-      } else {
-        const fileInput = document.getElementById("character_import_file");
-        if (fileInput) {
-          fileInput.click();
-        } else {
-          showToast("\uCE90\uB9AD\uD130 \uAC00\uC838\uC624\uAE30 \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4", "error");
-        }
       }
     }
     async function handleGoToCharacter() {

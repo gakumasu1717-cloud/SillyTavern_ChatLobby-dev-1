@@ -778,28 +778,6 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
     }
     
     /**
-     * 캐릭터 가져오기 (SillyTavern의 import 버튼 트리거)
-     */
-    async function handleImportCharacter() {
-        // SillyTavern 캐릭터 임포트 버튼 찾기
-        const importBtn = document.getElementById('external_import_button') || 
-                          document.getElementById('character_import_button') ||
-                          document.querySelector('[data-i18n="Import"]');
-        
-        if (importBtn) {
-            importBtn.click();
-        } else {
-            // 파일 입력 직접 트리거
-            const fileInput = document.getElementById('character_import_file');
-            if (fileInput) {
-                fileInput.click();
-            } else {
-                showToast('캐릭터 가져오기 버튼을 찾을 수 없습니다', 'error');
-            }
-        }
-    }
-    
-    /**
      * 선택된 캐릭터 편집 화면으로 이동 (봇카드 관리 화면)
      */
     async function handleGoToCharacter() {

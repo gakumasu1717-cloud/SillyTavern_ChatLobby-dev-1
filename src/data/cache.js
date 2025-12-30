@@ -24,6 +24,7 @@ class CacheManager {
         this.stores = {
             chats: new Map(),        // 캐릭터별 채팅 목록
             chatCounts: new Map(),   // 캐릭터별 채팅 수
+            messageCounts: new Map(), // 캐릭터별 메시지 수
             personas: null,          // 페르소나 목록
             characters: null,        // 캐릭터 목록
         };
@@ -35,6 +36,7 @@ class CacheManager {
         this.timestamps = {
             chats: new Map(),
             chatCounts: new Map(),
+            messageCounts: new Map(),
             personas: 0,
             characters: 0,
         };

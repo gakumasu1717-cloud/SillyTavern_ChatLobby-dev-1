@@ -198,7 +198,7 @@
     background: rgba(255, 255, 255, 0.1);
     border: none;
     color: var(--text-primary);
-    font-size: 0.85em;
+    font-size: 1em;
     cursor: pointer;
     padding: 6px 10px;
     border-radius: var(--radius-md);
@@ -243,7 +243,8 @@
 #chat-lobby-persona-bar {
     display: flex;
     align-items: center;
-    padding: 4px 30px;
+    padding: 8px 30px;
+    margin-top: 8px;
     background: transparent;
     gap: 12px;
     flex-shrink: 0;
@@ -276,14 +277,14 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 5px;
+    padding: 6px;
     border-radius: var(--radius-md);
     cursor: pointer;
     transition: all var(--transition-fast);
     border: 2px solid transparent;
     flex-shrink: 0;
     gap: 5px;
-    min-width: 60px;
+    min-width: 65px;
     position: relative;
 }
 
@@ -296,8 +297,8 @@
 }
 
 .persona-avatar {
-    width: 50px;
-    height: 50px;
+    width: 55px;
+    height: 55px;
     border-radius: var(--radius-md);
     object-fit: cover;
     background: var(--lobby-bg-card);
@@ -514,6 +515,19 @@
 }
 
 /* 라이트 모드용 추가 스타일 */
+#chat-lobby-container.light-mode #chat-lobby-header {
+    background: transparent;
+}
+
+#chat-lobby-container.light-mode #chat-lobby-header h2 {
+    color: #1A1A1A;
+}
+
+#chat-lobby-container.light-mode .header-actions button {
+    color: #1A1A1A;
+    background: rgba(0, 0, 0, 0.05);
+}
+
 #chat-lobby-container.light-mode #chat-lobby-fab,
 #chat-lobby-container.light-mode #chat-lobby-collapse-btn:hover,
 #chat-lobby-container.light-mode .header-actions button:hover {
