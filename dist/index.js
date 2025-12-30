@@ -1198,10 +1198,6 @@ ${message}` : message;
           } else {
             result = [];
           }
-          if (result.length > 0) {
-            console.log("[API DEBUG] \uCCAB \uBC88\uC9F8 \uCC44\uD305 \uB370\uC774\uD130:", JSON.stringify(result[0], null, 2));
-            console.log("[API DEBUG] chat_items \uAC12:", result[0]?.chat_items);
-          }
           cache.set("chats", result, characterAvatar);
           const count = result.length;
           cache.set("chatCounts", count, characterAvatar);
@@ -1883,8 +1879,6 @@ ${message}` : message;
     }
   }
   function renderChats(container, rawChats, charAvatar) {
-    console.log("[renderChats DEBUG] rawChats \uCCAB \uBC88\uC9F8:", rawChats?.[0]);
-    console.log("[renderChats DEBUG] rawChats[0].chat_items:", rawChats?.[0]?.chat_items);
     let chatArray = normalizeChats(rawChats);
     chatArray = filterValidChats(chatArray);
     const totalChatCount = chatArray.length;
@@ -1982,10 +1976,7 @@ ${message}` : message;
     const fileName = chat.file_name || chat.fileName || chat.name || `chat_${index}`;
     const displayName = fileName.replace(".jsonl", "");
     const preview = chat.preview || chat.mes || chat.last_message || "\uCC44\uD305 \uAE30\uB85D";
-    console.log(`[chatList DEBUG] chat object keys:`, Object.keys(chat));
-    console.log(`[chatList DEBUG] chat.chat_items:`, chat.chat_items);
     const messageCount = chat.chat_items || chat.message_count || chat.mes_count || 0;
-    console.log(`[chatList DEBUG] final messageCount:`, messageCount);
     const isFav = storage.isFavorite(charAvatar, fileName);
     const folderId = storage.getChatFolder(charAvatar, fileName);
     const data = storage.load();
@@ -2299,8 +2290,11 @@ ${message}` : message;
     const safeAvatar = escapeHtml(char.avatar || "");
     const isFav = isFavoriteChar(char);
     const cachedChatCount = cache.get("chatCounts", char.avatar);
+    const cachedMessageCount = cache.get("messageCounts", char.avatar);
     const hasCount = typeof cachedChatCount === "number";
+    const hasMessageCount = typeof cachedMessageCount === "number";
     const chatCountText = hasCount ? cachedChatCount > 0 ? `${cachedChatCount}\uAC1C \uCC44\uD305` : "\uCC44\uD305 \uC5C6\uC74C" : "\uB85C\uB529 \uC911...";
+    const messageCountText = hasMessageCount ? cachedMessageCount > 0 ? `${cachedMessageCount}\uAC1C \uBA54\uC2DC\uC9C0` : "" : "";
     const favBtn = `<button class="char-fav-btn" data-char-avatar="${safeAvatar}" title="\uC990\uACA8\uCC3E\uAE30 \uD1A0\uAE00">${isFav ? "\u2B50" : "\u2606"}</button>`;
     return `
     <div class="lobby-char-card ${isFav ? "is-char-fav" : ""}" 
@@ -2320,6 +2314,12 @@ ${message}` : message;
                     <span class="info-icon">\u{1F4AC}</span>
                     <span class="info-value chat-count-value">${chatCountText}</span>
                 </div>
+                ${messageCountText ? `
+                <div class="info-row">
+                    <span class="info-icon">\u{1F4DD}</span>
+                    <span class="info-value message-count-value">${messageCountText}</span>
+                </div>
+                ` : ""}
             </div>
         </div>
     </div>
@@ -2334,14 +2334,34 @@ ${message}` : message;
         if (typeof existingCount === "number") return;
         try {
           const chats = await api.fetchChatsForCharacter(char.avatar);
-          const count = Array.isArray(chats) ? chats.length : typeof chats === "object" && chats ? Object.keys(chats).length : 0;
+          const chatArray = Array.isArray(chats) ? chats : typeof chats === "object" && chats ? Object.values(chats) : [];
+          const count = chatArray.length;
+          const messageCount = chatArray.reduce((sum, chat) => {
+            return sum + (chat.chat_items || 0);
+          }, 0);
           cache.set("chatCounts", count, char.avatar);
-          console.log(`[CharacterGrid] Chat count for ${char.name}: ${count}`);
+          cache.set("messageCounts", messageCount, char.avatar);
+          console.log(`[CharacterGrid] Chat count for ${char.name}: ${count}, Messages: ${messageCount}`);
           const card = document.querySelector(`.lobby-char-card[data-char-avatar="${char.avatar}"]`);
           if (card) {
-            const valueEl = card.querySelector(".chat-count-value");
-            if (valueEl) {
-              valueEl.textContent = count > 0 ? `${count}\uAC1C \uCC44\uD305` : "\uCC44\uD305 \uC5C6\uC74C";
+            const chatValueEl = card.querySelector(".chat-count-value");
+            if (chatValueEl) {
+              chatValueEl.textContent = count > 0 ? `${count}\uAC1C \uCC44\uD305` : "\uCC44\uD305 \uC5C6\uC74C";
+            }
+            const hoverInfo = card.querySelector(".char-hover-info");
+            if (hoverInfo && messageCount > 0) {
+              let messageRow = hoverInfo.querySelector(".message-count-value");
+              if (!messageRow) {
+                const newRow = document.createElement("div");
+                newRow.className = "info-row";
+                newRow.innerHTML = `
+                                <span class="info-icon">\u{1F4DD}</span>
+                                <span class="info-value message-count-value">${messageCount}\uAC1C \uBA54\uC2DC\uC9C0</span>
+                            `;
+                hoverInfo.appendChild(newRow);
+              } else {
+                messageRow.textContent = `${messageCount}\uAC1C \uBA54\uC2DC\uC9C0`;
+              }
             }
           }
         } catch (e) {

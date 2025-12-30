@@ -165,11 +165,19 @@ function renderCharacterCard(char, index) {
     
     // 채팅 수 (캐시에서 가져오기, 없으면 API 응답 필드 사용)
     const cachedChatCount = cache.get('chatCounts', char.avatar);
+    // 메시지 수 (chat_items 합계)
+    const cachedMessageCount = cache.get('messageCounts', char.avatar);
+    
     // null/undefined가 아닌 숫자인지 확인
     const hasCount = typeof cachedChatCount === 'number';
+    const hasMessageCount = typeof cachedMessageCount === 'number';
+    
     const chatCountText = hasCount 
         ? (cachedChatCount > 0 ? `${cachedChatCount}개 채팅` : '채팅 없음')
         : '로딩 중...';
+    const messageCountText = hasMessageCount
+        ? (cachedMessageCount > 0 ? `${cachedMessageCount}개 메시지` : '')
+        : '';
     
     // 즐겨찾기 버튼
     const favBtn = `<button class="char-fav-btn" data-char-avatar="${safeAvatar}" title="즐겨찾기 토글">${isFav ? '⭐' : '☆'}</button>`;
@@ -192,6 +200,12 @@ function renderCharacterCard(char, index) {
                     <span class="info-icon">💬</span>
                     <span class="info-value chat-count-value">${chatCountText}</span>
                 </div>
+                ${messageCountText ? `
+                <div class="info-row">
+                    <span class="info-icon">📝</span>
+                    <span class="info-value message-count-value">${messageCountText}</span>
+                </div>
+                ` : ''}
             </div>
         </div>
     </div>
@@ -216,16 +230,41 @@ async function loadChatCountsAsync(characters) {
             try {
                 const chats = await api.fetchChatsForCharacter(char.avatar);
                 // API 응답이 배열인지 확인 (객체일 수도 있음)
-                const count = Array.isArray(chats) ? chats.length : (typeof chats === 'object' && chats ? Object.keys(chats).length : 0);
+                const chatArray = Array.isArray(chats) ? chats : (typeof chats === 'object' && chats ? Object.values(chats) : []);
+                const count = chatArray.length;
+                
+                // 메시지 수 합계 (chat_items 합산)
+                const messageCount = chatArray.reduce((sum, chat) => {
+                    return sum + (chat.chat_items || 0);
+                }, 0);
+                
                 cache.set('chatCounts', count, char.avatar);
-                console.log(`[CharacterGrid] Chat count for ${char.name}: ${count}`);
+                cache.set('messageCounts', messageCount, char.avatar);
+                console.log(`[CharacterGrid] Chat count for ${char.name}: ${count}, Messages: ${messageCount}`);
                 
                 // DOM 업데이트
                 const card = document.querySelector(`.lobby-char-card[data-char-avatar="${char.avatar}"]`);
                 if (card) {
-                    const valueEl = card.querySelector('.chat-count-value');
-                    if (valueEl) {
-                        valueEl.textContent = count > 0 ? `${count}개 채팅` : '채팅 없음';
+                    const chatValueEl = card.querySelector('.chat-count-value');
+                    if (chatValueEl) {
+                        chatValueEl.textContent = count > 0 ? `${count}개 채팅` : '채팅 없음';
+                    }
+                    
+                    // 메시지 수 업데이트 (요소가 없으면 추가)
+                    const hoverInfo = card.querySelector('.char-hover-info');
+                    if (hoverInfo && messageCount > 0) {
+                        let messageRow = hoverInfo.querySelector('.message-count-value');
+                        if (!messageRow) {
+                            const newRow = document.createElement('div');
+                            newRow.className = 'info-row';
+                            newRow.innerHTML = `
+                                <span class="info-icon">📝</span>
+                                <span class="info-value message-count-value">${messageCount}개 메시지</span>
+                            `;
+                            hoverInfo.appendChild(newRow);
+                        } else {
+                            messageRow.textContent = `${messageCount}개 메시지`;
+                        }
                     }
                 }
             } catch (e) {
