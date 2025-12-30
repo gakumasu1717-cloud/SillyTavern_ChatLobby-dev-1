@@ -1198,6 +1198,10 @@ ${message}` : message;
           } else {
             result = [];
           }
+          if (result.length > 0) {
+            console.log("[API DEBUG] \uCCAB \uBC88\uC9F8 \uCC44\uD305 \uB370\uC774\uD130:", JSON.stringify(result[0], null, 2));
+            console.log("[API DEBUG] chat_items \uAC12:", result[0]?.chat_items);
+          }
           cache.set("chats", result, characterAvatar);
           const count = result.length;
           cache.set("chatCounts", count, characterAvatar);
@@ -1879,6 +1883,8 @@ ${message}` : message;
     }
   }
   function renderChats(container, rawChats, charAvatar) {
+    console.log("[renderChats DEBUG] rawChats \uCCAB \uBC88\uC9F8:", rawChats?.[0]);
+    console.log("[renderChats DEBUG] rawChats[0].chat_items:", rawChats?.[0]?.chat_items);
     let chatArray = normalizeChats(rawChats);
     chatArray = filterValidChats(chatArray);
     const totalChatCount = chatArray.length;
@@ -1976,7 +1982,10 @@ ${message}` : message;
     const fileName = chat.file_name || chat.fileName || chat.name || `chat_${index}`;
     const displayName = fileName.replace(".jsonl", "");
     const preview = chat.preview || chat.mes || chat.last_message || "\uCC44\uD305 \uAE30\uB85D";
+    console.log(`[chatList DEBUG] chat object keys:`, Object.keys(chat));
+    console.log(`[chatList DEBUG] chat.chat_items:`, chat.chat_items);
     const messageCount = chat.chat_items || chat.message_count || chat.mes_count || 0;
+    console.log(`[chatList DEBUG] final messageCount:`, messageCount);
     const isFav = storage.isFavorite(charAvatar, fileName);
     const folderId = storage.getChatFolder(charAvatar, fileName);
     const data = storage.load();
