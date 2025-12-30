@@ -1755,6 +1755,57 @@
     line-height: 1.4;
 }
 
+/* 첫 대화 날짜 섹션 */
+.first-chat-section {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.first-chat-header {
+    font-size: 0.95em;
+    color: var(--text-primary);
+    margin-bottom: 12px;
+}
+
+.first-chat-header strong {
+    color: var(--lobby-accent);
+}
+
+.top3-first-chats {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.top3-title {
+    font-size: 0.85em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+}
+
+.first-chat-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.first-chat-item:last-child {
+    border-bottom: none;
+}
+
+.first-chat-item .char-name {
+    font-size: 0.9em;
+    color: var(--text-primary);
+}
+
+.first-chat-item .chat-date {
+    font-size: 0.8em;
+    color: var(--text-muted);
+}
+
 @media (max-width: 768px) {
     .fun-facts-grid {
         grid-template-columns: 1fr;

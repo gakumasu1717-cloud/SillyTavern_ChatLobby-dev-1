@@ -138,13 +138,27 @@ async function fetchRankings(characters) {
                     
                     const chatCount = Array.isArray(chats) ? chats.length : 0;
                     let messageCount = 0;
+                    let firstChatDate = null;
+                    
                     if (Array.isArray(chats)) {
                         messageCount = chats.reduce((sum, chat) => sum + (chat.chat_items || 0), 0);
+                        
+                        // 첫 대화 날짜 파싱 (가장 오래된 채팅)
+                        chats.forEach(chat => {
+                            const fileName = chat.file_name || '';
+                            const dateMatch = fileName.match(/(\d{4}-\d{2}-\d{2})/);
+                            if (dateMatch) {
+                                const chatDate = new Date(dateMatch[1]);
+                                if (!firstChatDate || chatDate < firstChatDate) {
+                                    firstChatDate = chatDate;
+                                }
+                            }
+                        });
                     }
                     
-                    return { name: char.name, avatar: char.avatar, chatCount, messageCount };
+                    return { name: char.name, avatar: char.avatar, chatCount, messageCount, firstChatDate };
                 } catch (e) {
-                    return { name: char.name, avatar: char.avatar, chatCount: 0, messageCount: 0 };
+                    return { name: char.name, avatar: char.avatar, chatCount: 0, messageCount: 0, firstChatDate: null };
                 }
             })
         );
@@ -177,13 +191,38 @@ function calculateFunFacts(rankings) {
         ? Math.round(totalStatsData.messages / totalStatsData.chats)
         : 0;
     
+    // 가장 오래된 첫 대화 날짜 (전체)
+    let oldestDate = null;
+    rankings.forEach(r => {
+        if (r.firstChatDate && (!oldestDate || r.firstChatDate < oldestDate)) {
+            oldestDate = r.firstChatDate;
+        }
+    });
+    
+    // 하루 평균 채팅 수 계산
+    let avgChatsPerDay = 0;
+    if (oldestDate && totalStatsData.chats > 0) {
+        const today = new Date();
+        const daysDiff = Math.max(1, Math.ceil((today - oldestDate) / (1000 * 60 * 60 * 24)));
+        avgChatsPerDay = (totalStatsData.chats / daysDiff).toFixed(1);
+    }
+    
+    // 상위 3 캐릭터 첫 대화 날짜
+    const top3WithDates = rankings.slice(0, 3).map(r => ({
+        name: r.name,
+        firstChatDate: r.firstChatDate
+    }));
+    
     return {
         avgMessagesPerChar,
         mostChatsChar: mostChats,
         avgMessagesPerChat,
         topCharPercentage: totalStatsData.messages > 0 
             ? Math.round((topChar?.messageCount || 0) / totalStatsData.messages * 100)
-            : 0
+            : 0,
+        oldestDate,
+        avgChatsPerDay,
+        top3WithDates
     };
 }
 
@@ -386,6 +425,16 @@ function showFinalStats(container) {
     const encouragement = getEncouragement(top?.name);
     
     // Fun Facts 섹션 추가
+    const oldestDateStr = funFactsData.oldestDate 
+        ? funFactsData.oldestDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' })
+        : '알 수 없음';
+    
+    // 상위 캐릭터 첫 대화 날짜 HTML
+    const top3DatesHTML = funFactsData.top3WithDates?.filter(c => c.firstChatDate).map(c => {
+        const dateStr = c.firstChatDate.toLocaleDateString('ko-KR', { year: 'numeric', month: 'short', day: 'numeric' });
+        return `<div class="first-chat-item"><span class="char-name">${escapeHtml(c.name)}</span><span class="chat-date">${dateStr}</span></div>`;
+    }).join('') || '';
+    
     const funFactsHTML = funFactsData.topCharPercentage > 0 ? `
         <div class="stats-section stats-fun-facts">
             <h4>✨ Fun Facts</h4>
@@ -399,10 +448,16 @@ function showFinalStats(container) {
                     <span class="fun-fact-label">채팅당 평균 메시지</span>
                 </div>
                 <div class="fun-fact-item">
-                    <span class="fun-fact-value">${funFactsData.avgMessagesPerChar}</span>
-                    <span class="fun-fact-label">캐릭터당 평균 메시지</span>
+                    <span class="fun-fact-value">${funFactsData.avgChatsPerDay}</span>
+                    <span class="fun-fact-label">하루 평균 채팅</span>
                 </div>
             </div>
+            ${funFactsData.oldestDate ? `
+            <div class="first-chat-section">
+                <div class="first-chat-header">📅 첫 대화 시작일: <strong>${oldestDateStr}</strong></div>
+                ${top3DatesHTML ? `<div class="top3-first-chats"><div class="top3-title">🏆 상위 캐릭터 첫 대화</div>${top3DatesHTML}</div>` : ''}
+            </div>
+            ` : ''}
         </div>
     ` : '';
     

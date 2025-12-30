@@ -3075,12 +3075,23 @@ ${message}` : message;
             }
             const chatCount = Array.isArray(chats) ? chats.length : 0;
             let messageCount = 0;
+            let firstChatDate = null;
             if (Array.isArray(chats)) {
               messageCount = chats.reduce((sum, chat) => sum + (chat.chat_items || 0), 0);
+              chats.forEach((chat) => {
+                const fileName = chat.file_name || "";
+                const dateMatch = fileName.match(/(\d{4}-\d{2}-\d{2})/);
+                if (dateMatch) {
+                  const chatDate = new Date(dateMatch[1]);
+                  if (!firstChatDate || chatDate < firstChatDate) {
+                    firstChatDate = chatDate;
+                  }
+                }
+              });
             }
-            return { name: char.name, avatar: char.avatar, chatCount, messageCount };
+            return { name: char.name, avatar: char.avatar, chatCount, messageCount, firstChatDate };
           } catch (e) {
-            return { name: char.name, avatar: char.avatar, chatCount: 0, messageCount: 0 };
+            return { name: char.name, avatar: char.avatar, chatCount: 0, messageCount: 0, firstChatDate: null };
           }
         })
       );
@@ -3101,11 +3112,30 @@ ${message}` : message;
     const avgMessagesPerChar = rankings.length > 0 ? Math.round(rankings.reduce((sum, r) => sum + r.messageCount, 0) / rankings.length) : 0;
     const mostChats = [...rankings].sort((a, b) => b.chatCount - a.chatCount)[0];
     const avgMessagesPerChat = totalStatsData.chats > 0 ? Math.round(totalStatsData.messages / totalStatsData.chats) : 0;
+    let oldestDate = null;
+    rankings.forEach((r) => {
+      if (r.firstChatDate && (!oldestDate || r.firstChatDate < oldestDate)) {
+        oldestDate = r.firstChatDate;
+      }
+    });
+    let avgChatsPerDay = 0;
+    if (oldestDate && totalStatsData.chats > 0) {
+      const today = /* @__PURE__ */ new Date();
+      const daysDiff = Math.max(1, Math.ceil((today - oldestDate) / (1e3 * 60 * 60 * 24)));
+      avgChatsPerDay = (totalStatsData.chats / daysDiff).toFixed(1);
+    }
+    const top3WithDates = rankings.slice(0, 3).map((r) => ({
+      name: r.name,
+      firstChatDate: r.firstChatDate
+    }));
     return {
       avgMessagesPerChar,
       mostChatsChar: mostChats,
       avgMessagesPerChat,
-      topCharPercentage: totalStatsData.messages > 0 ? Math.round((topChar?.messageCount || 0) / totalStatsData.messages * 100) : 0
+      topCharPercentage: totalStatsData.messages > 0 ? Math.round((topChar?.messageCount || 0) / totalStatsData.messages * 100) : 0,
+      oldestDate,
+      avgChatsPerDay,
+      top3WithDates
     };
   }
   function showStep(step) {
@@ -3282,6 +3312,11 @@ ${message}` : message;
         `;
     }).join("");
     const encouragement = getEncouragement(top?.name);
+    const oldestDateStr = funFactsData.oldestDate ? funFactsData.oldestDate.toLocaleDateString("ko-KR", { year: "numeric", month: "long", day: "numeric" }) : "\uC54C \uC218 \uC5C6\uC74C";
+    const top3DatesHTML = funFactsData.top3WithDates?.filter((c) => c.firstChatDate).map((c) => {
+      const dateStr = c.firstChatDate.toLocaleDateString("ko-KR", { year: "numeric", month: "short", day: "numeric" });
+      return `<div class="first-chat-item"><span class="char-name">${escapeHtml(c.name)}</span><span class="chat-date">${dateStr}</span></div>`;
+    }).join("") || "";
     const funFactsHTML = funFactsData.topCharPercentage > 0 ? `
         <div class="stats-section stats-fun-facts">
             <h4>\u2728 Fun Facts</h4>
@@ -3295,10 +3330,16 @@ ${message}` : message;
                     <span class="fun-fact-label">\uCC44\uD305\uB2F9 \uD3C9\uADE0 \uBA54\uC2DC\uC9C0</span>
                 </div>
                 <div class="fun-fact-item">
-                    <span class="fun-fact-value">${funFactsData.avgMessagesPerChar}</span>
-                    <span class="fun-fact-label">\uCE90\uB9AD\uD130\uB2F9 \uD3C9\uADE0 \uBA54\uC2DC\uC9C0</span>
+                    <span class="fun-fact-value">${funFactsData.avgChatsPerDay}</span>
+                    <span class="fun-fact-label">\uD558\uB8E8 \uD3C9\uADE0 \uCC44\uD305</span>
                 </div>
             </div>
+            ${funFactsData.oldestDate ? `
+            <div class="first-chat-section">
+                <div class="first-chat-header">\u{1F4C5} \uCCAB \uB300\uD654 \uC2DC\uC791\uC77C: <strong>${oldestDateStr}</strong></div>
+                ${top3DatesHTML ? `<div class="top3-first-chats"><div class="top3-title">\u{1F3C6} \uC0C1\uC704 \uCE90\uB9AD\uD130 \uCCAB \uB300\uD654</div>${top3DatesHTML}</div>` : ""}
+            </div>
+            ` : ""}
         </div>
     ` : "";
     container.innerHTML = `
