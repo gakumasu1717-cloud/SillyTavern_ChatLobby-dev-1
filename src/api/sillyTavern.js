@@ -340,6 +340,12 @@ class SillyTavernAPI {
                     result = [];
                 }
                 
+                // 🔍 디버그: chat_items 확인
+                if (result.length > 0) {
+                    console.log('[API DEBUG] 첫 번째 채팅 데이터:', JSON.stringify(result[0], null, 2));
+                    console.log('[API DEBUG] chat_items 값:', result[0]?.chat_items);
+                }
+                
                 // 캐시 저장 (키 형식 통일: chats, characterAvatar)
                 cache.set('chats', result, characterAvatar);
                 

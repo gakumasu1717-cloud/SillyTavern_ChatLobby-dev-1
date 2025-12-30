@@ -411,8 +411,11 @@ function renderChatItem(chat, charAvatar, index) {
     // 미리보기
     const preview = chat.preview || chat.mes || chat.last_message || '채팅 기록';
     
-    // 메시지 수
+    // 메시지 수 - 🔍 디버그
+    console.log(`[chatList DEBUG] chat object keys:`, Object.keys(chat));
+    console.log(`[chatList DEBUG] chat.chat_items:`, chat.chat_items);
     const messageCount = chat.chat_items || chat.message_count || chat.mes_count || 0;
+    console.log(`[chatList DEBUG] final messageCount:`, messageCount);
     
     // 즐겨찾기/폴더 상태
     const isFav = storage.isFavorite(charAvatar, fileName);
