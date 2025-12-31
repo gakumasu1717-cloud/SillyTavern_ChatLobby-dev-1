@@ -1863,6 +1863,42 @@ ${message}` : message;
     chatsPanel.classList.add("visible");
     updateChatHeader(character);
     showFolderBar(true);
+    setTimeout(() => {
+      const filtersRow = document.querySelector(".filters-row");
+      const filterGroup = document.querySelector(".filter-group");
+      const sortSelect = document.getElementById("chat-lobby-chat-sort");
+      const folderSelect = document.getElementById("chat-lobby-folder-filter");
+      const batchBtn = document.getElementById("chat-lobby-batch-mode");
+      const folderBtn = document.getElementById("chat-lobby-folder-manage");
+      console.group("\u{1F50D} Filter Row Debug");
+      console.log("filtersRow:", filtersRow?.getBoundingClientRect());
+      console.log("filterGroup:", filterGroup?.getBoundingClientRect());
+      console.table({
+        sortSelect: sortSelect ? {
+          top: sortSelect.getBoundingClientRect().top,
+          height: sortSelect.getBoundingClientRect().height,
+          offsetTop: sortSelect.offsetTop
+        } : "null",
+        folderSelect: folderSelect ? {
+          top: folderSelect.getBoundingClientRect().top,
+          height: folderSelect.getBoundingClientRect().height,
+          offsetTop: folderSelect.offsetTop
+        } : "null",
+        batchBtn: batchBtn ? {
+          top: batchBtn.getBoundingClientRect().top,
+          height: batchBtn.getBoundingClientRect().height,
+          offsetTop: batchBtn.offsetTop
+        } : "null",
+        folderBtn: folderBtn ? {
+          top: folderBtn.getBoundingClientRect().top,
+          height: folderBtn.getBoundingClientRect().height,
+          offsetTop: folderBtn.offsetTop
+        } : "null"
+      });
+      console.log("sortSelect computed:", sortSelect ? getComputedStyle(sortSelect).cssText.split(";").filter((s) => s.includes("height") || s.includes("padding") || s.includes("line-height")).join("; ") : "null");
+      console.log("batchBtn computed:", batchBtn ? getComputedStyle(batchBtn).cssText.split(";").filter((s) => s.includes("height") || s.includes("padding") || s.includes("display")).join("; ") : "null");
+      console.groupEnd();
+    }, 100);
     const cachedChats = cache.get("chats", character.avatar);
     if (cachedChats && cachedChats.length > 0 && cache.isValid("chats", character.avatar)) {
       renderChats(chatsList, cachedChats, character.avatar);
