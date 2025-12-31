@@ -26,6 +26,9 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
     // MutationObserver 참조 (cleanup용)
     let hamburgerObserver = null;
     
+    // CHAT_CHANGED cooldown 타이머 (모듈 스코프)
+    let chatChangedCooldownTimer = null;
+    
     // ============================================
     // 이벤트 핸들러 참조 저장 (cleanup용)
     // ============================================
@@ -94,8 +97,6 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         const { eventSource, eventTypes } = context;
         
         // CHAT_CHANGED cooldown 패턴 (마지막 이벤트 후 500ms 대기)
-        let chatChangedCooldownTimer = null;
-        
         const onChatChanged = () => {
             // 로비 안 열려있으면 캐시만 무효화
             if (!isLobbyOpen()) {
@@ -393,6 +394,15 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         
         if (container) container.style.display = 'none';
         if (fab) fab.style.display = 'flex';
+        
+        // 타이머 정리 (메모리 누수 방지)
+        if (chatChangedCooldownTimer) {
+            clearTimeout(chatChangedCooldownTimer);
+            chatChangedCooldownTimer = null;
+        }
+        
+        // 락 해제
+        store.setLobbyLocked(false);
         
         // 🧹 모든 interval 정리 (메모리 누수 방지)
         intervalManager.clearAll();

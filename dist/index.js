@@ -3768,6 +3768,7 @@ ${message}` : message;
   (function() {
     "use strict";
     let hamburgerObserver = null;
+    let chatChangedCooldownTimer = null;
     let eventHandlers = null;
     let eventsRegistered = false;
     async function init() {
@@ -3794,7 +3795,6 @@ ${message}` : message;
         return;
       }
       const { eventSource, eventTypes } = context;
-      let chatChangedCooldownTimer = null;
       const onChatChanged = () => {
         if (!isLobbyOpen()) {
           cache.invalidate("characters");
@@ -3981,6 +3981,11 @@ ${message}` : message;
       const fab = document.getElementById("chat-lobby-fab");
       if (container) container.style.display = "none";
       if (fab) fab.style.display = "flex";
+      if (chatChangedCooldownTimer) {
+        clearTimeout(chatChangedCooldownTimer);
+        chatChangedCooldownTimer = null;
+      }
+      store.setLobbyLocked(false);
       intervalManager.clearAll();
       const sidebarBtn = document.getElementById("st-chatlobby-sidebar-btn");
       if (sidebarBtn) {
