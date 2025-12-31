@@ -18,6 +18,34 @@ let touchStartX = 0;
 let touchEndX = 0;
 
 /**
+ * 봇카드 싱글톤 - 항상 존재 보장
+ */
+function ensureBotCard() {
+    let card = document.getElementById('calendar-bot-card');
+    
+    if (!card) {
+        card = document.createElement('div');
+        card.id = 'calendar-bot-card';
+        card.className = 'calendar-bot-card';
+        card.style.display = 'none';
+        card.innerHTML = `
+            <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
+            <div class="bot-card-gradient"></div>
+            <div class="bot-card-info">
+                <div class="bot-card-name" id="bot-card-name"></div>
+                <div class="bot-card-stats" id="bot-card-stats"></div>
+                <div class="bot-card-date" id="bot-card-date"></div>
+            </div>
+        `;
+        // documentElement(html)에 append - body transform 영향 완전 차단
+        document.documentElement.appendChild(card);
+        console.log('[Calendar] Bot card created and appended to documentElement');
+    }
+    
+    return card;
+}
+
+/**
  * 캘린더 뷰 열기
  */
 export async function openCalendarView() {
@@ -78,21 +106,8 @@ export async function openCalendarView() {
             `;
             document.body.appendChild(calendarOverlay);
             
-            // 봇카드는 body에 직접 append (transform 영향 차단)
-            const botCard = document.createElement('div');
-            botCard.id = 'calendar-bot-card';
-            botCard.className = 'calendar-bot-card';
-            botCard.style.display = 'none';
-            botCard.innerHTML = `
-                <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
-                <div class="bot-card-gradient"></div>
-                <div class="bot-card-info">
-                    <div class="bot-card-name" id="bot-card-name"></div>
-                    <div class="bot-card-stats" id="bot-card-stats"></div>
-                    <div class="bot-card-date" id="bot-card-date"></div>
-                </div>
-            `;
-            document.body.appendChild(botCard);
+            // 봇카드 싱글톤 보장 (이미 있으면 재사용)
+            ensureBotCard();
             
             // 이벤트 바인딩
             calendarOverlay.querySelector('#calendar-close').addEventListener('click', closeCalendarView);
@@ -494,16 +509,14 @@ function handleDateClick(e) {
 function showBotCard(date, snapshot) {
     console.log('[Calendar] showBotCard called:', date);
     
-    // body에 직접 append된 봇카드 참조
-    const card = document.getElementById('calendar-bot-card');
-    const avatarEl = document.getElementById('bot-card-avatar');
-    const nameEl = document.getElementById('bot-card-name');
-    const statsEl = document.getElementById('bot-card-stats');
-    const dateEl = document.getElementById('bot-card-date');
+    // 싱글톤으로 봇카드 보장
+    const card = ensureBotCard();
+    const avatarEl = card.querySelector('#bot-card-avatar');
+    const nameEl = card.querySelector('#bot-card-name');
+    const statsEl = card.querySelector('#bot-card-stats');
+    const dateEl = card.querySelector('#bot-card-date');
     
     console.log('[Calendar] card element:', !!card);
-    
-    if (!card) return;
     
     if (!snapshot.topChar) {
         hideBotCard();

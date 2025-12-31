@@ -3851,6 +3851,27 @@ ${message}` : message;
   var hoverTimeout = null;
   var touchStartX = 0;
   var touchEndX = 0;
+  function ensureBotCard() {
+    let card = document.getElementById("calendar-bot-card");
+    if (!card) {
+      card = document.createElement("div");
+      card.id = "calendar-bot-card";
+      card.className = "calendar-bot-card";
+      card.style.display = "none";
+      card.innerHTML = `
+            <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
+            <div class="bot-card-gradient"></div>
+            <div class="bot-card-info">
+                <div class="bot-card-name" id="bot-card-name"></div>
+                <div class="bot-card-stats" id="bot-card-stats"></div>
+                <div class="bot-card-date" id="bot-card-date"></div>
+            </div>
+        `;
+      document.documentElement.appendChild(card);
+      console.log("[Calendar] Bot card created and appended to documentElement");
+    }
+    return card;
+  }
   async function openCalendarView() {
     if (isCalculating) return;
     isCalculating = true;
@@ -3907,20 +3928,7 @@ ${message}` : message;
                 </div>
             `;
         document.body.appendChild(calendarOverlay);
-        const botCard = document.createElement("div");
-        botCard.id = "calendar-bot-card";
-        botCard.className = "calendar-bot-card";
-        botCard.style.display = "none";
-        botCard.innerHTML = `
-                <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
-                <div class="bot-card-gradient"></div>
-                <div class="bot-card-info">
-                    <div class="bot-card-name" id="bot-card-name"></div>
-                    <div class="bot-card-stats" id="bot-card-stats"></div>
-                    <div class="bot-card-date" id="bot-card-date"></div>
-                </div>
-            `;
-        document.body.appendChild(botCard);
+        ensureBotCard();
         calendarOverlay.querySelector("#calendar-close").addEventListener("click", closeCalendarView);
         calendarOverlay.querySelector("#calendar-prev").addEventListener("click", () => navigateMonth(-1));
         calendarOverlay.querySelector("#calendar-next").addEventListener("click", () => navigateMonth(1));
@@ -4189,13 +4197,12 @@ ${message}` : message;
   }
   function showBotCard(date, snapshot) {
     console.log("[Calendar] showBotCard called:", date);
-    const card = document.getElementById("calendar-bot-card");
-    const avatarEl = document.getElementById("bot-card-avatar");
-    const nameEl = document.getElementById("bot-card-name");
-    const statsEl = document.getElementById("bot-card-stats");
-    const dateEl = document.getElementById("bot-card-date");
+    const card = ensureBotCard();
+    const avatarEl = card.querySelector("#bot-card-avatar");
+    const nameEl = card.querySelector("#bot-card-name");
+    const statsEl = card.querySelector("#bot-card-stats");
+    const dateEl = card.querySelector("#bot-card-date");
     console.log("[Calendar] card element:", !!card);
-    if (!card) return;
     if (!snapshot.topChar) {
       hideBotCard();
       return;
