@@ -2120,8 +2120,27 @@
     #chat-lobby-search,
     #chat-lobby-tag-bar,
     #chat-lobby-characters {
-        padding-left: 20px;
-        padding-right: 20px;
+        padding-left: 15px;
+        padding-right: 15px;
+    }
+    
+    /* 모바일 검색 영역 - 세로 배치 또는 축소 */
+    #chat-lobby-search {
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 8px 15px;
+    }
+    
+    #chat-lobby-search input {
+        flex: 1;
+        min-width: 0; /* flex 축소 허용 */
+    }
+    
+    #chat-lobby-search select {
+        flex-shrink: 0;
+        max-width: 120px;
+        font-size: 11px;
+        padding: 8px 8px;
     }
     
     .persona-avatar {
@@ -2236,6 +2255,17 @@
     .header-actions button {
         padding: 8px 10px;
         font-size: 0.9em;
+    }
+    
+    /* 아주 작은 화면 검색 영역 */
+    #chat-lobby-search {
+        padding: 8px 12px;
+    }
+    
+    #chat-lobby-search select {
+        max-width: 100px;
+        padding: 6px 6px;
+        font-size: 10px;
     }
     
     .persona-avatar {
