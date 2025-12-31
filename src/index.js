@@ -669,6 +669,9 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
             case 'toggle-theme':
                 toggleTheme();
                 break;
+            case 'random-char':
+                handleRandomCharacter();
+                break;
         }
     }
     
@@ -743,6 +746,64 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         await renderCharacterGrid();
         
         showToast('새로고침 완료', 'success');
+    }
+    
+    /**
+     * 랜덤 캐릭터 선택 - 오늘은 누구랑 할까?
+     */
+    async function handleRandomCharacter() {
+        const characters = api.getCharacters();
+        
+        if (!characters || characters.length === 0) {
+            showToast('캐릭터가 없습니다', 'warning');
+            return;
+        }
+        
+        // 랜덤 인덱스 선택
+        const randomIndex = Math.floor(Math.random() * characters.length);
+        const randomChar = characters[randomIndex];
+        
+        // 캐릭터 카드 찾아서 클릭 효과
+        const cards = document.querySelectorAll('.lobby-char-card');
+        let targetCard = null;
+        
+        for (const card of cards) {
+            if (card.dataset.avatar === randomChar.avatar) {
+                targetCard = card;
+                break;
+            }
+        }
+        
+        // 스크롤 & 하이라이트 효과
+        if (targetCard) {
+            // 기존 하이라이트 제거
+            cards.forEach(c => c.classList.remove('random-highlight'));
+            
+            // 스크롤
+            targetCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            
+            // 하이라이트 애니메이션
+            targetCard.classList.add('random-highlight');
+            
+            // 잠시 후 클릭 시뮬레이션
+            setTimeout(() => {
+                targetCard.click();
+                targetCard.classList.remove('random-highlight');
+            }, 800);
+        } else {
+            // 카드가 보이지 않으면 직접 선택
+            const onSelect = store.onCharacterSelect;
+            if (onSelect) {
+                onSelect({
+                    index: randomIndex,
+                    avatar: randomChar.avatar,
+                    name: randomChar.name,
+                    avatarSrc: `/characters/${randomChar.avatar}`
+                });
+            }
+        }
+        
+        showToast(`🎲 "${randomChar.name}" 선택!`, 'info');
     }
     
     // ============================================

@@ -388,7 +388,7 @@
     cursor: pointer;
     font-size: 12px;
     margin-bottom: 0;
-    width: 80px;
+    width: 90px;
     height: 33.5px;
 }
 
@@ -556,6 +556,157 @@
 }
 
 /* ============================================
+   라이트 모드 추가 스타일 - 가시성 개선
+   ============================================ */
+
+/* 채팅 패널 */
+#chat-lobby-container.light-mode #chat-lobby-chats {
+    border-left: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+#chat-lobby-container.light-mode #chat-lobby-chats-header {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+#chat-lobby-container.light-mode #chat-lobby-chats-back:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* 필터 섹션 */
+#chat-lobby-container.light-mode #chat-lobby-filters {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+}
+
+#chat-lobby-container.light-mode .filters-row select {
+    background: rgba(0, 0, 0, 0.05) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%23333' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E") no-repeat right 6px center !important;
+    border-color: rgba(0, 0, 0, 0.15) !important;
+    color: var(--text-primary) !important;
+}
+
+#chat-lobby-container.light-mode .filters-row button {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+#chat-lobby-container.light-mode .filters-row button:hover {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+#chat-lobby-container.light-mode .lobby-char-tag {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* 채팅 아이템 */
+#chat-lobby-container.light-mode .lobby-chat-item {
+    border-color: rgba(0, 0, 0, 0.08);
+}
+
+#chat-lobby-container.light-mode .lobby-chat-item:hover {
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+#chat-lobby-container.light-mode .lobby-chat-item .chat-meta span {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+#chat-lobby-container.light-mode .chat-folder-tag {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* 배치 모드 툴바 */
+#chat-lobby-container.light-mode #chat-lobby-batch-toolbar {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* 폴더 모달 */
+#chat-lobby-container.light-mode ~ #chat-lobby-folder-modal .folder-modal-content {
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+#chat-lobby-container.light-mode ~ #chat-lobby-folder-modal .folder-modal-header {
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+#chat-lobby-container.light-mode ~ #chat-lobby-folder-modal .folder-add-row input {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+#chat-lobby-container.light-mode ~ #chat-lobby-folder-modal .folder-item {
+    background: rgba(0, 0, 0, 0.03);
+    border-color: rgba(0, 0, 0, 0.1);
+}
+
+/* 접기 버튼 */
+#chat-lobby-container.light-mode #chat-lobby-collapse-btn {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+/* 페르소나 삭제 버튼 */
+#chat-lobby-container.light-mode .persona-delete-btn {
+    background: #dc3545;
+}
+
+/* 빈 상태 */
+#chat-lobby-container.light-mode .lobby-empty-state {
+    color: var(--text-muted);
+}
+
+/* 새 채팅 버튼 (라이트 모드에서도 눈에 띄게) */
+#chat-lobby-container.light-mode #chat-lobby-new-chat {
+    background: #333333;
+    color: #ffffff;
+}
+
+#chat-lobby-container.light-mode #chat-lobby-new-chat:hover {
+    background: #1a1a1a;
+}
+
+/* 검색창 라이트 모드 */
+#chat-lobby-container.light-mode #chat-lobby-search select {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: rgba(0, 0, 0, 0.15);
+}
+
+#chat-lobby-container.light-mode #chat-lobby-search select option {
+    background: #ffffff;
+    color: #1a1a1a;
+}
+
+#chat-lobby-container.light-mode #chat-lobby-search input:focus {
+    background: rgba(0, 0, 0, 0.08);
+    border-color: #333333;
+}
+
+/* 스크롤바 라이트 모드 */
+#chat-lobby-container.light-mode #chat-lobby-characters::-webkit-scrollbar-thumb,
+#chat-lobby-container.light-mode #chat-lobby-chats-list::-webkit-scrollbar-thumb,
+#chat-lobby-container.light-mode #chat-lobby-persona-list::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.2);
+}
+
+#chat-lobby-container.light-mode #chat-lobby-characters,
+#chat-lobby-container.light-mode #chat-lobby-chats-list,
+#chat-lobby-container.light-mode #chat-lobby-persona-list {
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+/* 캐릭터 삭제 버튼 */
+#chat-lobby-container.light-mode #chat-lobby-delete-char {
+    border-color: rgba(220, 53, 69, 0.5);
+}
+
+/* 채팅 패널 필터 select option */
+#chat-lobby-container.light-mode .filters-row select option {
+    background: #ffffff;
+    color: #1a1a1a;
+}
+
+/* ============================================
    캐릭터 그리드 - 넷플릭스 Row 스타일
    ============================================ */
 #chat-lobby-characters {
@@ -567,6 +718,7 @@
     flex-wrap: wrap;
     gap: var(--card-gap);
     align-content: start;
+    justify-content: center; /* 중앙 정렬 */
     scrollbar-width: thin;
     scrollbar-color: var(--lobby-bg-hover) transparent;
     position: relative;
@@ -604,6 +756,27 @@
     transform: scale(var(--card-hover-scale));
     box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
     z-index: 10;
+}
+
+/* 랜덤 캐릭터 하이라이트 애니메이션 */
+.lobby-char-card.random-highlight {
+    animation: randomPulse 0.8s ease;
+    z-index: 20;
+}
+
+@keyframes randomPulse {
+    0% { 
+        transform: scale(1); 
+        box-shadow: 0 0 0 0 rgba(229, 9, 20, 0.7);
+    }
+    50% { 
+        transform: scale(1.15); 
+        box-shadow: 0 0 30px 10px rgba(229, 9, 20, 0.5);
+    }
+    100% { 
+        transform: scale(var(--card-hover-scale)); 
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4);
+    }
 }
 
 .lobby-char-avatar {
@@ -715,22 +888,14 @@
     max-width: 480px;
     background: var(--lobby-bg-light);
     border-left: 1px solid rgba(255, 255, 255, 0.1);
-    display: flex;
+    display: none; /* 기본값: 숨김 */
     flex-direction: column;
     flex-shrink: 0;
-    transform: translateX(0);
     transition: transform var(--transition-smooth);
 }
 
-#chat-lobby-chats:not(.visible) {
-    transform: translateX(100%);
-    position: absolute;
-    right: 0;
-    top: 0;
-    bottom: 0;
-}
-
 #chat-lobby-chats.visible {
+    display: flex; /* 보일 때만 표시 */
     transform: translateX(0);
     box-shadow: -10px 0 40px rgba(0, 0, 0, 0.5);
 }
@@ -908,13 +1073,13 @@
 }
 
 #chat-lobby-chat-sort {
-    width: 80px;
+    width: 90px;
 }
 
 #chat-lobby-folder-filter {
-    width: 120px;
-    min-width: 120px;
-    max-width: 120px;
+    width: 140px;
+    min-width: 140px;
+    max-width: 140px;
 }
 
 .filters-row button {
