@@ -2351,10 +2351,10 @@
     
     /* 닫기 버튼은 항상 헤더에 표시 */
     #chat-lobby-close {
-        position: absolute !important;
-        right: 15px;
-        top: 50%;
-        transform: translateY(-50%);
+        position: relative !important;
+        right: auto;
+        top: auto;
+        transform: none;
     }
     
     /* 액션 버튼들 작게 */
