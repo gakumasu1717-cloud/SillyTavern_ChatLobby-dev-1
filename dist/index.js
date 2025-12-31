@@ -4250,16 +4250,15 @@ ${message}` : message;
     const displayDate = new Date(date);
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     dateEl.textContent = `${monthNames[displayDate.getMonth()]} ${displayDate.getDate()}`;
-    const isMobile2 = window.innerWidth < 769;
-    const cardWidth = isMobile2 ? 200 : 260;
     Object.assign(card.style, {
       display: "flex",
       position: "fixed",
       bottom: "80px",
-      left: `calc(50vw - ${cardWidth / 2}px)`,
-      top: "auto",
-      transform: "none",
-      zIndex: "2147483647"
+      left: "50vw",
+      transform: "translateX(-50%)",
+      zIndex: "2147483647",
+      opacity: "1",
+      visibility: "visible"
     });
   }
   function hideBotCard() {

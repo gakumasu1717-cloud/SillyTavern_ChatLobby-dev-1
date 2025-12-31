@@ -582,19 +582,16 @@ function showBotCard(date, snapshot) {
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
     dateEl.textContent = `${monthNames[displayDate.getMonth()]} ${displayDate.getDate()}`;
     
-    // ST body overflow:hidden + transform 이슈 대응
-    // → fixed + vw 단위 + transform 없이 calc로 중앙 정렬
-    const isMobile = window.innerWidth < 769;
-    const cardWidth = isMobile ? 200 : 260;
-    
+    // ST 모바일 생존 패턴: bottom + vw + fixed (top 계산 금지)
     Object.assign(card.style, {
         display: 'flex',
         position: 'fixed',
         bottom: '80px',
-        left: `calc(50vw - ${cardWidth / 2}px)`,
-        top: 'auto',
-        transform: 'none',
-        zIndex: '2147483647'
+        left: '50vw',
+        transform: 'translateX(-50%)',
+        zIndex: '2147483647',
+        opacity: '1',
+        visibility: 'visible'
     });
 }
 
