@@ -3950,6 +3950,8 @@ ${message}` : message;
         isCalculating = false;
         return;
       }
+      const lobbyContainer = document.getElementById("chat-lobby-container");
+      if (lobbyContainer) lobbyContainer.style.display = "none";
       calendarOverlay.style.display = "flex";
       try {
         await saveTodaySnapshot();
@@ -3965,6 +3967,8 @@ ${message}` : message;
     if (calendarOverlay) {
       calendarOverlay.style.display = "none";
       hideBotCard();
+      const lobbyContainer = document.getElementById("chat-lobby-container");
+      if (lobbyContainer) lobbyContainer.style.display = "";
     }
   }
   function navigateMonth(delta) {

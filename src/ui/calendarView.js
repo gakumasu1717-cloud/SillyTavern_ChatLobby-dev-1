@@ -137,6 +137,10 @@ export async function openCalendarView() {
         }
         
         // 이후 접근: 정상 동작
+        // 로비 컨테이너 숨기기 (모바일에서 완전 풀스크린용)
+        const lobbyContainer = document.getElementById('chat-lobby-container');
+        if (lobbyContainer) lobbyContainer.style.display = 'none';
+        
         calendarOverlay.style.display = 'flex';
         
         try {
@@ -158,6 +162,10 @@ export function closeCalendarView() {
     if (calendarOverlay) {
         calendarOverlay.style.display = 'none';
         hideBotCard();
+        
+        // 로비 컨테이너 복원
+        const lobbyContainer = document.getElementById('chat-lobby-container');
+        if (lobbyContainer) lobbyContainer.style.display = '';
     }
 }
 
