@@ -2353,6 +2353,7 @@ ${message}` : message;
     const chatCountText = hasCount ? cachedChatCount > 0 ? `${cachedChatCount}\uAC1C \uCC44\uD305` : "\uCC44\uD305 \uC5C6\uC74C" : "\uB85C\uB529 \uC911...";
     const messageCountText = hasMessageCount ? cachedMessageCount > 0 ? `${cachedMessageCount}\uAC1C \uBA54\uC2DC\uC9C0` : "" : "";
     const favBtn = `<button class="char-fav-btn" data-char-avatar="${safeAvatar}" title="\uC990\uACA8\uCC3E\uAE30 \uD1A0\uAE00">${isFav ? "\u2B50" : "\u2606"}</button>`;
+    const chatManageBtn = `<button class="char-manage-btn" data-char-avatar="${safeAvatar}" data-char-index="${index}" title="\uCC44\uD305 \uD30C\uC77C \uAD00\uB9AC">\u{1F4CB}</button>`;
     return `
     <div class="lobby-char-card ${isFav ? "is-char-fav" : ""}" 
          data-char-index="${index}" 
@@ -2360,6 +2361,7 @@ ${message}` : message;
          data-is-fav="${isFav}"
          draggable="false">
         ${favBtn}
+        ${chatManageBtn}
         <img class="lobby-char-avatar" 
              src="${avatarUrl}" 
              alt="${escapeHtml(name)}" 
@@ -2484,7 +2486,9 @@ ${message}` : message;
       const charNameEl = card.querySelector(".char-name-text");
       const charName = charNameEl?.textContent || card.querySelector(".lobby-char-name")?.textContent || "Unknown";
       const charAvatar = card.dataset.charAvatar;
+      const charIndex = card.dataset.charIndex;
       const favBtn = card.querySelector(".char-fav-btn");
+      const manageBtn = card.querySelector(".char-manage-btn");
       if (favBtn) {
         createTouchClickHandler(favBtn, (e) => {
           e.stopPropagation();
@@ -2494,6 +2498,32 @@ ${message}` : message;
           card.classList.toggle("is-char-fav", newFavState);
           showToast(newFavState ? "\uC990\uACA8\uCC3E\uAE30\uC5D0 \uCD94\uAC00\uB428" : "\uC990\uACA8\uCC3E\uAE30\uC5D0\uC11C \uC81C\uAC70\uB428", "success");
         }, { preventDefault: true, stopPropagation: true, debugName: `char-fav-${index}` });
+      }
+      if (manageBtn) {
+        createTouchClickHandler(manageBtn, async (e) => {
+          e.stopPropagation();
+          try {
+            await api.selectCharacterById(charIndex);
+            await new Promise((r) => setTimeout(r, 300));
+            const selectChatBtn = document.getElementById("option_select_chat");
+            if (selectChatBtn) {
+              selectChatBtn.click();
+              closeChatPanel();
+              const lobbyContainer = document.getElementById("chat-lobby-container");
+              const fab = document.getElementById("chat-lobby-fab");
+              const overlay = document.getElementById("chat-lobby-overlay");
+              if (lobbyContainer) lobbyContainer.style.display = "none";
+              if (overlay) overlay.style.display = "none";
+              if (fab) fab.style.display = "flex";
+              store.setLobbyOpen(false);
+            } else {
+              showToast("\uCC44\uD305 \uAD00\uB9AC\uB97C \uC5F4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4", "warning");
+            }
+          } catch (err) {
+            console.error("[CharGrid] Failed to open chat manager:", err);
+            showToast("\uCC44\uD305 \uAD00\uB9AC \uC5F4\uAE30 \uC2E4\uD328", "error");
+          }
+        }, { preventDefault: true, stopPropagation: true, debugName: `char-manage-${index}` });
       }
       createTouchClickHandler(card, async () => {
         if (store.isLobbyLocked) {

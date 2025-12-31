@@ -200,6 +200,9 @@ function renderCharacterCard(char, index) {
     // 즐겨찾기 버튼
     const favBtn = `<button class="char-fav-btn" data-char-avatar="${safeAvatar}" title="즐겨찾기 토글">${isFav ? '⭐' : '☆'}</button>`;
     
+    // 채팅 관리 버튼
+    const chatManageBtn = `<button class="char-manage-btn" data-char-avatar="${safeAvatar}" data-char-index="${index}" title="채팅 파일 관리">📋</button>`;
+    
     return `
     <div class="lobby-char-card ${isFav ? 'is-char-fav' : ''}" 
          data-char-index="${index}" 
@@ -207,6 +210,7 @@ function renderCharacterCard(char, index) {
          data-is-fav="${isFav}"
          draggable="false">
         ${favBtn}
+        ${chatManageBtn}
         <img class="lobby-char-avatar" 
              src="${avatarUrl}" 
              alt="${escapeHtml(name)}" 
@@ -389,7 +393,9 @@ function bindCharacterEvents(container) {
         const charNameEl = card.querySelector('.char-name-text');
         const charName = charNameEl?.textContent || card.querySelector('.lobby-char-name')?.textContent || 'Unknown';
         const charAvatar = card.dataset.charAvatar;
+        const charIndex = card.dataset.charIndex;
         const favBtn = card.querySelector('.char-fav-btn');
+        const manageBtn = card.querySelector('.char-manage-btn');
         
         // 즐겨찾기 버튼 이벤트 - 로컬 스토리지만 사용 (API 호출 없음)
         if (favBtn) {
@@ -407,6 +413,42 @@ function bindCharacterEvents(container) {
                 showToast(newFavState ? '즐겨찾기에 추가됨' : '즐겨찾기에서 제거됨', 'success');
                 
             }, { preventDefault: true, stopPropagation: true, debugName: `char-fav-${index}` });
+        }
+        
+        // 채팅 관리 버튼 이벤트 - SillyTavern 채팅 관리 드로어 열기
+        if (manageBtn) {
+            createTouchClickHandler(manageBtn, async (e) => {
+                e.stopPropagation();
+                
+                try {
+                    // 먼저 캐릭터 선택
+                    await api.selectCharacterById(charIndex);
+                    
+                    // 잠시 대기 후 채팅 관리 버튼 클릭
+                    await new Promise(r => setTimeout(r, 300));
+                    
+                    const selectChatBtn = document.getElementById('option_select_chat');
+                    if (selectChatBtn) {
+                        selectChatBtn.click();
+                        
+                        // 로비 닫기
+                        closeChatPanel();
+                        const lobbyContainer = document.getElementById('chat-lobby-container');
+                        const fab = document.getElementById('chat-lobby-fab');
+                        const overlay = document.getElementById('chat-lobby-overlay');
+                        if (lobbyContainer) lobbyContainer.style.display = 'none';
+                        if (overlay) overlay.style.display = 'none';
+                        if (fab) fab.style.display = 'flex';
+                        store.setLobbyOpen(false);
+                    } else {
+                        showToast('채팅 관리를 열 수 없습니다', 'warning');
+                    }
+                } catch (err) {
+                    console.error('[CharGrid] Failed to open chat manager:', err);
+                    showToast('채팅 관리 열기 실패', 'error');
+                }
+                
+            }, { preventDefault: true, stopPropagation: true, debugName: `char-manage-${index}` });
         }
         
         // 캐릭터 카드 클릭 (선택) - 중복 클릭 방지 (전역 플래그)
