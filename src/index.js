@@ -93,11 +93,21 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         
         const { eventSource, eventTypes } = context;
         
-        // CHAT_CHANGED debounce함수 (연속 호출 방지)
+        // CHAT_CHANGED 핸들러 - UI 락 + 캐시 무효화
         const debouncedChatChanged = debounce(() => {
+            // 로비 열려있으면 UI 락 (상호작용 차단)
+            if (isLobbyOpen()) {
+                store.setLobbyLocked(true);
+            }
+            
             cache.invalidate('characters');
             cache.invalidate('chats');
-        }, 300);
+            
+            // 200ms 후 락 해제
+            setTimeout(() => {
+                store.setLobbyLocked(false);
+            }, 200);
+        }, 100);  // 100ms debounce (빠른 연속 이벤트 병합)
         
         // 핸들러 함수들을 별도로 정의 (off 호출 가능하도록)
         eventHandlers = {

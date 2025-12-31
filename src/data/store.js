@@ -37,6 +37,7 @@ class Store {
             batchModeActive: false,
             isProcessingPersona: false,
             isLobbyOpen: false,
+            isLobbyLocked: false,  // UI 잠금 (상호작용 차단)
             searchTerm: '',
             selectedTag: null,
             tagBarExpanded: false,
@@ -66,6 +67,10 @@ class Store {
     
     get isLobbyOpen() {
         return this._state.isLobbyOpen;
+    }
+    
+    get isLobbyLocked() {
+        return this._state.isLobbyLocked;
     }
     
     get searchTerm() {
@@ -111,6 +116,10 @@ class Store {
     
     setLobbyOpen(open) {
         this._state.isLobbyOpen = open;
+    }
+    
+    setLobbyLocked(locked) {
+        this._state.isLobbyLocked = locked;
     }
     
     setSearchTerm(term) {

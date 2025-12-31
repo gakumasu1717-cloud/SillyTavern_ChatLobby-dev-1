@@ -812,6 +812,8 @@ ${message}` : message;
         batchModeActive: false,
         isProcessingPersona: false,
         isLobbyOpen: false,
+        isLobbyLocked: false,
+        // UI 잠금 (상호작용 차단)
         searchTerm: "",
         selectedTag: null,
         tagBarExpanded: false,
@@ -836,6 +838,9 @@ ${message}` : message;
     }
     get isLobbyOpen() {
       return this._state.isLobbyOpen;
+    }
+    get isLobbyLocked() {
+      return this._state.isLobbyLocked;
     }
     get searchTerm() {
       return this._state.searchTerm;
@@ -870,6 +875,9 @@ ${message}` : message;
     }
     setLobbyOpen(open) {
       this._state.isLobbyOpen = open;
+    }
+    setLobbyLocked(locked) {
+      this._state.isLobbyLocked = locked;
     }
     setSearchTerm(term) {
       this._state.searchTerm = term;
@@ -2486,6 +2494,9 @@ ${message}` : message;
         }, { preventDefault: true, stopPropagation: true, debugName: `char-fav-${index}` });
       }
       createTouchClickHandler(card, async () => {
+        if (store.isLobbyLocked) {
+          return;
+        }
         if (isSelectingCharacter || isRendering) {
           return;
         }
@@ -3782,9 +3793,15 @@ ${message}` : message;
       }
       const { eventSource, eventTypes } = context;
       const debouncedChatChanged = debounce(() => {
+        if (isLobbyOpen()) {
+          store.setLobbyLocked(true);
+        }
         cache.invalidate("characters");
         cache.invalidate("chats");
-      }, 300);
+        setTimeout(() => {
+          store.setLobbyLocked(false);
+        }, 200);
+      }, 100);
       eventHandlers = {
         onCharacterDeleted: () => {
           cache.invalidate("characters");

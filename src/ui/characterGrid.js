@@ -409,6 +409,11 @@ function bindCharacterEvents(container) {
         
         // 캐릭터 카드 클릭 (선택) - 중복 클릭 방지 (전역 플래그)
         createTouchClickHandler(card, async () => {
+            // 로비 락 상태면 클릭 차단 (CHAT_CHANGED 처리 중)
+            if (store.isLobbyLocked) {
+                return;
+            }
+            
             // 이미 처리 중이거나 렌더링 중이면 무시
             if (isSelectingCharacter || isRendering) {
                 return;
