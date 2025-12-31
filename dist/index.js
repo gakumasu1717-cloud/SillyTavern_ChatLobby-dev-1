@@ -1339,6 +1339,7 @@ ${message}` : message;
                 <div class="header-actions">
                     <button id="chat-lobby-theme-toggle" data-action="toggle-theme" title="\uD14C\uB9C8 \uC804\uD658">${savedTheme === "light" ? "\u{1F319}" : "\u2600\uFE0F"}</button>
                     <button id="chat-lobby-stats" data-action="open-stats" title="Wrapped \uD1B5\uACC4">\u{1F4CA}</button>
+                    <button id="chat-lobby-random-char" data-action="random-char" title="\uB79C\uB364 \uCE90\uB9AD\uD130">\u{1F3B2}</button>
                     <button id="chat-lobby-import-char" data-action="import-char" title="\uCE90\uB9AD\uD130 \uAC00\uC838\uC624\uAE30">\u{1F4E5}</button>
                     <button id="chat-lobby-refresh" data-action="refresh" title="\uC0C8\uB85C\uACE0\uCE68">\u{1F504}</button>
                     <button id="chat-lobby-add-persona" data-action="add-persona" title="\uD398\uB974\uC18C\uB098 \uCD94\uAC00">\u{1F464}</button>
@@ -4158,6 +4159,9 @@ ${message}` : message;
         case "toggle-theme":
           toggleTheme();
           break;
+        case "random-char":
+          handleRandomCharacter();
+          break;
       }
     }
     function handleKeydown(e) {
@@ -4200,6 +4204,40 @@ ${message}` : message;
       await renderPersonaBar();
       await renderCharacterGrid();
       showToast("\uC0C8\uB85C\uACE0\uCE68 \uC644\uB8CC", "success");
+    }
+    async function handleRandomCharacter() {
+      const characters = api.getCharacters();
+      if (!characters || characters.length === 0) {
+        showToast("\uCE90\uB9AD\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4", "warning");
+        return;
+      }
+      const randomIndex = Math.floor(Math.random() * characters.length);
+      const randomChar = characters[randomIndex];
+      const cards = document.querySelectorAll(".lobby-char-card");
+      let targetCard = null;
+      for (const card of cards) {
+        if (card.dataset.avatar === randomChar.avatar) {
+          targetCard = card;
+          break;
+        }
+      }
+      if (targetCard) {
+        targetCard.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => {
+          targetCard.click();
+        }, 300);
+      } else {
+        const onSelect = store.onCharacterSelect;
+        if (onSelect) {
+          onSelect({
+            index: randomIndex,
+            avatar: randomChar.avatar,
+            name: randomChar.name,
+            avatarSrc: `/characters/${randomChar.avatar}`
+          });
+        }
+      }
+      showToast(`\u{1F3B2} "${randomChar.name}" \uC120\uD0DD!`, "info");
     }
     function handleImportCharacter() {
       const importBtn = document.getElementById("character_import_button");
