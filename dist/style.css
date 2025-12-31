@@ -2649,13 +2649,12 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 
 .calendar-fullscreen {
     width: 100%;
+    min-width: 80vw;
     height: 100%;
     display: flex;
     flex-direction: column;
     padding: 16px;
     box-sizing: border-box;
-    max-width: 600px;
-    margin: 0 auto;
     background: #000;
 }
 
@@ -2758,23 +2757,25 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     overflow: auto;
     -webkit-overflow-scrolling: touch;
     background: #000;
+    min-height: 0;
 }
 
 /* 날짜 그리드 - 7열 흰 선 */
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    border-top: 1px solid rgba(255, 255, 255, 0.3);
-    border-left: 1px solid rgba(255, 255, 255, 0.3);
+    border-top: 1px solid rgba(255, 255, 255, 0.6);
+    border-left: 1px solid rgba(255, 255, 255, 0.6);
 }
 
 /* 각 날짜 셀 - 라운드 없음, 흰 선 */
 .cal-card {
     position: relative;
     aspect-ratio: 2 / 3;
+    min-width: 80px;
     background: #000;
-    border-right: 1px solid rgba(255, 255, 255, 0.3);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+    border-right: 1px solid rgba(255, 255, 255, 0.6);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.6);
     overflow: hidden;
 }
 
@@ -2852,10 +2853,26 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     color: rgba(255, 255, 255, 0.4);
 }
 
+/* 모바일 - 뷰포트보다 크게 스크롤 */
+@media (max-width: 768px) {
+    .calendar-fullscreen {
+        min-width: 560px; /* 80px * 7 = 560px, 뷰포트보다 클 수 있음 */
+    }
+    
+    .calendar-main {
+        overflow-x: auto;
+        overflow-y: auto;
+    }
+    
+    .cal-card {
+        min-width: 70px;
+    }
+}
+
 /* PC에서 카드 더 크게 */
 @media (min-width: 769px) {
-    .calendar-grid {
-        gap: 8px;
+    .cal-card {
+        min-width: 100px;
     }
     
     .cal-card-info {
@@ -2863,15 +2880,15 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     }
     
     .cal-card-day {
-        font-size: 0.8em;
-    }
-    
-    .cal-card-name {
         font-size: 0.9em;
     }
     
+    .cal-card-name {
+        font-size: 1em;
+    }
+    
     .cal-card-count {
-        font-size: 0.75em;
+        font-size: 0.8em;
     }
 }
 
