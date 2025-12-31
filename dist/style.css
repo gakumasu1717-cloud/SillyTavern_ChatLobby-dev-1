@@ -828,9 +828,9 @@
 #chat-lobby-filters {
     display: flex;
     flex-direction: column;
-    padding: 10px 16px;
+    padding: 6px 15px;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    gap: 12px;
+    gap: 8px;
     background: var(--lobby-bg-light);
 }
 
