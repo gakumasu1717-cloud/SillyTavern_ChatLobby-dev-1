@@ -3797,6 +3797,14 @@ ${message}` : message;
     if (!prev) return null;
     return today.total - prev.total;
   }
+  function clearAllSnapshots() {
+    try {
+      _snapshotsCache = null;
+      localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+      console.error("[Calendar] Failed to clear snapshots:", e);
+    }
+  }
 
   // src/ui/calendarView.js
   var calendarOverlay = null;
@@ -3804,6 +3812,7 @@ ${message}` : message;
   var currentMonth = (/* @__PURE__ */ new Date()).getMonth();
   var selectedDateInfo = null;
   var isCalculating = false;
+  var hoverTimeout = null;
   async function openCalendarView() {
     if (isCalculating) return;
     isCalculating = true;
@@ -3815,69 +3824,77 @@ ${message}` : message;
                 <div class="calendar-fullscreen">
                     <div class="calendar-header">
                         <button class="calendar-close-btn" id="calendar-close">\u2190</button>
-                        <h2>Chat Calendar</h2>
-                        <button class="calendar-debug-btn" id="calendar-debug">Debug</button>
+                        <div class="calendar-title-area">
+                            <span class="calendar-year">${THIS_YEAR2}</span>
+                            <span class="calendar-month" id="calendar-title"></span>
+                        </div>
+                        <button class="calendar-debug-btn" id="calendar-debug">DATA</button>
                     </div>
                     
                     <div class="calendar-main">
                         <div class="calendar-nav">
-                            <button class="cal-nav-btn" id="calendar-prev">\u25C0</button>
-                            <span class="cal-month-title" id="calendar-title"></span>
-                            <button class="cal-nav-btn" id="calendar-next">\u25B6</button>
+                            <button class="cal-nav-btn" id="calendar-prev">\u2039</button>
+                            <button class="cal-nav-btn" id="calendar-next">\u203A</button>
                         </div>
                         
-                        <div class="calendar-weekdays">
-                            <span class="sun">SUN</span>
-                            <span>MON</span>
-                            <span>TUE</span>
-                            <span>WED</span>
-                            <span>THU</span>
-                            <span>FRI</span>
-                            <span class="sat">SAT</span>
+                        <div class="calendar-grid-wrapper">
+                            <div class="calendar-weekdays">
+                                <span class="sun">S</span>
+                                <span>M</span>
+                                <span>T</span>
+                                <span>W</span>
+                                <span>T</span>
+                                <span>F</span>
+                                <span class="sat">S</span>
+                            </div>
+                            
+                            <div class="calendar-grid" id="calendar-grid"></div>
                         </div>
-                        
-                        <div class="calendar-grid" id="calendar-grid"></div>
                     </div>
                     
-                    <!-- \uC120\uD0DD\uB41C \uB0A0\uC9DC \uBD07\uCE74\uB4DC (PC\uC6A9 \uD06C\uAC8C) -->
-                    <div class="calendar-detail-card" id="calendar-detail" style="display: none;">
-                        <div class="detail-card-inner">
-                            <img class="detail-card-avatar" id="detail-avatar" src="" alt="">
-                            <div class="detail-card-overlay">
-                                <div class="detail-card-name" id="detail-name"></div>
-                                <div class="detail-card-stats" id="detail-stats"></div>
-                                <div class="detail-card-date" id="detail-date"></div>
-                            </div>
+                    <!-- \uBD07\uCE74\uB4DC (\uB137\uD50C\uB9AD\uC2A4 \uC2A4\uD0C0\uC77C) -->
+                    <div class="calendar-bot-card" id="calendar-bot-card" style="display: none;">
+                        <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
+                        <div class="bot-card-gradient"></div>
+                        <div class="bot-card-info">
+                            <div class="bot-card-name" id="bot-card-name"></div>
+                            <div class="bot-card-stats" id="bot-card-stats"></div>
+                            <div class="bot-card-date" id="bot-card-date"></div>
                         </div>
                     </div>
                     
                     <div class="calendar-footer" id="calendar-footer"></div>
                 </div>
                 
-                <!-- \uB514\uBC84\uADF8 \uBAA8\uB2EC -->
+                <!-- \uB514\uBC84\uADF8/\uC0AD\uC81C \uBAA8\uB2EC -->
                 <div class="calendar-debug-modal" id="calendar-debug-modal" style="display: none;">
                     <div class="debug-modal-header">
                         <h3>Snapshot Data</h3>
-                        <button class="debug-modal-close" id="debug-modal-close">\xD7</button>
+                        <div class="debug-modal-actions">
+                            <button class="debug-clear-btn" id="debug-clear-all">Clear All</button>
+                            <button class="debug-modal-close" id="debug-modal-close">\xD7</button>
+                        </div>
                     </div>
-                    <pre class="debug-modal-content" id="debug-modal-content"></pre>
+                    <div class="debug-modal-body">
+                        <pre class="debug-modal-content" id="debug-modal-content"></pre>
+                    </div>
                 </div>
             `;
         document.body.appendChild(calendarOverlay);
         calendarOverlay.querySelector("#calendar-close").addEventListener("click", closeCalendarView);
         calendarOverlay.querySelector("#calendar-prev").addEventListener("click", () => navigateMonth(-1));
         calendarOverlay.querySelector("#calendar-next").addEventListener("click", () => navigateMonth(1));
-        calendarOverlay.addEventListener("click", (e) => {
-          if (e.target === calendarOverlay) closeCalendarView();
-        });
         calendarOverlay.querySelector("#calendar-debug").addEventListener("click", showDebugModal);
         calendarOverlay.querySelector("#debug-modal-close").addEventListener("click", hideDebugModal);
+        calendarOverlay.querySelector("#debug-clear-all").addEventListener("click", handleClearAll);
         const grid = calendarOverlay.querySelector("#calendar-grid");
         grid.addEventListener("click", handleDateClick);
-        bindHoverEvents(grid);
+        grid.addEventListener("mouseover", handleMouseOver);
+        grid.addEventListener("mouseout", handleMouseOut);
       }
       calendarOverlay.style.display = "flex";
       selectedDateInfo = null;
+      hideBotCard();
       await saveTodaySnapshot();
       renderCalendar();
     } finally {
@@ -3887,15 +3904,15 @@ ${message}` : message;
   function closeCalendarView() {
     if (calendarOverlay) {
       calendarOverlay.style.display = "none";
+      hideBotCard();
     }
   }
   function navigateMonth(delta) {
     const newMonth = currentMonth + delta;
-    if (newMonth < 0 || newMonth > 11) {
-      return;
-    }
+    if (newMonth < 0 || newMonth > 11) return;
     currentMonth = newMonth;
     selectedDateInfo = null;
+    hideBotCard();
     renderCalendar();
   }
   async function saveTodaySnapshot() {
@@ -3905,10 +3922,7 @@ ${message}` : message;
       if (!characters) {
         characters = await api.fetchCharacters();
       }
-      if (!characters || !Array.isArray(characters)) {
-        console.warn("[Calendar] No characters found");
-        return;
-      }
+      if (!characters || !Array.isArray(characters)) return;
       const BATCH_SIZE = 5;
       const rankings = [];
       for (let i = 0; i < characters.length; i += BATCH_SIZE) {
@@ -3925,7 +3939,7 @@ ${message}` : message;
             }
             const chatCount = Array.isArray(chats) ? chats.length : 0;
             const messageCount = Array.isArray(chats) ? chats.reduce((sum, chat) => sum + (chat.chat_items || 0), 0) : 0;
-            return { name: char.name, avatar: char.avatar, chatCount, messageCount };
+            return { avatar: char.avatar, chatCount, messageCount };
           })
         );
         rankings.push(...batchResults);
@@ -3935,17 +3949,16 @@ ${message}` : message;
       const topChar = rankings[0]?.avatar || "";
       saveSnapshot(today, totalChats, topChar);
     } catch (e) {
-      console.error("[Calendar] Failed to save today snapshot:", e);
+      console.error("[Calendar] Failed to save snapshot:", e);
     }
   }
   function renderCalendar() {
     const title = calendarOverlay.querySelector("#calendar-title");
     const grid = calendarOverlay.querySelector("#calendar-grid");
     const footer = calendarOverlay.querySelector("#calendar-footer");
-    const detail = calendarOverlay.querySelector("#calendar-detail");
     const prevBtn = calendarOverlay.querySelector("#calendar-prev");
     const nextBtn = calendarOverlay.querySelector("#calendar-next");
-    const monthNames = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
+    const monthNames = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"];
     title.textContent = monthNames[currentMonth];
     prevBtn.disabled = currentMonth === 0;
     nextBtn.disabled = currentMonth === 11;
@@ -3962,45 +3975,44 @@ ${message}` : message;
       const snapshot = snapshots[date];
       const isToday = date === today;
       const hasData = !!snapshot;
-      let content = "";
+      let avatarHtml = "";
       if (hasData && snapshot.topChar) {
         const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
-        content = `<img class="day-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'; this.parentElement.querySelector('.day-no-data')?.style.display='block';">`;
-      }
-      if (!hasData) {
-        content = '<span class="day-no-data">-</span>';
+        avatarHtml = `<img class="day-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">`;
       }
       html += `
             <div class="calendar-day ${isToday ? "today" : ""} ${hasData ? "has-data" : ""}" data-date="${date}">
+                ${avatarHtml}
                 <span class="day-number">${day}</span>
-                ${content}
             </div>
         `;
     }
     grid.innerHTML = html;
-    detail.style.display = selectedDateInfo ? "flex" : "none";
-    if (selectedDateInfo) {
-      showDateDetail(selectedDateInfo);
-    }
     const totalDays = Object.keys(snapshots).length;
-    footer.textContent = `${THIS_YEAR2} \u2022 ${totalDays} days recorded`;
+    footer.textContent = `${totalDays} days recorded`;
   }
-  function bindHoverEvents(grid) {
-    grid.addEventListener("mouseenter", (e) => {
-      const dayEl = e.target.closest(".calendar-day");
-      if (dayEl && !dayEl.classList.contains("empty") && dayEl.dataset.date) {
-        const snapshot = getSnapshot(dayEl.dataset.date);
-        if (snapshot) {
-          showDateDetail(dayEl.dataset.date);
-        }
+  function handleMouseOver(e) {
+    const dayEl = e.target.closest(".calendar-day");
+    if (!dayEl || dayEl.classList.contains("empty")) return;
+    if (hoverTimeout) clearTimeout(hoverTimeout);
+    hoverTimeout = setTimeout(() => {
+      const date = dayEl.dataset.date;
+      const snapshot = getSnapshot(date);
+      if (snapshot && snapshot.topChar) {
+        showBotCard(date, snapshot);
       }
-    }, true);
-    grid.addEventListener("mouseleave", (e) => {
-      const dayEl = e.target.closest(".calendar-day");
-      if (dayEl && !selectedDateInfo) {
-        calendarOverlay.querySelector("#calendar-detail").style.display = "none";
-      }
-    }, true);
+    }, 150);
+  }
+  function handleMouseOut(e) {
+    const dayEl = e.target.closest(".calendar-day");
+    if (!dayEl) return;
+    if (hoverTimeout) {
+      clearTimeout(hoverTimeout);
+      hoverTimeout = null;
+    }
+    if (!selectedDateInfo) {
+      hideBotCard();
+    }
   }
   function handleDateClick(e) {
     const dayEl = e.target.closest(".calendar-day");
@@ -4009,25 +4021,25 @@ ${message}` : message;
     const snapshot = getSnapshot(date);
     if (!snapshot) {
       selectedDateInfo = null;
-      calendarOverlay.querySelector("#calendar-detail").style.display = "none";
+      hideBotCard();
       return;
     }
     if (selectedDateInfo === date) {
       selectedDateInfo = null;
-      calendarOverlay.querySelector("#calendar-detail").style.display = "none";
+      hideBotCard();
       return;
     }
     selectedDateInfo = date;
-    showDateDetail(date);
+    showBotCard(date, snapshot);
   }
-  function showDateDetail(date) {
-    const detail = calendarOverlay.querySelector("#calendar-detail");
-    const avatarEl = calendarOverlay.querySelector("#detail-avatar");
-    const nameEl = calendarOverlay.querySelector("#detail-name");
-    const statsEl = calendarOverlay.querySelector("#detail-stats");
-    const snapshot = getSnapshot(date);
-    if (!snapshot || !snapshot.topChar) {
-      detail.style.display = "none";
+  function showBotCard(date, snapshot) {
+    const card = calendarOverlay.querySelector("#calendar-bot-card");
+    const avatarEl = calendarOverlay.querySelector("#bot-card-avatar");
+    const nameEl = calendarOverlay.querySelector("#bot-card-name");
+    const statsEl = calendarOverlay.querySelector("#bot-card-stats");
+    const dateEl = calendarOverlay.querySelector("#bot-card-date");
+    if (!snapshot.topChar) {
+      hideBotCard();
       return;
     }
     const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
@@ -4039,22 +4051,20 @@ ${message}` : message;
     nameEl.textContent = charName;
     const increase = getIncrease(date);
     if (increase !== null) {
-      if (increase >= 0) {
-        statsEl.textContent = `+${increase} chats`;
-        statsEl.className = "detail-card-stats";
-      } else {
-        statsEl.textContent = `${increase} chats`;
-        statsEl.className = "detail-card-stats negative";
-      }
+      statsEl.textContent = increase >= 0 ? `+${increase} chats` : `${increase} chats`;
+      statsEl.className = increase >= 0 ? "bot-card-stats positive" : "bot-card-stats negative";
     } else {
       statsEl.textContent = `${snapshot.total} chats`;
-      statsEl.className = "detail-card-stats";
+      statsEl.className = "bot-card-stats";
     }
-    const dateEl = calendarOverlay.querySelector("#detail-date");
     const dateObj = new Date(date);
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     dateEl.textContent = `${monthNames[dateObj.getMonth()]} ${dateObj.getDate()}`;
-    detail.style.display = "flex";
+    card.style.display = "flex";
+  }
+  function hideBotCard() {
+    const card = calendarOverlay?.querySelector("#calendar-bot-card");
+    if (card) card.style.display = "none";
   }
   function showDebugModal() {
     const modal = calendarOverlay.querySelector("#calendar-debug-modal");
@@ -4065,6 +4075,13 @@ ${message}` : message;
   }
   function hideDebugModal() {
     calendarOverlay.querySelector("#calendar-debug-modal").style.display = "none";
+  }
+  function handleClearAll() {
+    if (confirm("Delete all snapshot data?")) {
+      clearAllSnapshots();
+      hideDebugModal();
+      renderCalendar();
+    }
   }
 
   // src/utils/intervalManager.js

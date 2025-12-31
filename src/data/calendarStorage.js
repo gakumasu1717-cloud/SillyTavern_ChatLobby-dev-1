@@ -105,3 +105,30 @@ export function getIncrease(date) {
     
     return today.total - prev.total;
 }
+
+/**
+ * 특정 날짜 스냅샷 삭제
+ * @param {string} date - YYYY-MM-DD 형식
+ */
+export function deleteSnapshot(date) {
+    try {
+        _snapshotsCache = null;
+        const snapshots = loadSnapshots(true);
+        delete snapshots[date];
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ snapshots }));
+    } catch (e) {
+        console.error('[Calendar] Failed to delete snapshot:', e);
+    }
+}
+
+/**
+ * 전체 스냅샷 삭제
+ */
+export function clearAllSnapshots() {
+    try {
+        _snapshotsCache = null;
+        localStorage.removeItem(STORAGE_KEY);
+    } catch (e) {
+        console.error('[Calendar] Failed to clear snapshots:', e);
+    }
+}

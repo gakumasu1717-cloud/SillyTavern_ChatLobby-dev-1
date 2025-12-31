@@ -2629,7 +2629,7 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 }
 
 /* ============================================
-   캘린더 뷰 - Netflix Black & Red 테마
+   캘린더 뷰 - iOS Modern Grid Style
    ============================================ */
 #calendar-overlay {
     position: fixed;
@@ -2637,12 +2637,11 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     left: 0;
     right: 0;
     bottom: 0;
-    background: #141414;
+    background: #000;
     display: none;
-    align-items: center;
+    align-items: flex-start;
     justify-content: center;
     z-index: 80000;
-    flex-direction: column;
 }
 
 .calendar-fullscreen {
@@ -2650,17 +2649,19 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 20px;
+    padding: 16px;
     box-sizing: border-box;
-    max-width: 500px;
+    max-width: 600px;
     margin: 0 auto;
+    background: #000;
 }
 
+/* 헤더 - 연도.월 */
 .calendar-header {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 20px;
+    justify-content: space-between;
+    padding: 12px 0;
     flex-shrink: 0;
 }
 
@@ -2668,101 +2669,125 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     background: transparent;
     border: none;
     color: #fff;
-    font-size: 1.5em;
-    padding: 8px 12px;
+    font-size: 1.4em;
+    padding: 8px;
     cursor: pointer;
-    transition: all var(--transition-fast);
-    border-radius: var(--radius-md);
+    transition: opacity 0.2s;
 }
 
 .calendar-close-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    opacity: 0.7;
 }
 
-.calendar-header h2 {
-    margin: 0;
+.calendar-title-area {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+}
+
+.calendar-year {
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.2em;
+    font-weight: 300;
+}
+
+.calendar-month {
     color: #fff;
-    font-size: 1.4em;
-    font-weight: var(--font-weight-bold);
-    flex: 1;
-    letter-spacing: 0.5px;
+    font-size: 1.8em;
+    font-weight: 600;
 }
 
 .calendar-debug-btn {
-    background: rgba(229, 9, 20, 0.2);
-    border: 1px solid rgba(229, 9, 20, 0.5);
-    color: #E50914;
-    font-size: 0.75em;
-    padding: 6px 12px;
-    border-radius: var(--radius-sm);
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.65em;
+    padding: 6px 10px;
+    border-radius: 4px;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 0.2s;
     text-transform: uppercase;
-    letter-spacing: 0.5px;
-    font-weight: var(--font-weight-semibold);
+    letter-spacing: 1px;
 }
 
 .calendar-debug-btn:hover {
-    background: rgba(229, 9, 20, 0.4);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
 }
 
+/* 메인 영역 */
 .calendar-main {
     flex: 1;
     display: flex;
     flex-direction: column;
     min-height: 0;
+    position: relative;
 }
 
+/* 네비게이션 (좌우 화살표) */
 .calendar-nav {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 24px;
-    margin-bottom: 16px;
+    justify-content: space-between;
+    pointer-events: none;
+    z-index: 10;
+    transform: translateY(-50%);
+    padding: 0 4px;
 }
 
 .cal-nav-btn {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.1);
     border: none;
     color: #fff;
-    font-size: 0.95em;
-    padding: 10px 16px;
-    border-radius: var(--radius-md);
+    font-size: 1.5em;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
     cursor: pointer;
-    transition: all var(--transition-fast);
+    transition: all 0.2s;
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .cal-nav-btn:hover:not(:disabled) {
-    background: rgba(229, 9, 20, 0.3);
+    background: rgba(255, 255, 255, 0.2);
 }
 
 .cal-nav-btn:disabled {
-    opacity: 0.3;
+    opacity: 0.2;
     cursor: not-allowed;
 }
 
-.cal-month-title {
-    color: #fff;
-    font-size: 1.4em;
-    font-weight: var(--font-weight-bold);
-    min-width: 80px;
-    text-align: center;
-    letter-spacing: 2px;
+/* 그리드 래퍼 */
+.calendar-grid-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #000;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
+    overflow: hidden;
 }
 
+/* 요일 헤더 */
 .calendar-weekdays {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-    margin-bottom: 8px;
-    text-align: center;
+    background: rgba(255, 255, 255, 0.03);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .calendar-weekdays span {
     color: rgba(255, 255, 255, 0.4);
-    font-size: 0.65em;
-    font-weight: var(--font-weight-semibold);
-    padding: 8px 0;
+    font-size: 0.7em;
+    font-weight: 500;
+    padding: 12px 0;
+    text-align: center;
     letter-spacing: 1px;
 }
 
@@ -2771,36 +2796,36 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 }
 
 .calendar-weekdays .sat {
-    color: #5c7cfa;
+    color: #4a9eff;
 }
 
+/* 날짜 그리드 - iOS 스타일 */
 .calendar-grid {
+    flex: 1;
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 6px;
-    flex: 1;
-    align-content: start;
+    grid-auto-rows: 1fr;
 }
 
 .calendar-day {
-    aspect-ratio: 1;
+    position: relative;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: var(--radius-md);
-    padding: 4px;
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
     cursor: pointer;
-    transition: all var(--transition-fast);
-    position: relative;
+    transition: background 0.15s;
     overflow: hidden;
+    min-height: 50px;
+}
+
+.calendar-day:nth-child(7n) {
+    border-right: none;
 }
 
 .calendar-day:not(.empty):hover {
-    background: rgba(229, 9, 20, 0.2);
-    transform: scale(1.08);
-    box-shadow: 0 4px 20px rgba(229, 9, 20, 0.2);
+    background: rgba(255, 255, 255, 0.08);
 }
 
 .calendar-day.empty {
@@ -2809,133 +2834,142 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 }
 
 .calendar-day.today {
-    background: rgba(229, 9, 20, 0.25);
-    border: 2px solid #E50914;
+    background: rgba(229, 9, 20, 0.15);
+}
+
+.calendar-day.today .day-number {
+    color: #E50914;
+    font-weight: 700;
 }
 
 .calendar-day.has-data {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.02);
 }
 
+/* 날짜 숫자 */
 .day-number {
-    font-size: 0.7em;
-    font-weight: var(--font-weight-bold);
+    font-size: 0.95em;
+    font-weight: 400;
     color: #fff;
-    position: absolute;
-    top: 4px;
-    left: 6px;
-    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
     z-index: 2;
+    position: relative;
 }
 
+/* 썸네일 아바타 */
 .day-avatar {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
     position: absolute;
     top: 0;
     left: 0;
-    border-radius: var(--radius-md);
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    opacity: 0.35;
+    z-index: 1;
 }
 
-.day-no-data {
-    color: rgba(255, 255, 255, 0.2);
-    font-size: 0.9em;
-}
-
-/* 봇카드 상세 정보 - PC 크게 */
-.calendar-detail-card {
+/* 봇카드 - 넷플릭스 스타일 (PC용 크게, 세로 길게) */
+.calendar-bot-card {
     position: fixed;
-    bottom: 80px;
+    bottom: 60px;
     left: 50%;
     transform: translateX(-50%);
-    display: none;
-    align-items: center;
-    justify-content: center;
-    z-index: 81000;
-}
-
-.detail-card-inner {
-    width: 220px;
-    height: 320px;
-    border-radius: var(--radius-lg);
+    width: 200px;
+    height: 300px;
+    border-radius: 8px;
     overflow: hidden;
-    position: relative;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.7), 0 0 40px rgba(229, 9, 20, 0.2);
+    display: none;
+    flex-direction: column;
+    z-index: 81000;
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
     background: #181818;
 }
 
-.detail-card-avatar {
+.bot-card-avatar {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
 }
 
-.detail-card-overlay {
+.bot-card-gradient {
     position: absolute;
     bottom: 0;
     left: 0;
     right: 0;
-    padding: 20px 16px;
-    background: linear-gradient(transparent, rgba(0, 0, 0, 0.95));
+    height: 60%;
+    background: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.9) 30%, transparent 100%);
+    z-index: 2;
 }
 
-.detail-card-name {
-    font-size: 1.2em;
-    font-weight: var(--font-weight-bold);
+.bot-card-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 16px;
+    z-index: 3;
+}
+
+.bot-card-name {
+    font-size: 1.1em;
+    font-weight: 700;
     color: #fff;
-    margin-bottom: 6px;
+    margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
 }
 
-.detail-card-stats {
-    font-size: 1em;
+.bot-card-stats {
+    font-size: 0.9em;
+    color: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+}
+
+.bot-card-stats.positive {
+    color: #46d369;
+}
+
+.bot-card-stats.negative {
     color: #E50914;
-    font-weight: var(--font-weight-semibold);
 }
 
-.detail-card-stats.negative {
-    color: #999;
-}
-
-.detail-card-date {
-    font-size: 0.8em;
-    color: rgba(255, 255, 255, 0.5);
-    margin-top: 4px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.calendar-footer {
-    margin-top: 20px;
-    text-align: center;
+.bot-card-date {
+    font-size: 0.75em;
     color: rgba(255, 255, 255, 0.4);
-    font-size: 0.8em;
-    flex-shrink: 0;
-    letter-spacing: 1px;
-    text-transform: uppercase;
+    margin-top: 4px;
 }
 
 /* PC에서 봇카드 더 크게 */
 @media (min-width: 769px) {
-    .detail-card-inner {
-        width: 280px;
-        height: 400px;
+    .calendar-bot-card {
+        width: 260px;
+        height: 380px;
     }
     
-    .detail-card-name {
-        font-size: 1.4em;
+    .bot-card-name {
+        font-size: 1.3em;
     }
     
-    .detail-card-stats {
-        font-size: 1.1em;
+    .bot-card-stats {
+        font-size: 1em;
     }
     
-    .detail-card-overlay {
-        padding: 24px 20px;
+    .bot-card-info {
+        padding: 20px;
     }
+}
+
+/* 푸터 */
+.calendar-footer {
+    padding: 16px 0;
+    text-align: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 0.75em;
+    flex-shrink: 0;
+    letter-spacing: 1px;
 }
 
 /* 디버그 모달 */
@@ -2944,93 +2978,129 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: #1a1a1a;
-    border: 1px solid rgba(229, 9, 20, 0.3);
-    border-radius: var(--radius-lg);
+    background: #111;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 12px;
     width: 90%;
     max-width: 500px;
     max-height: 70vh;
     z-index: 82000;
     display: none;
     flex-direction: column;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8);
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+    overflow: hidden;
 }
 
 .debug-modal-header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: 16px 20px;
+    padding: 14px 16px;
+    background: rgba(255, 255, 255, 0.03);
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .debug-modal-header h3 {
     margin: 0;
-    color: #E50914;
-    font-size: 1em;
-    font-weight: var(--font-weight-semibold);
-    letter-spacing: 1px;
+    color: #fff;
+    font-size: 0.9em;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+.debug-modal-actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.debug-clear-btn {
+    background: #E50914;
+    border: none;
+    color: #fff;
+    font-size: 0.7em;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-weight: 600;
     text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.debug-clear-btn:hover {
+    background: #ff1a1a;
 }
 
 .debug-modal-close {
     background: transparent;
     border: none;
-    color: #fff;
-    font-size: 1.5em;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.4em;
     cursor: pointer;
-    padding: 4px 8px;
+    padding: 0;
     line-height: 1;
 }
 
 .debug-modal-close:hover {
-    color: #E50914;
+    color: #fff;
+}
+
+.debug-modal-body {
+    flex: 1;
+    overflow: auto;
 }
 
 .debug-modal-content {
-    flex: 1;
-    overflow: auto;
-    padding: 16px 20px;
+    padding: 16px;
     margin: 0;
-    font-size: 0.75em;
-    color: rgba(255, 255, 255, 0.8);
-    background: #0d0d0d;
-    font-family: 'Consolas', 'Monaco', monospace;
+    font-size: 0.7em;
+    color: rgba(255, 255, 255, 0.7);
+    background: #0a0a0a;
+    font-family: 'SF Mono', 'Consolas', monospace;
     white-space: pre-wrap;
     word-break: break-all;
+    min-height: 100%;
 }
 
-/* 라이트 모드 캘린더 - 모노톤 */
+/* ========== 라이트 모드 - 모노톤 ========== */
 #chat-lobby-container.light-mode ~ #calendar-overlay,
 body.light-mode #calendar-overlay {
-    background: #f5f5f5;
+    background: #fff;
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-header h2,
+#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-fullscreen,
+body.light-mode #calendar-overlay .calendar-fullscreen {
+    background: #fff;
+}
+
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-close-btn,
-#chat-lobby-container.light-mode ~ #calendar-overlay .cal-month-title,
-body.light-mode #calendar-overlay .calendar-header h2,
+#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-year,
 body.light-mode #calendar-overlay .calendar-close-btn,
-body.light-mode #calendar-overlay .cal-month-title {
-    color: #1a1a1a;
+body.light-mode #calendar-overlay .calendar-year {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-month,
+body.light-mode #calendar-overlay .calendar-month {
+    color: #000;
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-debug-btn,
 body.light-mode #calendar-overlay .calendar-debug-btn {
-    background: rgba(0, 0, 0, 0.1);
-    border-color: rgba(0, 0, 0, 0.3);
-    color: #333;
+    border-color: rgba(0, 0, 0, 0.15);
+    color: rgba(0, 0, 0, 0.4);
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .cal-nav-btn,
-body.light-mode #calendar-overlay .cal-nav-btn {
-    background: rgba(0, 0, 0, 0.08);
-    color: #1a1a1a;
+#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-grid-wrapper,
+body.light-mode #calendar-overlay .calendar-grid-wrapper {
+    background: #fff;
+    border-color: rgba(0, 0, 0, 0.1);
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .cal-nav-btn:hover:not(:disabled),
-body.light-mode #calendar-overlay .cal-nav-btn:hover:not(:disabled) {
-    background: rgba(0, 0, 0, 0.15);
+#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-weekdays,
+body.light-mode #calendar-overlay .calendar-weekdays {
+    background: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.08);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-weekdays span,
@@ -3050,88 +3120,101 @@ body.light-mode #calendar-overlay .calendar-weekdays .sat {
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-day,
 body.light-mode #calendar-overlay .calendar-day {
-    background: rgba(0, 0, 0, 0.04);
+    border-color: rgba(0, 0, 0, 0.06);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-day:not(.empty):hover,
 body.light-mode #calendar-overlay .calendar-day:not(.empty):hover {
-    background: rgba(0, 0, 0, 0.12);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    background: rgba(0, 0, 0, 0.04);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-day.today,
 body.light-mode #calendar-overlay .calendar-day.today {
-    background: rgba(0, 0, 0, 0.1);
-    border-color: #333;
+    background: rgba(0, 0, 0, 0.06);
+}
+
+#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-day.today .day-number,
+body.light-mode #calendar-overlay .calendar-day.today .day-number {
+    color: #333;
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .day-number,
 body.light-mode #calendar-overlay .day-number {
-    color: #1a1a1a;
-    text-shadow: none;
+    color: #000;
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .day-no-data,
-body.light-mode #calendar-overlay .day-no-data {
-    color: rgba(0, 0, 0, 0.2);
+#chat-lobby-container.light-mode ~ #calendar-overlay .cal-nav-btn,
+body.light-mode #calendar-overlay .cal-nav-btn {
+    background: rgba(0, 0, 0, 0.06);
+    color: #000;
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .detail-card-inner,
-body.light-mode #calendar-overlay .detail-card-inner {
+#chat-lobby-container.light-mode ~ #calendar-overlay .cal-nav-btn:hover:not(:disabled),
+body.light-mode #calendar-overlay .cal-nav-btn:hover:not(:disabled) {
+    background: rgba(0, 0, 0, 0.1);
+}
+
+#chat-lobby-container.light-mode ~ #calendar-overlay .calendar-bot-card,
+body.light-mode #calendar-overlay .calendar-bot-card {
     background: #fff;
-    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.2);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.15);
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .detail-card-overlay,
-body.light-mode #calendar-overlay .detail-card-overlay {
-    background: linear-gradient(transparent, rgba(255, 255, 255, 0.95));
+#chat-lobby-container.light-mode ~ #calendar-overlay .bot-card-gradient,
+body.light-mode #calendar-overlay .bot-card-gradient {
+    background: linear-gradient(to top, #fff 0%, rgba(255, 255, 255, 0.95) 30%, transparent 100%);
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .detail-card-name,
-body.light-mode #calendar-overlay .detail-card-name {
-    color: #1a1a1a;
+#chat-lobby-container.light-mode ~ #calendar-overlay .bot-card-name,
+body.light-mode #calendar-overlay .bot-card-name {
+    color: #000;
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .detail-card-stats,
-body.light-mode #calendar-overlay .detail-card-stats {
+#chat-lobby-container.light-mode ~ #calendar-overlay .bot-card-stats,
+body.light-mode #calendar-overlay .bot-card-stats {
+    color: rgba(0, 0, 0, 0.6);
+}
+
+#chat-lobby-container.light-mode ~ #calendar-overlay .bot-card-stats.positive,
+body.light-mode #calendar-overlay .bot-card-stats.positive {
     color: #333;
 }
 
-#chat-lobby-container.light-mode ~ #calendar-overlay .detail-card-date,
-body.light-mode #calendar-overlay .detail-card-date {
-    color: rgba(0, 0, 0, 0.5);
+#chat-lobby-container.light-mode ~ #calendar-overlay .bot-card-date,
+body.light-mode #calendar-overlay .bot-card-date {
+    color: rgba(0, 0, 0, 0.4);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-footer,
 body.light-mode #calendar-overlay .calendar-footer {
-    color: rgba(0, 0, 0, 0.4);
+    color: rgba(0, 0, 0, 0.3);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .calendar-debug-modal,
 body.light-mode #calendar-overlay .calendar-debug-modal {
     background: #fff;
-    border-color: rgba(0, 0, 0, 0.2);
+    border-color: rgba(0, 0, 0, 0.1);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .debug-modal-header,
 body.light-mode #calendar-overlay .debug-modal-header {
-    border-color: rgba(0, 0, 0, 0.1);
+    background: rgba(0, 0, 0, 0.02);
+    border-color: rgba(0, 0, 0, 0.08);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .debug-modal-header h3,
 body.light-mode #calendar-overlay .debug-modal-header h3 {
-    color: #333;
+    color: #000;
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .debug-modal-close,
 body.light-mode #calendar-overlay .debug-modal-close {
-    color: #333;
+    color: rgba(0, 0, 0, 0.4);
 }
 
 #chat-lobby-container.light-mode ~ #calendar-overlay .debug-modal-content,
 body.light-mode #calendar-overlay .debug-modal-content {
-    background: #f5f5f5;
+    background: #f8f8f8;
     color: #333;
 }
-
 
