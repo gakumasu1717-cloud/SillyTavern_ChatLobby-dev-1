@@ -4166,9 +4166,11 @@ ${message}` : message;
   }
   function handleDateClick(e) {
     const dayEl = e.target.closest(".calendar-day");
+    console.log("[Calendar] handleDateClick:", dayEl?.dataset?.date);
     if (!dayEl || dayEl.classList.contains("empty")) return;
     const date = dayEl.dataset.date;
     const snapshot = getSnapshot(date);
+    console.log("[Calendar] Click date:", date, "| snapshot:", !!snapshot, "| topChar:", snapshot?.topChar);
     if (!snapshot) {
       selectedDateInfo = null;
       hideBotCard();
@@ -4183,11 +4185,13 @@ ${message}` : message;
     showBotCard(date, snapshot);
   }
   function showBotCard(date, snapshot) {
+    console.log("[Calendar] showBotCard called:", date);
     const card = calendarOverlay.querySelector("#calendar-bot-card");
     const avatarEl = calendarOverlay.querySelector("#bot-card-avatar");
     const nameEl = calendarOverlay.querySelector("#bot-card-name");
     const statsEl = calendarOverlay.querySelector("#bot-card-stats");
     const dateEl = calendarOverlay.querySelector("#bot-card-date");
+    console.log("[Calendar] card element:", !!card);
     if (!snapshot.topChar) {
       hideBotCard();
       return;
