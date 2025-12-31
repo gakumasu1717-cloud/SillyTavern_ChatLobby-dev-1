@@ -1866,6 +1866,7 @@ ${message}` : message;
     }
     const chatsPanel = document.getElementById("chat-lobby-chats");
     const chatsList = document.getElementById("chat-lobby-chats-list");
+    console.log("[ChatList] Panel elements:", { chatsPanel: !!chatsPanel, chatsList: !!chatsList });
     if (store.currentCharacter?.avatar === character.avatar && chatsPanel?.classList.contains("visible")) {
       console.log("[ChatList] Same character panel already open, skipping render");
       return;
@@ -1875,17 +1876,22 @@ ${message}` : message;
       console.error("[ChatList] Chat panel elements not found");
       return;
     }
+    console.log("[ChatList] Showing panel and fetching chats...");
     chatsPanel.classList.add("visible");
     updateChatHeader(character);
     showFolderBar(true);
     const cachedChats = cache.get("chats", character.avatar);
+    console.log("[ChatList] Cache check:", { hasCached: !!cachedChats, length: cachedChats?.length, isValid: cache.isValid("chats", character.avatar) });
     if (cachedChats && cachedChats.length > 0 && cache.isValid("chats", character.avatar)) {
+      console.log("[ChatList] Using cached chats");
       renderChats(chatsList, cachedChats, character.avatar);
       return;
     }
+    console.log("[ChatList] Fetching from API...");
     chatsList.innerHTML = '<div class="lobby-loading">\uCC44\uD305 \uB85C\uB529 \uC911...</div>';
     try {
       const chats = await api.fetchChatsForCharacter(character.avatar);
+      console.log("[ChatList] API returned:", chats?.length, "chats");
       if (!chats || chats.length === 0) {
         updateChatCount(0);
         chatsList.innerHTML = `
@@ -1897,7 +1903,9 @@ ${message}` : message;
             `;
         return;
       }
+      console.log("[ChatList] Calling renderChats...");
       renderChats(chatsList, chats, character.avatar);
+      console.log("[ChatList] renderChats completed");
     } catch (error) {
       console.error("[ChatList] Failed to load chats:", error);
       showToast("\uCC44\uD305 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
