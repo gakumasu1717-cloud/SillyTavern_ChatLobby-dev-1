@@ -4028,14 +4028,14 @@ ${message}` : message;
       rankings.push(...batchResults);
     }
     rankings.sort((a, b) => b.messageCount - a.messageCount);
-    const totalChats = rankings.reduce((sum, r) => sum + r.chatCount, 0);
+    const totalMessages = rankings.reduce((sum, r) => sum + r.messageCount, 0);
     const byChar = {};
     rankings.forEach((r) => {
-      byChar[r.avatar] = r.chatCount;
+      byChar[r.avatar] = r.messageCount;
     });
     const topChar = rankings[0]?.avatar || "";
-    saveSnapshot(yesterday, totalChats, topChar, byChar, true);
-    console.log("[Calendar] Baseline saved:", yesterday, "| total:", totalChats);
+    saveSnapshot(yesterday, totalMessages, topChar, byChar, true);
+    console.log("[Calendar] Baseline saved:", yesterday, "| total:", totalMessages, "messages");
   }
   async function saveTodaySnapshot() {
     try {
@@ -4075,17 +4075,17 @@ ${message}` : message;
         rankings.push(...batchResults);
       }
       rankings.sort((a, b) => b.messageCount - a.messageCount);
-      const totalChats = rankings.reduce((sum, r) => sum + r.chatCount, 0);
+      const totalMessages = rankings.reduce((sum, r) => sum + r.messageCount, 0);
       const byChar = {};
       rankings.forEach((r) => {
-        byChar[r.avatar] = r.chatCount;
+        byChar[r.avatar] = r.messageCount;
       });
       let topChar = "";
       let maxIncrease = -Infinity;
       let maxMsgCountOnTie = -1;
       for (const r of rankings) {
         const prev = yesterdayByChar[r.avatar] || 0;
-        const increase = r.chatCount - prev;
+        const increase = r.messageCount - prev;
         if (increase > maxIncrease) {
           maxIncrease = increase;
           maxMsgCountOnTie = r.messageCount;
@@ -4099,9 +4099,9 @@ ${message}` : message;
         topChar = rankings[0]?.avatar || "";
         console.log("[Calendar] First time - using message count leader:", topChar);
       } else {
-        console.log("[Calendar] Most increased char:", topChar, "| increase:", maxIncrease);
+        console.log("[Calendar] Most increased char:", topChar, "| increase:", maxIncrease, "messages");
       }
-      saveSnapshot(today, totalChats, topChar, byChar);
+      saveSnapshot(today, totalMessages, topChar, byChar);
     } catch (e) {
       console.error("[Calendar] Failed to save snapshot:", e);
     }

@@ -253,20 +253,20 @@ async function saveBaselineSnapshot() {
     }
     
     rankings.sort((a, b) => b.messageCount - a.messageCount);
-    const totalChats = rankings.reduce((sum, r) => sum + r.chatCount, 0);
+    const totalMessages = rankings.reduce((sum, r) => sum + r.messageCount, 0);
     
-    // 캐릭터별 채팅수 객체 생성
+    // 캐릭터별 메시지 수 객체 생성
     const byChar = {};
     rankings.forEach(r => {
-        byChar[r.avatar] = r.chatCount;
+        byChar[r.avatar] = r.messageCount;
     });
     
     // 메시지 1위 캐릭터
     const topChar = rankings[0]?.avatar || '';
     
     // 어제 날짜로 저장 (베이스라인 - 작년도 허용)
-    saveSnapshot(yesterday, totalChats, topChar, byChar, true);
-    console.log('[Calendar] Baseline saved:', yesterday, '| total:', totalChats);
+    saveSnapshot(yesterday, totalMessages, topChar, byChar, true);
+    console.log('[Calendar] Baseline saved:', yesterday, '| total:', totalMessages, 'messages');
 }
 
 /**
@@ -322,22 +322,22 @@ async function saveTodaySnapshot() {
         }
         
         rankings.sort((a, b) => b.messageCount - a.messageCount);
-        const totalChats = rankings.reduce((sum, r) => sum + r.chatCount, 0);
+        const totalMessages = rankings.reduce((sum, r) => sum + r.messageCount, 0);
         
-        // 캐릭터별 채팅수 객체 생성
+        // 캐릭터별 메시지 수 객체 생성
         const byChar = {};
         rankings.forEach(r => {
-            byChar[r.avatar] = r.chatCount;
+            byChar[r.avatar] = r.messageCount;
         });
         
-        // 가장 증가한 캐릭터 찾기 (동률 시 메시지 수 많은 캐릭터 우선)
+        // 가장 증가한 캐릭터 찾기 (메시지 수 기준)
         let topChar = '';
         let maxIncrease = -Infinity;
         let maxMsgCountOnTie = -1;
         
         for (const r of rankings) {
             const prev = yesterdayByChar[r.avatar] || 0;
-            const increase = r.chatCount - prev;
+            const increase = r.messageCount - prev;
             
             // 증가량 더 크면 교체
             if (increase > maxIncrease) {
@@ -345,7 +345,7 @@ async function saveTodaySnapshot() {
                 maxMsgCountOnTie = r.messageCount;
                 topChar = r.avatar;
             } 
-            // 동률이면 메시지 수 많은 캐릭터 (더 활발한 캐릭터)
+            // 동률이면 메시지 수 많은 캐릭터
             else if (increase === maxIncrease && r.messageCount > maxMsgCountOnTie) {
                 maxMsgCountOnTie = r.messageCount;
                 topChar = r.avatar;
@@ -357,10 +357,10 @@ async function saveTodaySnapshot() {
             topChar = rankings[0]?.avatar || '';
             console.log('[Calendar] First time - using message count leader:', topChar);
         } else {
-            console.log('[Calendar] Most increased char:', topChar, '| increase:', maxIncrease);
+            console.log('[Calendar] Most increased char:', topChar, '| increase:', maxIncrease, 'messages');
         }
         
-        saveSnapshot(today, totalChats, topChar, byChar);
+        saveSnapshot(today, totalMessages, topChar, byChar);
         
     } catch (e) {
         console.error('[Calendar] Failed to save snapshot:', e);
