@@ -25,7 +25,6 @@ export function getLocalDateString(date = new Date()) {
  */
 export function loadSnapshots(forceRefresh = false) {
     if (_snapshotsCache && !forceRefresh) {
-        console.log('[Calendar] loadSnapshots: from CACHE');
         return _snapshotsCache;
     }
     try {
@@ -43,13 +42,11 @@ export function loadSnapshots(forceRefresh = false) {
             }
             
             _snapshotsCache = parsed.snapshots || {};
-            console.log('[Calendar] loadSnapshots: from localStorage, keys:', Object.keys(_snapshotsCache).length);
             return _snapshotsCache;
         }
     } catch (e) {
         console.error('[Calendar] Failed to load snapshots:', e);
     }
-    console.log('[Calendar] loadSnapshots: EMPTY (no data)');
     _snapshotsCache = {};
     return _snapshotsCache;
 }

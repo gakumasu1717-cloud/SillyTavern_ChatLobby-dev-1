@@ -3756,7 +3756,6 @@ ${message}` : message;
   }
   function loadSnapshots(forceRefresh = false) {
     if (_snapshotsCache && !forceRefresh) {
-      console.log("[Calendar] loadSnapshots: from CACHE");
       return _snapshotsCache;
     }
     try {
@@ -3770,13 +3769,11 @@ ${message}` : message;
           localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
         }
         _snapshotsCache = parsed.snapshots || {};
-        console.log("[Calendar] loadSnapshots: from localStorage, keys:", Object.keys(_snapshotsCache).length);
         return _snapshotsCache;
       }
     } catch (e) {
       console.error("[Calendar] Failed to load snapshots:", e);
     }
-    console.log("[Calendar] loadSnapshots: EMPTY (no data)");
     _snapshotsCache = {};
     return _snapshotsCache;
   }
@@ -3892,18 +3889,18 @@ ${message}` : message;
                         </div>
                     </div>
                     
-                    <!-- \uBD07\uCE74\uB4DC (\uB137\uD50C\uB9AD\uC2A4 \uC2A4\uD0C0\uC77C) -->
-                    <div class="calendar-bot-card" id="calendar-bot-card" style="display: none;">
-                        <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
-                        <div class="bot-card-gradient"></div>
-                        <div class="bot-card-info">
-                            <div class="bot-card-name" id="bot-card-name"></div>
-                            <div class="bot-card-stats" id="bot-card-stats"></div>
-                            <div class="bot-card-date" id="bot-card-date"></div>
-                        </div>
-                    </div>
-                    
                     <div class="calendar-footer" id="calendar-footer"></div>
+                </div>
+                
+                <!-- \uBD07\uCE74\uB4DC (\uB137\uD50C\uB9AD\uC2A4 \uC2A4\uD0C0\uC77C) - overlay \uBC14\uB85C \uC544\uB798\uC5D0 \uC704\uCE58 -->
+                <div class="calendar-bot-card" id="calendar-bot-card" style="display: none;">
+                    <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
+                    <div class="bot-card-gradient"></div>
+                    <div class="bot-card-info">
+                        <div class="bot-card-name" id="bot-card-name"></div>
+                        <div class="bot-card-stats" id="bot-card-stats"></div>
+                        <div class="bot-card-date" id="bot-card-date"></div>
+                    </div>
                 </div>
                 
                 <!-- \uB514\uBC84\uADF8/\uC0AD\uC81C \uBAA8\uB2EC -->
@@ -4939,18 +4936,16 @@ ${message}` : message;
     function addToCustomThemeSidebar() {
       if (window._chatLobbyCustomThemeInit) return true;
       window._chatLobbyCustomThemeInit = true;
-      const addSidebarButton = () => {
-        const customTavernBtn = document.querySelector('[data-drawer-id="st-chatlobby-sidebar-btn"]');
-        if (customTavernBtn && !customTavernBtn._chatLobbyBound) {
-          customTavernBtn._chatLobbyBound = true;
-          customTavernBtn.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            openLobby();
-          });
-          console.log("[ChatLobby] Bound to Custom Tavern sidebar button");
-          return true;
+      document.addEventListener("click", (e) => {
+        const customTavernBtn = e.target.closest('[data-drawer-id="st-chatlobby-sidebar-btn"]');
+        if (customTavernBtn) {
+          e.preventDefault();
+          e.stopPropagation();
+          openLobby();
+          return;
         }
+      }, true);
+      const addSidebarButton = () => {
         const container = document.getElementById("st-sidebar-top-container");
         if (!container) return false;
         if (document.getElementById("st-chatlobby-sidebar-btn")) return true;

@@ -59,18 +59,18 @@ export async function openCalendarView() {
                         </div>
                     </div>
                     
-                    <!-- 봇카드 (넷플릭스 스타일) -->
-                    <div class="calendar-bot-card" id="calendar-bot-card" style="display: none;">
-                        <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
-                        <div class="bot-card-gradient"></div>
-                        <div class="bot-card-info">
-                            <div class="bot-card-name" id="bot-card-name"></div>
-                            <div class="bot-card-stats" id="bot-card-stats"></div>
-                            <div class="bot-card-date" id="bot-card-date"></div>
-                        </div>
-                    </div>
-                    
                     <div class="calendar-footer" id="calendar-footer"></div>
+                </div>
+                
+                <!-- 봇카드 (넷플릭스 스타일) - overlay 바로 아래에 위치 -->
+                <div class="calendar-bot-card" id="calendar-bot-card" style="display: none;">
+                    <img class="bot-card-avatar" id="bot-card-avatar" src="" alt="">
+                    <div class="bot-card-gradient"></div>
+                    <div class="bot-card-info">
+                        <div class="bot-card-name" id="bot-card-name"></div>
+                        <div class="bot-card-stats" id="bot-card-stats"></div>
+                        <div class="bot-card-date" id="bot-card-date"></div>
+                    </div>
                 </div>
                 
                 <!-- 디버그/삭제 모달 -->

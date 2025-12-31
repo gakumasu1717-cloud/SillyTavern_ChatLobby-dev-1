@@ -1030,21 +1030,19 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         if (window._chatLobbyCustomThemeInit) return true;
         window._chatLobbyCustomThemeInit = true;
         
+        // Custom Tavern 이벤트 위임 (document에서 캡처)
+        document.addEventListener('click', (e) => {
+            const customTavernBtn = e.target.closest('[data-drawer-id="st-chatlobby-sidebar-btn"]');
+            if (customTavernBtn) {
+                e.preventDefault();
+                e.stopPropagation();
+                openLobby();
+                return;
+            }
+        }, true); // capture phase
+        
         // 1. 사이드바 버튼 추가 (PC) - CustomTheme drawer 구조 사용
         const addSidebarButton = () => {
-            // Custom Tavern의 data-drawer-id 요소에 이벤트 리스너 추가
-            const customTavernBtn = document.querySelector('[data-drawer-id="st-chatlobby-sidebar-btn"]');
-            if (customTavernBtn && !customTavernBtn._chatLobbyBound) {
-                customTavernBtn._chatLobbyBound = true;
-                customTavernBtn.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    openLobby();
-                });
-                console.log('[ChatLobby] Bound to Custom Tavern sidebar button');
-                return true;
-            }
-            
             const container = document.getElementById('st-sidebar-top-container');
             if (!container) return false;
             if (document.getElementById('st-chatlobby-sidebar-btn')) return true; // 이미 있음
