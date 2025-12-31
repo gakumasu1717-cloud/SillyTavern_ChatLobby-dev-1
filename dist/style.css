@@ -329,6 +329,8 @@
     border-bottom: 1px solid var(--SmartThemeBorderColor, #444);
     gap: 15px;
     flex-shrink: 0;
+    position: relative;
+    z-index: 1;
 }
 
 /* 캐릭터 그리드 영역 - 왼쪽 하단 */
@@ -340,6 +342,8 @@
     grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
     gap: 15px;
     align-content: start;
+    position: relative;
+    z-index: 10;
 }
 
 /* 오른쪽 패널 - 채팅 목록 (항상 표시) */
@@ -435,6 +439,7 @@
     border-color: var(--SmartThemeQuoteColor, #6a9fb5);
     transform: translateY(-3px);
     box-shadow: 0 5px 20px rgba(0, 0, 0, 0.4);
+    z-index: 100;
 }
 
 .lobby-char-card.selected {
@@ -716,6 +721,8 @@
     gap: 8px;
     padding: 8px 20px;
     background: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.98));
+    position: relative;
+    z-index: 1;
 }
 
 #chat-lobby-search input {
@@ -1533,11 +1540,14 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     align-items: center;
     gap: 6px;
     padding: 6px 20px;
+    margin-bottom: 12px;
     background: var(--SmartThemeBlurTintColor, rgba(20, 20, 20, 0.98));
     border-bottom: 1px solid var(--SmartThemeBorderColor, #333);
     overflow-x: auto;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: thin;
+    position: relative;
+    z-index: 1;
 }
 
 /* PC 스크롤바 스타일 */
