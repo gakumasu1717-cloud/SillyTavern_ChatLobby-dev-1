@@ -20,6 +20,7 @@ import { getFoldersOptionsHTML } from './templates.js';
 let tooltipElement = null;
 let tooltipTimeout = null;
 let currentTooltipTarget = null;
+let tooltipEventsInitialized = false;  // 이벤트 위임 등록 여부
 
 /**
  * 툴팁 요소 생성 (한 번만)
@@ -84,7 +85,7 @@ function hideTooltip() {
 }
 
 /**
- * 채팅 아이템에 툴팁 이벤트 바인딩 (PC 전용)
+ * 채팅 아이템에 툴팁 이벤트 바인딩 (PC 전용) - 이벤트 위임 방식
  * @param {HTMLElement} container
  */
 function bindTooltipEvents(container) {
@@ -93,45 +94,75 @@ function bindTooltipEvents(container) {
         return;
     }
     
+    // 이미 이벤트 위임이 등록되어 있으면 스킵 (메모리 누수 방지)
+    if (tooltipEventsInitialized) {
+        return;
+    }
     
-    container.querySelectorAll('.lobby-chat-item').forEach((item, idx) => {
-        // data-full-preview 속성에 전문 저장 (렌더링 시 추가됨)
-        const fullPreview = item.dataset.fullPreview || '';
-        
-        if (!fullPreview) {
-            return;
+    const chatsList = document.getElementById('chat-lobby-chats-list');
+    if (!chatsList) return;
+    
+    // 이벤트 위임: container에 한 번만 등록
+    chatsList.addEventListener('mouseover', handleTooltipMouseOver);
+    chatsList.addEventListener('mouseout', handleTooltipMouseOut);
+    chatsList.addEventListener('mousemove', handleTooltipMouseMove);
+    
+    tooltipEventsInitialized = true;
+}
+
+/**
+ * 툴팁 mouseover 핸들러 (이벤트 위임)
+ */
+function handleTooltipMouseOver(e) {
+    const item = e.target.closest('.lobby-chat-item');
+    if (!item) return;
+    
+    // 같은 아이템이면 스킵
+    if (currentTooltipTarget === item) return;
+    
+    const fullPreview = item.dataset.fullPreview || '';
+    if (!fullPreview) return;
+    
+    // 이전 타이머 취소
+    hideTooltip();
+    currentTooltipTarget = item;
+    
+    // 딜레이 후 툴팁 표시 (300ms)
+    tooltipTimeout = setTimeout(() => {
+        if (currentTooltipTarget === item && fullPreview) {
+            showTooltip(fullPreview, e);
         }
-        
-        item.addEventListener('mouseenter', (e) => {
-            if (currentTooltipTarget === item) return;
-            
-            
-            // 이전 타이머 취소
-            hideTooltip();
-            currentTooltipTarget = item;
-            
-            // 딜레이 후 툴팁 표시 (300ms)
-            tooltipTimeout = setTimeout(() => {
-                if (currentTooltipTarget === item && fullPreview) {
-                    showTooltip(fullPreview, e);
-                }
-            }, 300);
-        });
-        
-        item.addEventListener('mousemove', (e) => {
-            // 툴팁이 표시 중이면 위치 업데이트 (마우스 따라가기)
-            if (tooltipElement && tooltipElement.style.display === 'block' && currentTooltipTarget === item) {
-                tooltipElement.style.left = `${e.clientX + 15}px`;
-                tooltipElement.style.top = `${e.clientY + 15}px`;
-            }
-        });
-        
-        item.addEventListener('mouseleave', () => {
-            if (currentTooltipTarget === item) {
-                hideTooltip();
-            }
-        });
-    });
+    }, 300);
+}
+
+/**
+ * 툴팁 mouseout 핸들러 (이벤트 위임)
+ */
+function handleTooltipMouseOut(e) {
+    const item = e.target.closest('.lobby-chat-item');
+    if (!item) return;
+    
+    // relatedTarget이 같은 아이템 내부면 무시
+    const relatedItem = e.relatedTarget?.closest('.lobby-chat-item');
+    if (relatedItem === item) return;
+    
+    if (currentTooltipTarget === item) {
+        hideTooltip();
+    }
+}
+
+/**
+ * 툴팁 mousemove 핸들러 (이벤트 위임)
+ */
+function handleTooltipMouseMove(e) {
+    const item = e.target.closest('.lobby-chat-item');
+    if (!item) return;
+    
+    // 툴팁이 표시 중이면 위치 업데이트
+    if (tooltipElement && tooltipElement.style.display === 'block' && currentTooltipTarget === item) {
+        tooltipElement.style.left = `${e.clientX + 15}px`;
+        tooltipElement.style.top = `${e.clientY + 15}px`;
+    }
 }
 
 // ============================================
@@ -144,6 +175,16 @@ function bindTooltipEvents(container) {
  */
 export function cleanupTooltip() {
     hideTooltip();
+    
+    // 이벤트 위임 리스너 제거
+    const chatsList = document.getElementById('chat-lobby-chats-list');
+    if (chatsList && tooltipEventsInitialized) {
+        chatsList.removeEventListener('mouseover', handleTooltipMouseOver);
+        chatsList.removeEventListener('mouseout', handleTooltipMouseOut);
+        chatsList.removeEventListener('mousemove', handleTooltipMouseMove);
+    }
+    tooltipEventsInitialized = false;
+    
     if (tooltipElement && tooltipElement.parentNode) {
         tooltipElement.parentNode.removeChild(tooltipElement);
     }

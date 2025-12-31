@@ -15,6 +15,7 @@ import { openChat, deleteChat, startNewChat, deleteCharacter } from './handlers/
 import { openFolderModal, closeFolderModal, addFolder, updateFolderDropdowns } from './handlers/folderHandlers.js';
 import { showToast } from './ui/notifications.js';
 import { openStatsView, closeStatsView, isStatsViewOpen } from './ui/statsView.js';
+import { openCalendarView, closeCalendarView } from './ui/calendarView.js';
 import { debounce, isMobile } from './utils/eventHelpers.js';
 import { waitFor, waitForCharacterSelect, waitForElement } from './utils/waitFor.js';
 import { intervalManager } from './utils/intervalManager.js';
@@ -674,6 +675,12 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                 break;
             case 'toggle-header-menu':
                 toggleHeaderMenu();
+                break;
+            case 'open-calendar':
+                openCalendarView();
+                break;
+            case 'close-calendar':
+                closeCalendarView();
                 break;
         }
     }

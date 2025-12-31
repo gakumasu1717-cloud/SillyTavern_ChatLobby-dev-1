@@ -24,6 +24,7 @@ export function createLobbyHTML() {
                 </div>
                 <div class="header-actions">
                     <button id="chat-lobby-random-char" data-action="random-char" title="랜덤 캐릭터">🎲</button>
+                    <button id="chat-lobby-calendar-btn" data-action="open-calendar" title="캘린더">📅</button>
                     <button id="chat-lobby-stats" data-action="open-stats" title="Wrapped 통계">📊</button>
                     <button id="chat-lobby-import-char" data-action="import-char" title="캐릭터 가져오기">📥</button>
                     <button id="chat-lobby-add-persona" data-action="add-persona" title="페르소나 추가">👤</button>

@@ -1341,6 +1341,7 @@ ${message}` : message;
                 </div>
                 <div class="header-actions">
                     <button id="chat-lobby-random-char" data-action="random-char" title="\uB79C\uB364 \uCE90\uB9AD\uD130">\u{1F3B2}</button>
+                    <button id="chat-lobby-calendar-btn" data-action="open-calendar" title="\uCE98\uB9B0\uB354">\u{1F4C5}</button>
                     <button id="chat-lobby-stats" data-action="open-stats" title="Wrapped \uD1B5\uACC4">\u{1F4CA}</button>
                     <button id="chat-lobby-import-char" data-action="import-char" title="\uCE90\uB9AD\uD130 \uAC00\uC838\uC624\uAE30">\u{1F4E5}</button>
                     <button id="chat-lobby-add-persona" data-action="add-persona" title="\uD398\uB974\uC18C\uB098 \uCD94\uAC00">\u{1F464}</button>
@@ -1779,6 +1780,7 @@ ${message}` : message;
   var tooltipElement = null;
   var tooltipTimeout = null;
   var currentTooltipTarget = null;
+  var tooltipEventsInitialized = false;
   function ensureTooltipElement() {
     if (tooltipElement) return tooltipElement;
     tooltipElement = document.createElement("div");
@@ -1828,36 +1830,56 @@ ${message}` : message;
     if (isMobile()) {
       return;
     }
-    container.querySelectorAll(".lobby-chat-item").forEach((item, idx) => {
-      const fullPreview = item.dataset.fullPreview || "";
-      if (!fullPreview) {
-        return;
+    if (tooltipEventsInitialized) {
+      return;
+    }
+    const chatsList = document.getElementById("chat-lobby-chats-list");
+    if (!chatsList) return;
+    chatsList.addEventListener("mouseover", handleTooltipMouseOver);
+    chatsList.addEventListener("mouseout", handleTooltipMouseOut);
+    chatsList.addEventListener("mousemove", handleTooltipMouseMove);
+    tooltipEventsInitialized = true;
+  }
+  function handleTooltipMouseOver(e) {
+    const item = e.target.closest(".lobby-chat-item");
+    if (!item) return;
+    if (currentTooltipTarget === item) return;
+    const fullPreview = item.dataset.fullPreview || "";
+    if (!fullPreview) return;
+    hideTooltip();
+    currentTooltipTarget = item;
+    tooltipTimeout = setTimeout(() => {
+      if (currentTooltipTarget === item && fullPreview) {
+        showTooltip(fullPreview, e);
       }
-      item.addEventListener("mouseenter", (e) => {
-        if (currentTooltipTarget === item) return;
-        hideTooltip();
-        currentTooltipTarget = item;
-        tooltipTimeout = setTimeout(() => {
-          if (currentTooltipTarget === item && fullPreview) {
-            showTooltip(fullPreview, e);
-          }
-        }, 300);
-      });
-      item.addEventListener("mousemove", (e) => {
-        if (tooltipElement && tooltipElement.style.display === "block" && currentTooltipTarget === item) {
-          tooltipElement.style.left = `${e.clientX + 15}px`;
-          tooltipElement.style.top = `${e.clientY + 15}px`;
-        }
-      });
-      item.addEventListener("mouseleave", () => {
-        if (currentTooltipTarget === item) {
-          hideTooltip();
-        }
-      });
-    });
+    }, 300);
+  }
+  function handleTooltipMouseOut(e) {
+    const item = e.target.closest(".lobby-chat-item");
+    if (!item) return;
+    const relatedItem = e.relatedTarget?.closest(".lobby-chat-item");
+    if (relatedItem === item) return;
+    if (currentTooltipTarget === item) {
+      hideTooltip();
+    }
+  }
+  function handleTooltipMouseMove(e) {
+    const item = e.target.closest(".lobby-chat-item");
+    if (!item) return;
+    if (tooltipElement && tooltipElement.style.display === "block" && currentTooltipTarget === item) {
+      tooltipElement.style.left = `${e.clientX + 15}px`;
+      tooltipElement.style.top = `${e.clientY + 15}px`;
+    }
   }
   function cleanupTooltip() {
     hideTooltip();
+    const chatsList = document.getElementById("chat-lobby-chats-list");
+    if (chatsList && tooltipEventsInitialized) {
+      chatsList.removeEventListener("mouseover", handleTooltipMouseOver);
+      chatsList.removeEventListener("mouseout", handleTooltipMouseOut);
+      chatsList.removeEventListener("mousemove", handleTooltipMouseMove);
+    }
+    tooltipEventsInitialized = false;
     if (tooltipElement && tooltipElement.parentNode) {
       tooltipElement.parentNode.removeChild(tooltipElement);
     }
@@ -3266,9 +3288,9 @@ ${message}` : message;
       showStep(4);
       return;
     }
-    const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+    const currentYear2 = (/* @__PURE__ */ new Date()).getFullYear();
     const years = [];
-    for (let y = currentYear; y >= currentYear - 5; y--) {
+    for (let y = currentYear2; y >= currentYear2 - 5; y--) {
       years.push(y);
     }
     container.innerHTML = `
@@ -3458,9 +3480,9 @@ ${message}` : message;
       showStep(10);
       return;
     }
-    const currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+    const currentYear2 = (/* @__PURE__ */ new Date()).getFullYear();
     const years = [];
-    for (let y = currentYear; y >= currentYear - 5; y--) {
+    for (let y = currentYear2; y >= currentYear2 - 5; y--) {
       years.push(y);
     }
     container.innerHTML = `
@@ -3720,6 +3742,176 @@ ${message}` : message;
       container.appendChild(confetti);
     }
     setTimeout(() => container.remove(), 5e3);
+  }
+
+  // src/data/calendarStorage.js
+  var STORAGE_KEY = "chatLobby_calendar";
+  function loadCalendarData() {
+    try {
+      const data = localStorage.getItem(STORAGE_KEY);
+      if (data) {
+        return JSON.parse(data);
+      }
+    } catch (e) {
+      console.error("[Calendar] Failed to load data:", e);
+    }
+    return { snapshots: {}, lastSnapshotDate: null };
+  }
+  function saveSnapshot(date, totalChats) {
+    try {
+      const data = loadCalendarData();
+      data.snapshots[date] = totalChats;
+      data.lastSnapshotDate = date;
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch (e) {
+      console.error("[Calendar] Failed to save snapshot:", e);
+    }
+  }
+  function getMonthIncreases(year, month) {
+    const data = loadCalendarData();
+    const result = {};
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const todayTotal = data.snapshots[date];
+      if (todayTotal === void 0) {
+        result[date] = null;
+        continue;
+      }
+      const dateObj = new Date(date);
+      dateObj.setDate(dateObj.getDate() - 1);
+      const prevDate = dateObj.toISOString().split("T")[0];
+      const prevTotal = data.snapshots[prevDate];
+      if (prevTotal === void 0) {
+        result[date] = { isFirst: true, total: todayTotal };
+      } else {
+        result[date] = todayTotal - prevTotal;
+      }
+    }
+    return result;
+  }
+
+  // src/ui/calendarView.js
+  var calendarOverlay = null;
+  var currentYear = (/* @__PURE__ */ new Date()).getFullYear();
+  var currentMonth = (/* @__PURE__ */ new Date()).getMonth();
+  async function openCalendarView() {
+    if (!calendarOverlay) {
+      calendarOverlay = document.createElement("div");
+      calendarOverlay.id = "calendar-overlay";
+      calendarOverlay.innerHTML = `
+            <div class="calendar-container">
+                <div class="calendar-header">
+                    <button class="calendar-nav" id="calendar-prev">\u25C0</button>
+                    <h3 id="calendar-title"></h3>
+                    <button class="calendar-nav" id="calendar-next">\u25B6</button>
+                    <button class="calendar-close" id="calendar-close">\u2715</button>
+                </div>
+                <div class="calendar-weekdays">
+                    <span>\uC77C</span><span>\uC6D4</span><span>\uD654</span><span>\uC218</span><span>\uBAA9</span><span>\uAE08</span><span>\uD1A0</span>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+                <div class="calendar-footer" id="calendar-footer"></div>
+            </div>
+        `;
+      document.body.appendChild(calendarOverlay);
+      calendarOverlay.querySelector("#calendar-close").addEventListener("click", closeCalendarView);
+      calendarOverlay.querySelector("#calendar-prev").addEventListener("click", () => navigateMonth(-1));
+      calendarOverlay.querySelector("#calendar-next").addEventListener("click", () => navigateMonth(1));
+      calendarOverlay.addEventListener("click", (e) => {
+        if (e.target === calendarOverlay) closeCalendarView();
+      });
+    }
+    calendarOverlay.style.display = "flex";
+    await saveTodaySnapshot();
+    renderCalendar();
+  }
+  function closeCalendarView() {
+    if (calendarOverlay) {
+      calendarOverlay.style.display = "none";
+    }
+  }
+  function navigateMonth(delta) {
+    currentMonth += delta;
+    if (currentMonth < 0) {
+      currentMonth = 11;
+      currentYear--;
+    } else if (currentMonth > 11) {
+      currentMonth = 0;
+      currentYear++;
+    }
+    renderCalendar();
+  }
+  async function saveTodaySnapshot() {
+    try {
+      const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+      let characters = cache.get("characters", "all");
+      if (!characters) {
+        characters = await api.fetchCharacters();
+      }
+      let totalChats = 0;
+      for (const char of characters) {
+        let chats = cache.get("chats", char.avatar);
+        if (!chats || !Array.isArray(chats)) {
+          try {
+            chats = await api.fetchChatsForCharacter(char.avatar);
+          } catch {
+            chats = [];
+          }
+        }
+        totalChats += Array.isArray(chats) ? chats.length : 0;
+      }
+      saveSnapshot(today, totalChats);
+    } catch (e) {
+      console.error("[Calendar] Failed to save today snapshot:", e);
+    }
+  }
+  function renderCalendar() {
+    const title = calendarOverlay.querySelector("#calendar-title");
+    const grid = calendarOverlay.querySelector("#calendar-grid");
+    const footer = calendarOverlay.querySelector("#calendar-footer");
+    title.textContent = `${currentYear}\uB144 ${currentMonth + 1}\uC6D4`;
+    const firstDay = new Date(currentYear, currentMonth, 1).getDay();
+    const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+    const increases = getMonthIncreases(currentYear, currentMonth);
+    let html = "";
+    for (let i = 0; i < firstDay; i++) {
+      html += '<div class="calendar-day empty"></div>';
+    }
+    const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      const increase = increases[date];
+      const isToday = date === today;
+      let increaseText = "";
+      let increaseClass = "";
+      if (increase === null) {
+        increaseText = "---";
+        increaseClass = "no-data";
+      } else if (typeof increase === "object" && increase.isFirst) {
+        increaseText = `\u{1F4DD}${increase.total}`;
+        increaseClass = "first-record";
+      } else if (increase > 0) {
+        increaseText = `+${increase}`;
+        increaseClass = "positive";
+      } else if (increase < 0) {
+        increaseText = `${increase}`;
+        increaseClass = "negative";
+      } else {
+        increaseText = "\xB10";
+        increaseClass = "zero";
+      }
+      html += `
+            <div class="calendar-day ${isToday ? "today" : ""}" data-date="${date}">
+                <span class="day-number">${day}</span>
+                <span class="day-increase ${increaseClass}">${increaseText}</span>
+            </div>
+        `;
+    }
+    grid.innerHTML = html;
+    const data = loadCalendarData();
+    const totalDays = Object.keys(data.snapshots).length;
+    footer.textContent = `\u{1F4CA} \uAE30\uB85D\uB41C \uB0A0: ${totalDays}\uC77C`;
   }
 
   // src/utils/intervalManager.js
@@ -4168,6 +4360,12 @@ ${message}` : message;
           break;
         case "toggle-header-menu":
           toggleHeaderMenu();
+          break;
+        case "open-calendar":
+          openCalendarView();
+          break;
+        case "close-calendar":
+          closeCalendarView();
           break;
       }
     }
