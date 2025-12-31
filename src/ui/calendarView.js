@@ -283,10 +283,18 @@ async function saveBaselineSnapshot() {
 
 /**
  * 가장 최근 스냅샷 찾기 (최대 7일 전까지)
+ * @param {string|Date} beforeDate - 기준 날짜 (이 날짜 이전에서 찾음)
  */
 function findRecentSnapshot(beforeDate, maxDays = 7) {
     const snapshots = loadSnapshots();
-    let checkDate = new Date(beforeDate + 'T00:00:00');
+    
+    // string이든 Date든 모두 처리
+    let checkDate;
+    if (typeof beforeDate === 'string') {
+        checkDate = new Date(beforeDate + 'T00:00:00');
+    } else {
+        checkDate = new Date(beforeDate);
+    }
     
     for (let i = 0; i < maxDays; i++) {
         checkDate.setDate(checkDate.getDate() - 1);

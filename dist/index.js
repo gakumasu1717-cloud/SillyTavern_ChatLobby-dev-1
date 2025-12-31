@@ -4026,7 +4026,12 @@ ${message}` : message;
   }
   function findRecentSnapshot(beforeDate, maxDays = 7) {
     const snapshots = loadSnapshots();
-    let checkDate = /* @__PURE__ */ new Date(beforeDate + "T00:00:00");
+    let checkDate;
+    if (typeof beforeDate === "string") {
+      checkDate = /* @__PURE__ */ new Date(beforeDate + "T00:00:00");
+    } else {
+      checkDate = new Date(beforeDate);
+    }
     for (let i = 0; i < maxDays; i++) {
       checkDate.setDate(checkDate.getDate() - 1);
       const dateStr = getLocalDateString(checkDate);
