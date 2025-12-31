@@ -21,6 +21,21 @@ let tooltipTimeout = null;
 let currentTooltipTarget = null;
 
 /**
+ * 툴팁 요소 정리 (cleanup용)
+ */
+export function cleanupTooltip() {
+    if (tooltipTimeout) {
+        clearTimeout(tooltipTimeout);
+        tooltipTimeout = null;
+    }
+    if (tooltipElement) {
+        tooltipElement.remove();
+        tooltipElement = null;
+    }
+    currentTooltipTarget = null;
+}
+
+/**
  * 툴팁 요소 생성 (한 번만)
  */
 function ensureTooltipElement() {
