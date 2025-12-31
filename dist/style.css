@@ -885,6 +885,7 @@
     cursor: pointer;
     height: 32px;
     min-width: 80px;
+    box-sizing: border-box;
 }
 
 #chat-lobby-folder-filter {
@@ -902,9 +903,12 @@
     cursor: pointer;
     font-size: 14px;
     transition: all var(--transition-fast);
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
+    vertical-align: middle;
+    flex-shrink: 0;
 }
 
 .filters-row button:hover {
