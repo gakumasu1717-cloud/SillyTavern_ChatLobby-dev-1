@@ -244,19 +244,31 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
     // 로비 열기/닫기
     // ============================================
     
+    // 로비 열기 중복 실행 방지
+    let isOpeningLobby = false;
+    
     /**
      * 로비 열기
      * 캐시는 이벤트로 동기화함 (onChatChanged)
      */
     async function openLobby() {
-        console.log('[DEBUG] openLobby called, isLobbyOpen:', store.isLobbyOpen);
+        // 이미 열기 진행 중이면 무시
+        if (isOpeningLobby) {
+            return;
+        }
         
         // 이미 열려있고 채팅 패널이 표시 중이면 무시
         const chatsPanel = document.getElementById('chat-lobby-chats');
         if (store.isLobbyOpen && chatsPanel?.classList.contains('visible')) {
-            console.log('[DEBUG] openLobby: already open with visible chat panel, skipping');
             return;
         }
+        
+        // 이미 열려있고 UI도 표시 중이면 무시 (isLobbyOpen만 체크)
+        if (store.isLobbyOpen) {
+            return;
+        }
+        
+        isOpeningLobby = true;
         
         const overlay = document.getElementById('chat-lobby-overlay');
         const container = document.getElementById('chat-lobby-container');
@@ -332,6 +344,9 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
             }
             
         }
+        
+        // 열기 완료 후 플래그 해제
+        isOpeningLobby = false;
     }
     
     /**
