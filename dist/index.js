@@ -4074,14 +4074,20 @@ ${message}` : message;
       if (hasData && snapshot.topChar) {
         const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
         const charName = snapshot.topChar.replace(/\.[^/.]+$/, "");
-        const charMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
+        const prevDate = new Date(THIS_YEAR2, currentMonth, day - 1);
+        const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}-${String(prevDate.getDate()).padStart(2, "0")}`;
+        const prevSnapshot = snapshots[prevDateStr];
+        const prevMsgs = prevSnapshot?.byChar?.[snapshot.topChar] || 0;
+        const todayMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
+        const increase = todayMsgs - prevMsgs;
+        const increaseText = increase > 0 ? `+${increase}` : `${increase}`;
         contentHtml = `
                 <img class="cal-card-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">
                 <div class="cal-card-day">${day}</div>
                 <div class="cal-card-gradient"></div>
                 <div class="cal-card-info">
                     <div class="cal-card-name">${charName}</div>
-                    <div class="cal-card-count">${charMsgs}\uAC1C \uCC44\uD305</div>
+                    <div class="cal-card-count">${increaseText}</div>
                 </div>
             `;
       } else {

@@ -355,16 +355,23 @@ function renderCalendar() {
         if (hasData && snapshot.topChar) {
             const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
             const charName = snapshot.topChar.replace(/\.[^/.]+$/, '');
-            const charMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
             
-            // 이미지 스타일: 날짜 좌상단, 아바타 전체, 하단에 이름+채팅수
+            // 어제 대비 메시지 증감량 계산
+            const prevDate = new Date(THIS_YEAR, currentMonth, day - 1);
+            const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
+            const prevSnapshot = snapshots[prevDateStr];
+            const prevMsgs = prevSnapshot?.byChar?.[snapshot.topChar] || 0;
+            const todayMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
+            const increase = todayMsgs - prevMsgs;
+            const increaseText = increase > 0 ? `+${increase}` : `${increase}`;
+            
             contentHtml = `
                 <img class="cal-card-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">
                 <div class="cal-card-day">${day}</div>
                 <div class="cal-card-gradient"></div>
                 <div class="cal-card-info">
                     <div class="cal-card-name">${charName}</div>
-                    <div class="cal-card-count">${charMsgs}개 채팅</div>
+                    <div class="cal-card-count">${increaseText}</div>
                 </div>
             `;
         } else {

@@ -2760,23 +2760,60 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     min-height: 0;
 }
 
-/* 날짜 그리드 - 7열 흰 선 */
+/* 날짜 그리드 - 7열, 연속적인 선 */
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    border-top: 1px solid rgba(255, 255, 255, 0.6);
-    border-left: 1px solid rgba(255, 255, 255, 0.6);
+    position: relative;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* 각 날짜 셀 - 라운드 없음, 흰 선 */
+/* 그리드 오른쪽/아래로 흐려지는 효과 */
+.calendar-grid::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: -40px;
+    bottom: -40px;
+    pointer-events: none;
+    background: linear-gradient(to right, transparent 90%, #000 100%),
+                linear-gradient(to bottom, transparent 90%, #000 100%);
+    z-index: 10;
+}
+
+/* 각 날짜 셀 - 연속적인 선 (오른쪽/아래만) */
 .cal-card {
     position: relative;
     aspect-ratio: 2 / 3;
     min-width: 80px;
     background: #000;
-    border-right: 1px solid rgba(255, 255, 255, 0.6);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.6);
     overflow: hidden;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* 연속적인 그리드 선 - 오른쪽 */
+.cal-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 1px;
+    height: calc(100% + 40px);
+    background: linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 80%, transparent 100%);
+    z-index: 5;
+}
+
+/* 연속적인 그리드 선 - 아래쪽 */
+.cal-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: calc(100% + 40px);
+    height: 1px;
+    background: linear-gradient(to right, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.3) 80%, transparent 100%);
+    z-index: 5;
 }
 
 .cal-card.today {
@@ -2808,15 +2845,17 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     z-index: 2;
 }
 
-/* 날짜 - 좌측 상단 */
+/* 날짜 - 좌측 상단, 12pt */
 .cal-card-day {
     position: absolute;
-    top: 4px;
-    left: 6px;
-    font-size: 0.75em;
+    top: 6px;
+    left: 8px;
+    font-size: 12pt;
+    font-weight: 500;
     color: #fff;
-    z-index: 5;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+    z-index: 6;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
 /* 카드 정보 - 하단 (이름 위, 채팅수 아래) */
@@ -2844,28 +2883,45 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     color: rgba(255, 255, 255, 0.6);
 }
 
-/* 빈 카드 - 좌측 상단에 날짜만 */
+/* 빈 카드 - 좌측 상단에 날짜만, 12pt */
 .cal-card-empty {
     position: absolute;
-    top: 4px;
-    left: 6px;
-    font-size: 0.75em;
+    top: 6px;
+    left: 8px;
+    font-size: 12pt;
+    font-weight: 500;
     color: rgba(255, 255, 255, 0.4);
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* 모바일 - 뷰포트보다 크게 스크롤 */
+/* 모바일 - 드래그 스크롤, 핀치줌 가능 */
 @media (max-width: 768px) {
     .calendar-fullscreen {
-        min-width: 560px; /* 80px * 7 = 560px, 뷰포트보다 클 수 있음 */
+        min-width: 560px;
+        touch-action: pan-x pan-y pinch-zoom;
     }
     
     .calendar-main {
-        overflow-x: auto;
-        overflow-y: auto;
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x pan-y pinch-zoom;
+    }
+    
+    .calendar-grid {
+        touch-action: pan-x pan-y pinch-zoom;
     }
     
     .cal-card {
         min-width: 70px;
+    }
+    
+    /* 셀이 작을 때 이름/상세정보 숨김 - container query 대용 */
+    .cal-card-info {
+        display: none;
+    }
+    
+    .cal-card-gradient {
+        display: none;
     }
 }
 
