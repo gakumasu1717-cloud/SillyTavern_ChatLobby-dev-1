@@ -2259,10 +2259,6 @@ ${message}` : message;
       pendingRender = { searchTerm, sortOverride };
       return;
     }
-    const chatsPanel = document.getElementById("chat-lobby-chats");
-    if (chatsPanel?.classList.contains("visible")) {
-      return;
-    }
     isRendering = true;
     try {
       const container = document.getElementById("chat-lobby-characters");
@@ -3887,64 +3883,64 @@ ${message}` : message;
       if (isOpeningLobby) {
         return;
       }
-      const chatsPanel = document.getElementById("chat-lobby-chats");
-      if (store.isLobbyOpen && chatsPanel?.classList.contains("visible")) {
-        return;
-      }
       if (store.isLobbyOpen) {
         return;
       }
       isOpeningLobby = true;
+      store.setLobbyOpen(true);
       const overlay = document.getElementById("chat-lobby-overlay");
       const container = document.getElementById("chat-lobby-container");
       const fab = document.getElementById("chat-lobby-fab");
-      if (overlay) {
-        overlay.style.display = "flex";
-        if (container) container.style.display = "flex";
-        if (fab) fab.style.display = "none";
-        if (!store.onCharacterSelect) {
-          console.warn("[ChatLobby] Handler not set, re-running setupHandlers");
-          setupHandlers();
-        }
-        store.reset();
-        store.setLobbyOpen(true);
-        resetCharacterSelectLock();
-        try {
-          const context = api.getContext();
-          if (typeof context?.getCharacters === "function") {
-            await context.getCharacters();
+      const chatsPanel = document.getElementById("chat-lobby-chats");
+      try {
+        if (overlay) {
+          overlay.style.display = "flex";
+          if (container) container.style.display = "flex";
+          if (fab) fab.style.display = "none";
+          if (!store.onCharacterSelect) {
+            console.warn("[ChatLobby] Handler not set, re-running setupHandlers");
+            setupHandlers();
           }
-        } catch (error) {
-          console.warn("[ChatLobby] Failed to refresh characters:", error);
-        }
-        storage.setFilterFolder("all");
-        if (store.batchModeActive) {
-          toggleBatchMode();
-        }
-        closeChatPanel();
-        const characters = api.getCharacters();
-        await Promise.all([
-          renderPersonaBar(),
-          renderCharacterGrid()
-        ]);
-        setupPersonaWheelScroll();
-        updateFolderDropdowns();
-        const currentContext = api.getContext();
-        if (currentContext?.characterId !== void 0 && currentContext.characterId >= 0) {
-          const currentChar = currentContext.characters?.[currentContext.characterId];
-          if (currentChar) {
-            setTimeout(() => {
-              const charCard = document.querySelector(
-                `.lobby-char-card[data-char-avatar="${currentChar.avatar}"]`
-              );
-              if (charCard) {
-                charCard.classList.add("selected");
-              }
-            }, 200);
+          store.reset();
+          resetCharacterSelectLock();
+          try {
+            const context = api.getContext();
+            if (typeof context?.getCharacters === "function") {
+              await context.getCharacters();
+            }
+          } catch (error) {
+            console.warn("[ChatLobby] Failed to refresh characters:", error);
+          }
+          storage.setFilterFolder("all");
+          if (store.batchModeActive) {
+            toggleBatchMode();
+          }
+          closeChatPanel();
+          const characters = api.getCharacters();
+          await Promise.all([
+            renderPersonaBar(),
+            renderCharacterGrid()
+          ]);
+          setupPersonaWheelScroll();
+          updateFolderDropdowns();
+          const currentContext = api.getContext();
+          if (currentContext?.characterId !== void 0 && currentContext.characterId >= 0) {
+            const currentChar = currentContext.characters?.[currentContext.characterId];
+            if (currentChar) {
+              setTimeout(() => {
+                const charCard = document.querySelector(
+                  `.lobby-char-card[data-char-avatar="${currentChar.avatar}"]`
+                );
+                if (charCard) {
+                  charCard.classList.add("selected");
+                }
+              }, 200);
+            }
           }
         }
+      } finally {
+        isOpeningLobby = false;
       }
-      isOpeningLobby = false;
     }
     async function closeLobby() {
       const container = document.getElementById("chat-lobby-container");

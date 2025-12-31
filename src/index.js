@@ -257,23 +257,21 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
             return;
         }
         
-        // 이미 열려있고 채팅 패널이 표시 중이면 무시
-        const chatsPanel = document.getElementById('chat-lobby-chats');
-        if (store.isLobbyOpen && chatsPanel?.classList.contains('visible')) {
-            return;
-        }
-        
-        // 이미 열려있고 UI도 표시 중이면 무시 (isLobbyOpen만 체크)
+        // 이미 열려있으면 무시 (상태만 확인)
         if (store.isLobbyOpen) {
             return;
         }
         
+        // 열기 시작 - 즉시 락
         isOpeningLobby = true;
+        store.setLobbyOpen(true);  // 다른 호출 차단을 위해 즉시 설정
         
         const overlay = document.getElementById('chat-lobby-overlay');
         const container = document.getElementById('chat-lobby-container');
         const fab = document.getElementById('chat-lobby-fab');
+        const chatsPanel = document.getElementById('chat-lobby-chats');
         
+        try {
         if (overlay) {
             overlay.style.display = 'flex';
             if (container) container.style.display = 'flex';
@@ -285,9 +283,8 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                 setupHandlers();
             }
             
-            // 상태 초기화 (이전 선택 정보 클리어, 핸들러는 유지)
+            // 상태 초기화 (이전 선택 정보 클리어, 핸들러는 유지, isLobbyOpen 유지)
             store.reset();
-            store.setLobbyOpen(true);
             
             // 캐릭터 선택 락 리셋
             resetCharacterSelectLock();
@@ -347,9 +344,10 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
             }
             
         }
-        
-        // 열기 완료 후 플래그 해제
-        isOpeningLobby = false;
+        } finally {
+            // 열기 완료 후 플래그 해제
+            isOpeningLobby = false;
+        }
     }
     
     /**

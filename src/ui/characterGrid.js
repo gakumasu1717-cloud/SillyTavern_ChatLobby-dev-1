@@ -56,12 +56,6 @@ export async function renderCharacterGrid(searchTerm = '', sortOverride = null) 
         return;
     }
     
-    // 채팅 패널이 열려있으면 재렌더 스킵 (사용자 경험 보호)
-    const chatsPanel = document.getElementById('chat-lobby-chats');
-    if (chatsPanel?.classList.contains('visible')) {
-        return;
-    }
-    
     isRendering = true;
     
     try {
