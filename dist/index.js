@@ -3748,55 +3748,48 @@ ${message}` : message;
 
   // src/data/calendarStorage.js
   var STORAGE_KEY = "chatLobby_calendar";
-  function loadCalendarData() {
+  function loadSnapshots() {
     try {
       const data = localStorage.getItem(STORAGE_KEY);
       if (data) {
-        return JSON.parse(data);
+        const parsed = JSON.parse(data);
+        return parsed.snapshots || {};
       }
     } catch (e) {
-      console.error("[Calendar] Failed to load data:", e);
+      console.error("[Calendar] Failed to load snapshots:", e);
     }
-    return { snapshots: {}, lastSnapshotDate: null };
+    return {};
   }
-  function saveSnapshot(date, totalChats) {
+  function getSnapshot(date) {
+    const snapshots = loadSnapshots();
+    return snapshots[date] || null;
+  }
+  function saveSnapshot(date, total, topChar) {
     try {
-      const data = loadCalendarData();
-      data.snapshots[date] = totalChats;
-      data.lastSnapshotDate = date;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      const snapshots = loadSnapshots();
+      snapshots[date] = { total, topChar };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify({ snapshots }));
     } catch (e) {
       console.error("[Calendar] Failed to save snapshot:", e);
     }
   }
-  function getMonthIncreases(year, month) {
-    const data = loadCalendarData();
-    const result = {};
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const todayTotal = data.snapshots[date];
-      if (todayTotal === void 0) {
-        result[date] = null;
-        continue;
-      }
-      const dateObj = new Date(date);
-      dateObj.setDate(dateObj.getDate() - 1);
-      const prevDate = dateObj.toISOString().split("T")[0];
-      const prevTotal = data.snapshots[prevDate];
-      if (prevTotal === void 0) {
-        result[date] = { isFirst: true, total: todayTotal };
-      } else {
-        result[date] = todayTotal - prevTotal;
-      }
-    }
-    return result;
+  function getIncrease(date) {
+    const snapshots = loadSnapshots();
+    const today = snapshots[date];
+    if (!today) return null;
+    const dateObj = new Date(date);
+    dateObj.setDate(dateObj.getDate() - 1);
+    const prevDate = dateObj.toISOString().split("T")[0];
+    const prev = snapshots[prevDate];
+    if (!prev) return null;
+    return today.total - prev.total;
   }
 
   // src/ui/calendarView.js
   var calendarOverlay = null;
   var currentYear = (/* @__PURE__ */ new Date()).getFullYear();
   var currentMonth = (/* @__PURE__ */ new Date()).getMonth();
+  var selectedDateInfo = null;
   async function openCalendarView() {
     if (!calendarOverlay) {
       calendarOverlay = document.createElement("div");
@@ -3804,15 +3797,23 @@ ${message}` : message;
       calendarOverlay.innerHTML = `
             <div class="calendar-container">
                 <div class="calendar-header">
+                    <button class="calendar-back" id="calendar-close">\u2190</button>
+                    <h3>\u{1F4C5} \uCC44\uD305 \uCE98\uB9B0\uB354</h3>
+                </div>
+                <div class="calendar-nav-row">
                     <button class="calendar-nav" id="calendar-prev">\u25C0</button>
-                    <h3 id="calendar-title"></h3>
+                    <span id="calendar-title"></span>
                     <button class="calendar-nav" id="calendar-next">\u25B6</button>
-                    <button class="calendar-close" id="calendar-close">\u2715</button>
                 </div>
                 <div class="calendar-weekdays">
-                    <span>\uC77C</span><span>\uC6D4</span><span>\uD654</span><span>\uC218</span><span>\uBAA9</span><span>\uAE08</span><span>\uD1A0</span>
+                    <span class="sunday">\uC77C</span><span>\uC6D4</span><span>\uD654</span><span>\uC218</span><span>\uBAA9</span><span>\uAE08</span><span class="saturday">\uD1A0</span>
                 </div>
                 <div class="calendar-grid" id="calendar-grid"></div>
+                <div class="calendar-detail" id="calendar-detail" style="display: none;">
+                    <div class="detail-date" id="detail-date"></div>
+                    <div class="detail-increase" id="detail-increase"></div>
+                    <div class="detail-char" id="detail-char"></div>
+                </div>
                 <div class="calendar-footer" id="calendar-footer"></div>
             </div>
         `;
@@ -3823,8 +3824,10 @@ ${message}` : message;
       calendarOverlay.addEventListener("click", (e) => {
         if (e.target === calendarOverlay) closeCalendarView();
       });
+      calendarOverlay.querySelector("#calendar-grid").addEventListener("click", handleDateClick);
     }
     calendarOverlay.style.display = "flex";
+    selectedDateInfo = null;
     await saveTodaySnapshot();
     renderCalendar();
   }
@@ -3842,6 +3845,7 @@ ${message}` : message;
       currentMonth = 0;
       currentYear++;
     }
+    selectedDateInfo = null;
     renderCalendar();
   }
   async function saveTodaySnapshot() {
@@ -3851,7 +3855,7 @@ ${message}` : message;
       if (!characters) {
         characters = await api.fetchCharacters();
       }
-      let totalChats = 0;
+      const rankings = [];
       for (const char of characters) {
         let chats = cache.get("chats", char.avatar);
         if (!chats || !Array.isArray(chats)) {
@@ -3861,9 +3865,14 @@ ${message}` : message;
             chats = [];
           }
         }
-        totalChats += Array.isArray(chats) ? chats.length : 0;
+        const chatCount = Array.isArray(chats) ? chats.length : 0;
+        const messageCount = Array.isArray(chats) ? chats.reduce((sum, chat) => sum + (chat.chat_items || 0), 0) : 0;
+        rankings.push({ name: char.name, avatar: char.avatar, chatCount, messageCount });
       }
-      saveSnapshot(today, totalChats);
+      rankings.sort((a, b) => b.messageCount - a.messageCount);
+      const totalChats = rankings.reduce((sum, r) => sum + r.chatCount, 0);
+      const topChar = rankings[0]?.avatar || "";
+      saveSnapshot(today, totalChats, topChar);
     } catch (e) {
       console.error("[Calendar] Failed to save today snapshot:", e);
     }
@@ -3872,10 +3881,11 @@ ${message}` : message;
     const title = calendarOverlay.querySelector("#calendar-title");
     const grid = calendarOverlay.querySelector("#calendar-grid");
     const footer = calendarOverlay.querySelector("#calendar-footer");
+    const detail = calendarOverlay.querySelector("#calendar-detail");
     title.textContent = `${currentYear}\uB144 ${currentMonth + 1}\uC6D4`;
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-    const increases = getMonthIncreases(currentYear, currentMonth);
+    const snapshots = loadSnapshots();
     let html = "";
     for (let i = 0; i < firstDay; i++) {
       html += '<div class="calendar-day empty"></div>';
@@ -3883,37 +3893,82 @@ ${message}` : message;
     const today = (/* @__PURE__ */ new Date()).toISOString().split("T")[0];
     for (let day = 1; day <= daysInMonth; day++) {
       const date = `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      const increase = increases[date];
+      const snapshot = snapshots[date];
       const isToday = date === today;
-      let increaseText = "";
-      let increaseClass = "";
-      if (increase === null) {
-        increaseText = "---";
-        increaseClass = "no-data";
-      } else if (typeof increase === "object" && increase.isFirst) {
-        increaseText = `\u{1F4DD}${increase.total}`;
-        increaseClass = "first-record";
-      } else if (increase > 0) {
-        increaseText = `+${increase}`;
-        increaseClass = "positive";
-      } else if (increase < 0) {
-        increaseText = `${increase}`;
-        increaseClass = "negative";
-      } else {
-        increaseText = "\xB10";
-        increaseClass = "zero";
+      const hasData = !!snapshot;
+      let content = "";
+      if (hasData && snapshot.topChar) {
+        const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
+        content = `<img class="day-avatar" src="${avatarUrl}" alt="" onerror="this.style.display='none'">`;
+      } else if (!hasData) {
+        content = '<span class="day-no-data">-</span>';
       }
       html += `
-            <div class="calendar-day ${isToday ? "today" : ""}" data-date="${date}">
+            <div class="calendar-day ${isToday ? "today" : ""} ${hasData ? "has-data" : ""}" data-date="${date}">
                 <span class="day-number">${day}</span>
-                <span class="day-increase ${increaseClass}">${increaseText}</span>
+                ${content}
             </div>
         `;
     }
     grid.innerHTML = html;
-    const data = loadCalendarData();
-    const totalDays = Object.keys(data.snapshots).length;
+    detail.style.display = selectedDateInfo ? "block" : "none";
+    if (selectedDateInfo) {
+      showDateDetail(selectedDateInfo);
+    }
+    const totalDays = Object.keys(snapshots).length;
     footer.textContent = `\u{1F4CA} \uAE30\uB85D\uB41C \uB0A0: ${totalDays}\uC77C`;
+  }
+  function handleDateClick(e) {
+    const dayEl = e.target.closest(".calendar-day");
+    if (!dayEl || dayEl.classList.contains("empty")) return;
+    const date = dayEl.dataset.date;
+    const snapshot = getSnapshot(date);
+    if (!snapshot) {
+      selectedDateInfo = null;
+      calendarOverlay.querySelector("#calendar-detail").style.display = "none";
+      return;
+    }
+    selectedDateInfo = date;
+    showDateDetail(date);
+  }
+  function showDateDetail(date) {
+    const detail = calendarOverlay.querySelector("#calendar-detail");
+    const dateEl = calendarOverlay.querySelector("#detail-date");
+    const increaseEl = calendarOverlay.querySelector("#detail-increase");
+    const charEl = calendarOverlay.querySelector("#detail-char");
+    const snapshot = getSnapshot(date);
+    if (!snapshot) return;
+    const dateObj = new Date(date);
+    const monthDay = `${dateObj.getMonth() + 1}\uC6D4 ${dateObj.getDate()}\uC77C`;
+    dateEl.textContent = monthDay;
+    const increase = getIncrease(date);
+    if (increase !== null) {
+      if (increase > 0) {
+        increaseEl.textContent = `+${increase}\uAC1C \uCC44\uD305 \uC99D\uAC00`;
+        increaseEl.className = "detail-increase positive";
+      } else if (increase < 0) {
+        increaseEl.textContent = `${increase}\uAC1C \uCC44\uD305 \uAC10\uC18C`;
+        increaseEl.className = "detail-increase negative";
+      } else {
+        increaseEl.textContent = `\uBCC0\uD654 \uC5C6\uC74C`;
+        increaseEl.className = "detail-increase zero";
+      }
+    } else {
+      increaseEl.textContent = `\uCD1D ${snapshot.total}\uAC1C \uCC44\uD305`;
+      increaseEl.className = "detail-increase first";
+    }
+    if (snapshot.topChar) {
+      const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
+      const charName = snapshot.topChar.replace(/\.[^/.]+$/, "");
+      charEl.innerHTML = `
+            <img class="detail-avatar" src="${avatarUrl}" alt="${charName}" onerror="this.style.display='none'">
+            <span class="detail-char-name">${charName}</span>
+            <span class="detail-char-label">\uAC00\uC7A5 \uB9CE\uC774 \uB300\uD654\uD568</span>
+        `;
+    } else {
+      charEl.innerHTML = "";
+    }
+    detail.style.display = "block";
   }
 
   // src/utils/intervalManager.js

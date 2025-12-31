@@ -5,104 +5,77 @@
 const STORAGE_KEY = 'chatLobby_calendar';
 
 /**
- * 스냅샷 데이터 로드
- * @returns {{ snapshots: Object, lastSnapshotDate: string|null }}
+ * 전체 스냅샷 객체 로드
+ * @returns {Object} - { 'YYYY-MM-DD': { total, topChar } }
  */
-export function loadCalendarData() {
+export function loadSnapshots() {
     try {
         const data = localStorage.getItem(STORAGE_KEY);
         if (data) {
-            return JSON.parse(data);
+            const parsed = JSON.parse(data);
+            return parsed.snapshots || {};
         }
     } catch (e) {
-        console.error('[Calendar] Failed to load data:', e);
+        console.error('[Calendar] Failed to load snapshots:', e);
     }
-    return { snapshots: {}, lastSnapshotDate: null };
+    return {};
 }
 
 /**
- * 스냅샷 저장
+ * 특정 날짜 스냅샷 반환
  * @param {string} date - YYYY-MM-DD 형식
- * @param {number} totalChats - 전체 채팅 수
+ * @returns {{ total: number, topChar: string }|null}
  */
-export function saveSnapshot(date, totalChats) {
+export function getSnapshot(date) {
+    const snapshots = loadSnapshots();
+    return snapshots[date] || null;
+}
+
+/**
+ * 해당 날짜 스냅샷 저장 (덮어쓰기)
+ * @param {string} date - YYYY-MM-DD 형식
+ * @param {number} total - 전체 채팅 수
+ * @param {string} topChar - 1위 캐릭터 아바타
+ */
+export function saveSnapshot(date, total, topChar) {
     try {
-        const data = loadCalendarData();
-        data.snapshots[date] = totalChats;
-        data.lastSnapshotDate = date;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        const snapshots = loadSnapshots();
+        snapshots[date] = { total, topChar };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ snapshots }));
     } catch (e) {
         console.error('[Calendar] Failed to save snapshot:', e);
     }
 }
 
 /**
- * 특정 날짜의 스냅샷 가져오기
+ * 해당 날짜 데이터 있는지 확인
  * @param {string} date - YYYY-MM-DD 형식
- * @returns {number|null}
+ * @returns {boolean}
  */
-export function getSnapshot(date) {
-    const data = loadCalendarData();
-    return data.snapshots[date] ?? null;
+export function hasSnapshot(date) {
+    const snapshots = loadSnapshots();
+    return !!snapshots[date];
 }
 
 /**
  * 전날 대비 증가량 계산
  * @param {string} date - YYYY-MM-DD 형식
- * @returns {number|null} - 증가량 (데이터 없으면 null)
+ * @returns {number|null} - 증가량 (전날 데이터 없으면 null)
  */
 export function getIncrease(date) {
-    const data = loadCalendarData();
-    const todayTotal = data.snapshots[date];
+    const snapshots = loadSnapshots();
+    const today = snapshots[date];
     
-    if (todayTotal === undefined) return null;
+    if (!today) return null;
     
     // 전날 날짜 계산
     const dateObj = new Date(date);
     dateObj.setDate(dateObj.getDate() - 1);
     const prevDate = dateObj.toISOString().split('T')[0];
     
-    const prevTotal = data.snapshots[prevDate];
+    const prev = snapshots[prevDate];
     
-    if (prevTotal === undefined) return null;
+    if (!prev) return null;
     
-    return todayTotal - prevTotal;
-}
-
-/**
- * 특정 월의 모든 날짜별 증감량 가져오기
- * @param {number} year
- * @param {number} month - 0-indexed
- * @returns {Object} - { 'YYYY-MM-DD': increase|null }
- */
-export function getMonthIncreases(year, month) {
-    const data = loadCalendarData();
-    const result = {};
-    
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
-    for (let day = 1; day <= daysInMonth; day++) {
-        const date = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-        const todayTotal = data.snapshots[date];
-        
-        if (todayTotal === undefined) {
-            result[date] = null;
-            continue;
-        }
-        
-        // 전날 계산
-        const dateObj = new Date(date);
-        dateObj.setDate(dateObj.getDate() - 1);
-        const prevDate = dateObj.toISOString().split('T')[0];
-        const prevTotal = data.snapshots[prevDate];
-        
-        if (prevTotal === undefined) {
-            // 첫 기록일 - 전체 채팅 수 표시
-            result[date] = { isFirst: true, total: todayTotal };
-        } else {
-            result[date] = todayTotal - prevTotal;
-        }
-    }
-    
-    return result;
+    return today.total - prev.total;
 }
