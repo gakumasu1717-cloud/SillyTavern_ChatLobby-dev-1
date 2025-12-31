@@ -304,18 +304,11 @@ function findRecentSnapshot(beforeDate, maxDays = 7) {
 async function saveTodaySnapshot() {
     try {
         const today = getLocalDateString();
-        const snapshots = loadSnapshots();
         
-        // 오늘 이미 스냅샷이 있으면 그걸 기준으로 (초기 스냅샷)
-        // 없으면 이전 날짜에서 찾기
-        let baseSnapshot = null;
-        if (snapshots[today]) {
-            baseSnapshot = snapshots[today];
-        } else {
-            const recentData = findRecentSnapshot(today);
-            baseSnapshot = recentData?.snapshot || null;
-        }
-        const baseByChar = baseSnapshot?.byChar || {};
+        // 항상 어제(또는 가장 최근 과거) 스냅샷을 기준으로 비교
+        // 초기 스냅샷은 saveBaselineSnapshot()에서 어제 날짜로 저장됨
+        const recentData = findRecentSnapshot(today);
+        const baseByChar = recentData?.snapshot?.byChar || {};
         
         let characters = cache.get('characters');
         if (!characters || characters.length === 0) {
@@ -384,7 +377,7 @@ async function saveTodaySnapshot() {
         }
         
         // 기준 데이터 없으면 (완전 첫 접속) 메시지 1위로
-        if (!baseSnapshot) {
+        if (!recentData) {
             topChar = rankings[0]?.avatar || '';
         }
         
