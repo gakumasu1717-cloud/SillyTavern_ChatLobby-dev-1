@@ -4233,17 +4233,28 @@ ${message}` : message;
       statsEl.textContent = statsText;
       statsEl.className = charIncrease >= 0 ? "bot-card-stats positive" : "bot-card-stats negative";
     } else {
-      statsEl.textContent = `Total: ${snapshot.total} chats`;
+      statsEl.textContent = `Total: ${snapshot.total} messages`;
       statsEl.className = "bot-card-stats";
     }
     const displayDate = new Date(date);
     const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     dateEl.textContent = `${monthNames[displayDate.getMonth()]} ${displayDate.getDate()}`;
-    card.style.display = "flex";
+    card.style.cssText = `
+        display: flex !important;
+        position: fixed !important;
+        bottom: calc(80px + env(safe-area-inset-bottom, 0px)) !important;
+        left: 50% !important;
+        transform: translateX(-50%) !important;
+        opacity: 1 !important;
+        visibility: visible !important;
+        z-index: 2147483647 !important;
+    `;
   }
   function hideBotCard() {
     const card = calendarOverlay?.querySelector("#calendar-bot-card");
-    if (card) card.style.display = "none";
+    if (card) {
+      card.style.cssText = "display: none !important;";
+    }
   }
   function showDebugModal() {
     const modal = calendarOverlay.querySelector("#calendar-debug-modal");
