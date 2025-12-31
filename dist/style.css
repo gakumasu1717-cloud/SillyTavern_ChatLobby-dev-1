@@ -866,40 +866,45 @@
     display: flex;
     align-items: center;
     justify-content: flex-start;
-    gap: 6px;
+    gap: 8px;
 }
 
 .filter-group {
     display: flex;
     align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
+    gap: 8px;
 }
 
 .filters-row select {
-    padding: 6px 8px;
+    padding: 6px 10px;
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: var(--text-primary);
     border-radius: 6px;
-    font-size: 11px;
+    font-size: 12px;
     cursor: pointer;
-    max-width: 110px;
+    height: 32px;
+    min-width: 80px;
 }
 
 #chat-lobby-folder-filter {
-    max-width: 90px;
+    min-width: 70px;
 }
 
 .filters-row button {
     background: rgba(255, 255, 255, 0.1);
     border: 1px solid rgba(255, 255, 255, 0.15);
     color: var(--text-primary);
-    padding: 6px 10px;
+    padding: 0;
+    width: 32px;
+    height: 32px;
     border-radius: 6px;
     cursor: pointer;
-    font-size: 12px;
+    font-size: 14px;
     transition: all var(--transition-fast);
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .filters-row button:hover {
