@@ -17,6 +17,11 @@
     --lobby-accent: #E50914;
     --lobby-accent-hover: #f40612;
     
+    /* Legacy Netflix 변수 (호환용) */
+    --netflix-bg: #141414;
+    --netflix-bg-hover: #404040;
+    --netflix-bg-card: #2f2f2f;
+    
     /* Text Colors */
     --text-primary: #FFFFFF;
     --text-secondary: #E5E5E5;
@@ -36,6 +41,11 @@
     --lobby-bg-hover: #D0D0D0;
     --lobby-accent: #333333;
     --lobby-accent-hover: #1A1A1A;
+    
+    /* Legacy Netflix 변수 (호환용) */
+    --netflix-bg: #F5F5F5;
+    --netflix-bg-hover: #D0D0D0;
+    --netflix-bg-card: #E8E8E8;
     
     /* Text Colors */
     --text-primary: #1A1A1A;

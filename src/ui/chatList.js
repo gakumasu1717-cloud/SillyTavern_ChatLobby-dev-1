@@ -180,8 +180,6 @@ export function getCurrentCharacter() {
  * @returns {Promise<void>}
  */
 export async function renderChatList(character) {
-    console.log('[RENDER] renderChatList called', { character: character?.name, stack: new Error().stack?.split('\n').slice(1, 4).join(' <- ') });
-    
     if (!character || !character.avatar) {
         console.error('[ChatList] Invalid character data:', character);
         return;
@@ -208,45 +206,6 @@ export async function renderChatList(character) {
     chatsPanel.classList.add('visible');
     updateChatHeader(character);
     showFolderBar(true);
-    
-    // 🔍 DEBUG: 필터 요소 위치 출력
-    setTimeout(() => {
-        const filtersRow = document.querySelector('.filters-row');
-        const filterGroup = document.querySelector('.filter-group');
-        const sortSelect = document.getElementById('chat-lobby-chat-sort');
-        const folderSelect = document.getElementById('chat-lobby-folder-filter');
-        const batchBtn = document.getElementById('chat-lobby-batch-mode');
-        const folderBtn = document.getElementById('chat-lobby-folder-manage');
-        
-        console.group('🔍 Filter Row Debug');
-        console.log('filtersRow:', filtersRow?.getBoundingClientRect());
-        console.log('filterGroup:', filterGroup?.getBoundingClientRect());
-        console.table({
-            sortSelect: sortSelect ? { 
-                top: sortSelect.getBoundingClientRect().top, 
-                height: sortSelect.getBoundingClientRect().height,
-                offsetTop: sortSelect.offsetTop
-            } : 'null',
-            folderSelect: folderSelect ? { 
-                top: folderSelect.getBoundingClientRect().top, 
-                height: folderSelect.getBoundingClientRect().height,
-                offsetTop: folderSelect.offsetTop
-            } : 'null',
-            batchBtn: batchBtn ? { 
-                top: batchBtn.getBoundingClientRect().top, 
-                height: batchBtn.getBoundingClientRect().height,
-                offsetTop: batchBtn.offsetTop
-            } : 'null',
-            folderBtn: folderBtn ? { 
-                top: folderBtn.getBoundingClientRect().top, 
-                height: folderBtn.getBoundingClientRect().height,
-                offsetTop: folderBtn.offsetTop
-            } : 'null'
-        });
-        console.log('sortSelect computed:', sortSelect ? getComputedStyle(sortSelect).cssText.split(';').filter(s => s.includes('height') || s.includes('padding') || s.includes('line-height')).join('; ') : 'null');
-        console.log('batchBtn computed:', batchBtn ? getComputedStyle(batchBtn).cssText.split(';').filter(s => s.includes('height') || s.includes('padding') || s.includes('display')).join('; ') : 'null');
-        console.groupEnd();
-    }, 100);
     
     // 캐시된 데이터가 있고 유효하면 즉시 렌더링 (번첩임 방지)
     const cachedChats = cache.get('chats', character.avatar);
@@ -426,16 +385,6 @@ function filterByFolder(chats, charAvatar, filterFolder) {
  */
 function sortChats(chats, charAvatar, sortOption) {
     const data = storage.load();
-    
-    // 디버그: 정렬 전 타임스탬프 확인 (펼쳐서 보기 쉽게)
-    const debugInfo = chats.slice(0, 3).map(c => ({
-        file: c.file_name,
-        last_mes: c.last_mes,
-        file_date: c.file_date,
-        ts: getTimestamp(c)
-    }));
-    console.log('[ChatList] sortChats:', sortOption, 'count:', chats.length);
-    console.table(debugInfo);
     
     return [...chats].sort((a, b) => {
         const fnA = a.file_name || '';

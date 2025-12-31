@@ -241,8 +241,8 @@ async function loadChatCountsAsync(characters) {
                 cache.set('messageCounts', messageCount, char.avatar);
                 console.log(`[CharacterGrid] Chat count for ${char.name}: ${count}, Messages: ${messageCount}`);
                 
-                // DOM 업데이트
-                const card = document.querySelector(`.lobby-char-card[data-char-avatar="${char.avatar}"]`);
+                // DOM 업데이트 (CSS.escape로 특수문자 처리)
+                const card = document.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(char.avatar)}"]`);
                 if (card) {
                     const chatValueEl = card.querySelector('.chat-count-value');
                     if (chatValueEl) {

@@ -1846,7 +1846,6 @@ ${message}` : message;
     store.setChatHandlers(handlers);
   }
   async function renderChatList(character) {
-    console.log("[RENDER] renderChatList called", { character: character?.name, stack: new Error().stack?.split("\n").slice(1, 4).join(" <- ") });
     if (!character || !character.avatar) {
       console.error("[ChatList] Invalid character data:", character);
       return;
@@ -1865,42 +1864,6 @@ ${message}` : message;
     chatsPanel.classList.add("visible");
     updateChatHeader(character);
     showFolderBar(true);
-    setTimeout(() => {
-      const filtersRow = document.querySelector(".filters-row");
-      const filterGroup = document.querySelector(".filter-group");
-      const sortSelect = document.getElementById("chat-lobby-chat-sort");
-      const folderSelect = document.getElementById("chat-lobby-folder-filter");
-      const batchBtn = document.getElementById("chat-lobby-batch-mode");
-      const folderBtn = document.getElementById("chat-lobby-folder-manage");
-      console.group("\u{1F50D} Filter Row Debug");
-      console.log("filtersRow:", filtersRow?.getBoundingClientRect());
-      console.log("filterGroup:", filterGroup?.getBoundingClientRect());
-      console.table({
-        sortSelect: sortSelect ? {
-          top: sortSelect.getBoundingClientRect().top,
-          height: sortSelect.getBoundingClientRect().height,
-          offsetTop: sortSelect.offsetTop
-        } : "null",
-        folderSelect: folderSelect ? {
-          top: folderSelect.getBoundingClientRect().top,
-          height: folderSelect.getBoundingClientRect().height,
-          offsetTop: folderSelect.offsetTop
-        } : "null",
-        batchBtn: batchBtn ? {
-          top: batchBtn.getBoundingClientRect().top,
-          height: batchBtn.getBoundingClientRect().height,
-          offsetTop: batchBtn.offsetTop
-        } : "null",
-        folderBtn: folderBtn ? {
-          top: folderBtn.getBoundingClientRect().top,
-          height: folderBtn.getBoundingClientRect().height,
-          offsetTop: folderBtn.offsetTop
-        } : "null"
-      });
-      console.log("sortSelect computed:", sortSelect ? getComputedStyle(sortSelect).cssText.split(";").filter((s) => s.includes("height") || s.includes("padding") || s.includes("line-height")).join("; ") : "null");
-      console.log("batchBtn computed:", batchBtn ? getComputedStyle(batchBtn).cssText.split(";").filter((s) => s.includes("height") || s.includes("padding") || s.includes("display")).join("; ") : "null");
-      console.groupEnd();
-    }, 100);
     const cachedChats = cache.get("chats", character.avatar);
     if (cachedChats && cachedChats.length > 0 && cache.isValid("chats", character.avatar)) {
       renderChats(chatsList, cachedChats, character.avatar);
@@ -2008,14 +1971,6 @@ ${message}` : message;
   }
   function sortChats(chats, charAvatar, sortOption) {
     const data = storage.load();
-    const debugInfo = chats.slice(0, 3).map((c) => ({
-      file: c.file_name,
-      last_mes: c.last_mes,
-      file_date: c.file_date,
-      ts: getTimestamp(c)
-    }));
-    console.log("[ChatList] sortChats:", sortOption, "count:", chats.length);
-    console.table(debugInfo);
     return [...chats].sort((a, b) => {
       const fnA = a.file_name || "";
       const fnB = b.file_name || "";
@@ -2409,7 +2364,7 @@ ${message}` : message;
           cache.set("chatCounts", count, char.avatar);
           cache.set("messageCounts", messageCount, char.avatar);
           console.log(`[CharacterGrid] Chat count for ${char.name}: ${count}, Messages: ${messageCount}`);
-          const card = document.querySelector(`.lobby-char-card[data-char-avatar="${char.avatar}"]`);
+          const card = document.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(char.avatar)}"]`);
           if (card) {
             const chatValueEl = card.querySelector(".chat-count-value");
             if (chatValueEl) {
@@ -2667,7 +2622,8 @@ ${message}` : message;
       await api.selectCharacterById(index);
       const charSelected = await waitForCharacterSelect(charAvatar, 2e3);
       if (!charSelected) {
-        console.warn("[ChatHandlers] Character selection timeout, continuing anyway");
+        showToast("\uCE90\uB9AD\uD130 \uC120\uD0DD\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.", "error");
+        return;
       }
       closeLobbyKeepState();
       if (typeof context?.openCharacterChat === "function") {
@@ -2754,7 +2710,9 @@ ${message}` : message;
           element.style.opacity = "0";
           element.style.transform = "translateX(20px)";
           setTimeout(() => {
-            element.remove();
+            if (element?.parentNode) {
+              element.remove();
+            }
             updateChatCountAfterDelete();
           }, 200);
         }

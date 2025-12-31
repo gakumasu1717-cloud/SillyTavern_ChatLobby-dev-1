@@ -51,7 +51,8 @@ export async function openChat(chatInfo) {
         // 2. 캐릭터 선택 완료 대기 (조건 확인 방식)
         const charSelected = await waitForCharacterSelect(charAvatar, 2000);
         if (!charSelected) {
-            console.warn('[ChatHandlers] Character selection timeout, continuing anyway');
+            showToast('캐릭터 선택에 실패했습니다. 다시 시도해주세요.', 'error');
+            return;
         }
         
         // 3. 로비 닫기 (상태 유지하면서)
@@ -192,7 +193,9 @@ export async function deleteChat(chatInfo) {
                 element.style.opacity = '0';
                 element.style.transform = 'translateX(20px)';
                 setTimeout(() => {
-                    element.remove();
+                    if (element?.parentNode) {
+                        element.remove();
+                    }
                     updateChatCountAfterDelete();
                 }, 200);
             }
