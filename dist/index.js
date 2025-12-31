@@ -4039,8 +4039,15 @@ ${message}` : message;
   async function saveTodaySnapshot() {
     try {
       const today = getLocalDateString();
-      const recentData = findRecentSnapshot(today);
-      const recentByChar = recentData?.snapshot?.byChar || {};
+      const snapshots = loadSnapshots();
+      let baseSnapshot = null;
+      if (snapshots[today]) {
+        baseSnapshot = snapshots[today];
+      } else {
+        const recentData = findRecentSnapshot(today);
+        baseSnapshot = recentData?.snapshot || null;
+      }
+      const baseByChar = baseSnapshot?.byChar || {};
       let characters = cache.get("characters");
       if (!characters || characters.length === 0) {
         characters = api.getCharacters();
@@ -4079,7 +4086,7 @@ ${message}` : message;
       let maxIncrease = -Infinity;
       let maxMsgCountOnTie = -1;
       for (const r of rankings) {
-        const prev = recentByChar[r.avatar] || 0;
+        const prev = baseByChar[r.avatar] || 0;
         const increase = r.messageCount - prev;
         if (increase > maxIncrease) {
           maxIncrease = increase;
@@ -4090,7 +4097,7 @@ ${message}` : message;
           topChar = r.avatar;
         }
       }
-      if (!recentData) {
+      if (!baseSnapshot) {
         topChar = rankings[0]?.avatar || "";
       }
       saveSnapshot(today, totalMessages, topChar, byChar);

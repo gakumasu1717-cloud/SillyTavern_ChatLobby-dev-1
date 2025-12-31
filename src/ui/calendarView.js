@@ -304,10 +304,18 @@ function findRecentSnapshot(beforeDate, maxDays = 7) {
 async function saveTodaySnapshot() {
     try {
         const today = getLocalDateString();
+        const snapshots = loadSnapshots();
         
-        // 가장 최근 스냅샷 찾기 (어제 없으면 그 전날...)
-        const recentData = findRecentSnapshot(today);
-        const recentByChar = recentData?.snapshot?.byChar || {};
+        // 오늘 이미 스냅샷이 있으면 그걸 기준으로 (초기 스냅샷)
+        // 없으면 이전 날짜에서 찾기
+        let baseSnapshot = null;
+        if (snapshots[today]) {
+            baseSnapshot = snapshots[today];
+        } else {
+            const recentData = findRecentSnapshot(today);
+            baseSnapshot = recentData?.snapshot || null;
+        }
+        const baseByChar = baseSnapshot?.byChar || {};
         
         let characters = cache.get('characters');
         if (!characters || characters.length === 0) {
@@ -359,7 +367,7 @@ async function saveTodaySnapshot() {
         let maxMsgCountOnTie = -1;
         
         for (const r of rankings) {
-            const prev = recentByChar[r.avatar] || 0;
+            const prev = baseByChar[r.avatar] || 0;
             const increase = r.messageCount - prev;
             
             // 증가량 더 크면 교체
@@ -375,8 +383,8 @@ async function saveTodaySnapshot() {
             }
         }
         
-        // 최근 데이터 없으면 (첫 접속) 메시지 1위로
-        if (!recentData) {
+        // 기준 데이터 없으면 (완전 첫 접속) 메시지 1위로
+        if (!baseSnapshot) {
             topChar = rankings[0]?.avatar || '';
         }
         
