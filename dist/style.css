@@ -2870,15 +2870,11 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 }
 
 /* 봇카드 - 넷플릭스 스타일 */
+/* position/top/left는 JS에서 동적 계산 (모바일 transform 이슈 대응) */
 .calendar-bot-card {
-    position: fixed;
-    bottom: 80px;
-    bottom: calc(80px + env(safe-area-inset-bottom));
-    left: 0;
-    right: 0;
-    margin: 0 auto;
+    position: absolute;
     width: 200px;
-    height: 300px;
+    height: 280px;
     border-radius: 8px;
     overflow: hidden;
     display: none;
@@ -2887,14 +2883,6 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8);
     background: #181818;
     pointer-events: auto;
-    will-change: transform;
-}
-
-/* safe-area 미지원 브라우저 fallback */
-@supports not (bottom: env(safe-area-inset-bottom)) {
-    .calendar-bot-card {
-        bottom: 80px;
-    }
 }
 
 .bot-card-avatar {
