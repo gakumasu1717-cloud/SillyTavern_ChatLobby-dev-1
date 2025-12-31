@@ -388,6 +388,18 @@ function filterByFolder(chats, charAvatar, filterFolder) {
 function sortChats(chats, charAvatar, sortOption) {
     const data = storage.load();
     
+    // 디버그: 정렬 전 타임스탬프 확인
+    console.log('[ChatList] sortChats:', { 
+        sortOption, 
+        chatCount: chats.length,
+        timestamps: chats.slice(0, 3).map(c => ({
+            file: c.file_name,
+            last_mes: c.last_mes,
+            file_date: c.file_date,
+            ts: getTimestamp(c)
+        }))
+    });
+    
     return [...chats].sort((a, b) => {
         const fnA = a.file_name || '';
         const fnB = b.file_name || '';

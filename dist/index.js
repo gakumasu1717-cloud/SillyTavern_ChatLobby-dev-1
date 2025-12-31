@@ -1964,6 +1964,16 @@ ${message}` : message;
   }
   function sortChats(chats, charAvatar, sortOption) {
     const data = storage.load();
+    console.log("[ChatList] sortChats:", {
+      sortOption,
+      chatCount: chats.length,
+      timestamps: chats.slice(0, 3).map((c) => ({
+        file: c.file_name,
+        last_mes: c.last_mes,
+        file_date: c.file_date,
+        ts: getTimestamp(c)
+      }))
+    });
     return [...chats].sort((a, b) => {
       const fnA = a.file_name || "";
       const fnB = b.file_name || "";
