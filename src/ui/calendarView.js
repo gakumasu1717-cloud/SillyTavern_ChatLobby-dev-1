@@ -282,16 +282,32 @@ async function saveBaselineSnapshot() {
 }
 
 /**
+ * 가장 최근 스냅샷 찾기 (최대 7일 전까지)
+ */
+function findRecentSnapshot(beforeDate, maxDays = 7) {
+    const snapshots = loadSnapshots();
+    let checkDate = new Date(beforeDate + 'T00:00:00');
+    
+    for (let i = 0; i < maxDays; i++) {
+        checkDate.setDate(checkDate.getDate() - 1);
+        const dateStr = getLocalDateString(checkDate);
+        if (snapshots[dateStr]) {
+            return { date: dateStr, snapshot: snapshots[dateStr] };
+        }
+    }
+    return null;
+}
+
+/**
  * 오늘 스냅샷 저장 - 가장 증가한 캐릭터 찾기
  */
 async function saveTodaySnapshot() {
     try {
         const today = getLocalDateString();
-        const yesterday = getLocalDateString(new Date(Date.now() - 86400000));
         
-        // 어제 스냅샷
-        const yesterdaySnapshot = getSnapshot(yesterday);
-        const yesterdayByChar = yesterdaySnapshot?.byChar || {};
+        // 가장 최근 스냅샷 찾기 (어제 없으면 그 전날...)
+        const recentData = findRecentSnapshot(today);
+        const recentByChar = recentData?.snapshot?.byChar || {};
         
         let characters = cache.get('characters');
         if (!characters || characters.length === 0) {
@@ -343,7 +359,7 @@ async function saveTodaySnapshot() {
         let maxMsgCountOnTie = -1;
         
         for (const r of rankings) {
-            const prev = yesterdayByChar[r.avatar] || 0;
+            const prev = recentByChar[r.avatar] || 0;
             const increase = r.messageCount - prev;
             
             // 증가량 더 크면 교체
@@ -359,8 +375,8 @@ async function saveTodaySnapshot() {
             }
         }
         
-        // 어제 데이터 없으면 (첫 접속) 메시지 1위로
-        if (!yesterdaySnapshot) {
+        // 최근 데이터 없으면 (첫 접속) 메시지 1위로
+        if (!recentData) {
             topChar = rankings[0]?.avatar || '';
         }
         
@@ -409,10 +425,10 @@ function renderCalendar() {
             const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
             const charName = snapshot.topChar.replace(/\.[^/.]+$/, '');
             
-            // 어제 대비 메시지 증감량 계산 (캐릭터/전체)
-            const prevDate = new Date(THIS_YEAR, currentMonth, day - 1);
-            const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}-${String(prevDate.getDate()).padStart(2, '0')}`;
-            const prevSnapshot = snapshots[prevDateStr];
+            // 가장 최근 스냅샷 찾기 (최대 7일 전까지)
+            const currentDate = new Date(THIS_YEAR, currentMonth, day);
+            const recentData = findRecentSnapshot(currentDate);
+            const prevSnapshot = recentData?.snapshot;
             
             // 캐릭터 증감량
             const prevCharMsgs = prevSnapshot?.byChar?.[snapshot.topChar] || 0;

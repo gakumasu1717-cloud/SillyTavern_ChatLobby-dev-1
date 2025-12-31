@@ -3777,10 +3777,6 @@ ${message}` : message;
     _snapshotsCache = {};
     return _snapshotsCache;
   }
-  function getSnapshot(date) {
-    const snapshots = loadSnapshots();
-    return snapshots[date] || null;
-  }
   function cleanOldSnapshots() {
     console.log("[Calendar] Cleaning old snapshots (6 months+)");
     const snapshots = loadSnapshots(true);
@@ -4028,12 +4024,23 @@ ${message}` : message;
     const topChar = rankings[0]?.avatar || "";
     saveSnapshot(yesterday, totalMessages, topChar, byChar, true);
   }
+  function findRecentSnapshot(beforeDate, maxDays = 7) {
+    const snapshots = loadSnapshots();
+    let checkDate = /* @__PURE__ */ new Date(beforeDate + "T00:00:00");
+    for (let i = 0; i < maxDays; i++) {
+      checkDate.setDate(checkDate.getDate() - 1);
+      const dateStr = getLocalDateString(checkDate);
+      if (snapshots[dateStr]) {
+        return { date: dateStr, snapshot: snapshots[dateStr] };
+      }
+    }
+    return null;
+  }
   async function saveTodaySnapshot() {
     try {
       const today = getLocalDateString();
-      const yesterday = getLocalDateString(new Date(Date.now() - 864e5));
-      const yesterdaySnapshot = getSnapshot(yesterday);
-      const yesterdayByChar = yesterdaySnapshot?.byChar || {};
+      const recentData = findRecentSnapshot(today);
+      const recentByChar = recentData?.snapshot?.byChar || {};
       let characters = cache.get("characters");
       if (!characters || characters.length === 0) {
         characters = api.getCharacters();
@@ -4072,7 +4079,7 @@ ${message}` : message;
       let maxIncrease = -Infinity;
       let maxMsgCountOnTie = -1;
       for (const r of rankings) {
-        const prev = yesterdayByChar[r.avatar] || 0;
+        const prev = recentByChar[r.avatar] || 0;
         const increase = r.messageCount - prev;
         if (increase > maxIncrease) {
           maxIncrease = increase;
@@ -4083,7 +4090,7 @@ ${message}` : message;
           topChar = r.avatar;
         }
       }
-      if (!yesterdaySnapshot) {
+      if (!recentData) {
         topChar = rankings[0]?.avatar || "";
       }
       saveSnapshot(today, totalMessages, topChar, byChar);
@@ -4116,9 +4123,9 @@ ${message}` : message;
       if (hasData && snapshot.topChar) {
         const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
         const charName = snapshot.topChar.replace(/\.[^/.]+$/, "");
-        const prevDate = new Date(THIS_YEAR2, currentMonth, day - 1);
-        const prevDateStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, "0")}-${String(prevDate.getDate()).padStart(2, "0")}`;
-        const prevSnapshot = snapshots[prevDateStr];
+        const currentDate = new Date(THIS_YEAR2, currentMonth, day);
+        const recentData = findRecentSnapshot(currentDate);
+        const prevSnapshot = recentData?.snapshot;
         const prevCharMsgs = prevSnapshot?.byChar?.[snapshot.topChar] || 0;
         const todayCharMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
         const charIncrease = todayCharMsgs - prevCharMsgs;
