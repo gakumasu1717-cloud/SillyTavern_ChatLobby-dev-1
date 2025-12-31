@@ -894,10 +894,11 @@
     cursor: pointer;
     -webkit-appearance: none;
     appearance: none;
+    line-height: 26px;
 }
 
 #chat-lobby-chat-sort {
-    width: 115px;
+    width: 105px;
 }
 
 #chat-lobby-folder-filter {
