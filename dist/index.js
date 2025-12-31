@@ -4940,6 +4940,17 @@ ${message}` : message;
       if (window._chatLobbyCustomThemeInit) return true;
       window._chatLobbyCustomThemeInit = true;
       const addSidebarButton = () => {
+        const customTavernBtn = document.querySelector('[data-drawer-id="st-chatlobby-sidebar-btn"]');
+        if (customTavernBtn && !customTavernBtn._chatLobbyBound) {
+          customTavernBtn._chatLobbyBound = true;
+          customTavernBtn.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            openLobby();
+          });
+          console.log("[ChatLobby] Bound to Custom Tavern sidebar button");
+          return true;
+        }
         const container = document.getElementById("st-sidebar-top-container");
         if (!container) return false;
         if (document.getElementById("st-chatlobby-sidebar-btn")) return true;
