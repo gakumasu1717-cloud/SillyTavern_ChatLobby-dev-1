@@ -839,6 +839,7 @@
     overflow-x: auto;
     scrollbar-width: none;
     margin-top: 8px;
+    margin-bottom: 8px;
 }
 
 #chat-lobby-char-tags::-webkit-scrollbar {
