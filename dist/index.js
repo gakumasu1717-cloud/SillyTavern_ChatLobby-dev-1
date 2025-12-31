@@ -3792,15 +3792,17 @@ ${message}` : message;
         return;
       }
       const { eventSource, eventTypes } = context;
-      const debouncedChatChanged = debounce(() => {
-        if (isLobbyOpen()) {
-          store.setLobbyLocked(true);
-        }
+      const debouncedChatChanged = debounce(async () => {
         cache.invalidate("characters");
         cache.invalidate("chats");
-        setTimeout(() => {
-          store.setLobbyLocked(false);
-        }, 200);
+        if (isLobbyOpen()) {
+          store.setLobbyLocked(true);
+          try {
+            await renderCharacterGrid(store.searchTerm);
+          } finally {
+            store.setLobbyLocked(false);
+          }
+        }
       }, 100);
       eventHandlers = {
         onCharacterDeleted: () => {
