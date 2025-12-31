@@ -4010,13 +4010,11 @@ ${message}` : message;
       const batch = characters.slice(i, i + BATCH_SIZE);
       const batchResults = await Promise.all(
         batch.map(async (char) => {
-          let chats = cache.get("chats", char.avatar);
-          if (!chats || !Array.isArray(chats)) {
-            try {
-              chats = await api.fetchChatsForCharacter(char.avatar);
-            } catch {
-              chats = [];
-            }
+          let chats;
+          try {
+            chats = await api.fetchChatsForCharacter(char.avatar);
+          } catch {
+            chats = [];
           }
           const chatCount = Array.isArray(chats) ? chats.length : 0;
           const messageCount = Array.isArray(chats) ? chats.reduce((sum, chat) => sum + (chat.chat_items || 0), 0) : 0;
@@ -4057,13 +4055,11 @@ ${message}` : message;
         const batch = characters.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.all(
           batch.map(async (char) => {
-            let chats = cache.get("chats", char.avatar);
-            if (!chats || !Array.isArray(chats)) {
-              try {
-                chats = await api.fetchChatsForCharacter(char.avatar);
-              } catch {
-                chats = [];
-              }
+            let chats;
+            try {
+              chats = await api.fetchChatsForCharacter(char.avatar);
+            } catch {
+              chats = [];
             }
             const chatCount = Array.isArray(chats) ? chats.length : 0;
             const messageCount = Array.isArray(chats) ? chats.reduce((sum, chat) => sum + (chat.chat_items || 0), 0) : 0;

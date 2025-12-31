@@ -227,13 +227,12 @@ async function saveBaselineSnapshot() {
         const batch = characters.slice(i, i + BATCH_SIZE);
         const batchResults = await Promise.all(
             batch.map(async (char) => {
-                let chats = cache.get('chats', char.avatar);
-                if (!chats || !Array.isArray(chats)) {
-                    try {
-                        chats = await api.fetchChatsForCharacter(char.avatar);
-                    } catch {
-                        chats = [];
-                    }
+                // 캐릭터 스냅샷은 항상 fresh data 필요
+                let chats;
+                try {
+                    chats = await api.fetchChatsForCharacter(char.avatar);
+                } catch {
+                    chats = [];
                 }
                 const chatCount = Array.isArray(chats) ? chats.length : 0;
                 const messageCount = Array.isArray(chats) 
@@ -295,13 +294,12 @@ async function saveTodaySnapshot() {
             const batch = characters.slice(i, i + BATCH_SIZE);
             const batchResults = await Promise.all(
                 batch.map(async (char) => {
-                    let chats = cache.get('chats', char.avatar);
-                    if (!chats || !Array.isArray(chats)) {
-                        try {
-                            chats = await api.fetchChatsForCharacter(char.avatar);
-                        } catch {
-                            chats = [];
-                        }
+                    // 캐릭터 스냅샷은 항상 fresh data 필요 (캐시 무시)
+                    let chats;
+                    try {
+                        chats = await api.fetchChatsForCharacter(char.avatar);
+                    } catch {
+                        chats = [];
                     }
                     const chatCount = Array.isArray(chats) ? chats.length : 0;
                     const messageCount = Array.isArray(chats) 
