@@ -2645,12 +2645,15 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     justify-content: center;
     z-index: 999999;
     transform: none !important;
+    overflow: auto;
+    -webkit-overflow-scrolling: touch;
 }
 
 .calendar-fullscreen {
-    width: 100%;
-    min-width: 80vw;
-    height: 100%;
+    width: max-content;
+    min-width: 100%;
+    height: auto;
+    min-height: 100%;
     display: flex;
     flex-direction: column;
     padding: 16px;
@@ -2896,15 +2899,19 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 
 /* 모바일 - 드래그 스크롤, 핀치줌 가능 */
 @media (max-width: 768px) {
+    #calendar-overlay {
+        overflow: auto;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x pan-y pinch-zoom;
+    }
+    
     .calendar-fullscreen {
         min-width: 560px;
         touch-action: pan-x pan-y pinch-zoom;
     }
     
     .calendar-main {
-        overflow: auto;
-        -webkit-overflow-scrolling: touch;
-        touch-action: pan-x pan-y pinch-zoom;
+        overflow: visible;
     }
     
     .calendar-grid {
