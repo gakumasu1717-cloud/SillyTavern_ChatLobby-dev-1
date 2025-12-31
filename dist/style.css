@@ -2653,17 +2653,16 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 }
 
 .calendar-fullscreen {
-    width: 600px;
-    min-width: 600px;
+    width: 100%;
+    max-width: 1200px;
     height: auto;
     min-height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 16px;
-    padding-left: 20px;
-    padding-right: 20px;
+    padding: 16px 40px;
     box-sizing: border-box;
     background: #000;
+    margin: 0 auto;
 }
 
 /* 헤더 - 네비게이션 중앙 */
@@ -2911,7 +2910,9 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     }
     
     .calendar-fullscreen {
-        min-width: 560px;
+        width: 600px;
+        min-width: 600px;
+        padding: 16px 20px;
         touch-action: pan-x pan-y pinch-zoom;
     }
     
