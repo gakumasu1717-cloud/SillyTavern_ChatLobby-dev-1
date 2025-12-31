@@ -2645,7 +2645,11 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     transform: none !important;
     overflow: scroll;
     -webkit-overflow-scrolling: touch;
-    touch-action: pan-x pan-y pinch-zoom;
+    touch-action: manipulation !important;
+}
+
+#calendar-overlay * {
+    touch-action: manipulation !important;
 }
 
 .calendar-fullscreen {
@@ -2772,15 +2776,15 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     position: relative;
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
     overflow: visible;
-    /* 6개 세로선 (열 사이) */
+    /* 6개 세로선 (열 사이) - 아래로 갈수록 흐려짐 */
     background-image:
-        linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.5)),
-        linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.5)),
-        linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.5)),
-        linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.5)),
-        linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.5)),
-        linear-gradient(to bottom, rgba(255,255,255,0.5), rgba(255,255,255,0.5));
-    background-size: 1px 100%;
+        linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 85%, transparent 100%),
+        linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 85%, transparent 100%),
+        linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 85%, transparent 100%),
+        linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 85%, transparent 100%),
+        linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 85%, transparent 100%),
+        linear-gradient(to bottom, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 85%, transparent 100%);
+    background-size: 1px 110%;
     background-position:
         calc(100% / 7 * 1) 0,
         calc(100% / 7 * 2) 0,
@@ -2801,15 +2805,15 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* 가로선 - 행의 첫번째 셀에서만, 전체 너비 */
+/* 가로선 - 행의 첫번째 셀에서만, 전체 너비, 오른쪽 끝 흐려짐 */
 .cal-card:nth-child(7n+1)::after {
     content: '';
     position: absolute;
     top: 0;
     left: 0;
-    width: 700%;
+    width: 110%;
     height: 1px;
-    background: rgba(255,255,255,0.5);
+    background: linear-gradient(to right, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 90%, transparent 100%);
     z-index: 5;
     pointer-events: none;
 }

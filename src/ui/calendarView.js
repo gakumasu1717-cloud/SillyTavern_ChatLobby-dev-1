@@ -72,10 +72,6 @@ export async function openCalendarView() {
             calendarOverlay.querySelector('#debug-modal-close').addEventListener('click', hideDebugModal);
             calendarOverlay.querySelector('#debug-clear-all').addEventListener('click', handleClearAll);
             
-            // 그리드 이벤트 위임
-            const grid = calendarOverlay.querySelector('#calendar-grid');
-            grid.addEventListener('click', handleDateClick);
-            
             // 모바일 스와이프 (월 이동)
             const main = calendarOverlay.querySelector('#calendar-main');
             main.addEventListener('touchstart', handleTouchStart, { passive: true });

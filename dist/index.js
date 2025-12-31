@@ -3886,8 +3886,6 @@ ${message}` : message;
         calendarOverlay.querySelector("#calendar-debug").addEventListener("click", showDebugModal);
         calendarOverlay.querySelector("#debug-modal-close").addEventListener("click", hideDebugModal);
         calendarOverlay.querySelector("#debug-clear-all").addEventListener("click", handleClearAll);
-        const grid = calendarOverlay.querySelector("#calendar-grid");
-        grid.addEventListener("click", handleDateClick);
         const main = calendarOverlay.querySelector("#calendar-main");
         main.addEventListener("touchstart", handleTouchStart, { passive: true });
         main.addEventListener("touchend", handleTouchEnd, { passive: true });
