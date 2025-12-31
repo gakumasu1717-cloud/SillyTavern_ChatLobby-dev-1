@@ -3839,29 +3839,6 @@ ${message}` : message;
   var isCalculating = false;
   var touchStartX = 0;
   var touchEndX = 0;
-  function ensureDetailView() {
-    let view = document.getElementById("calendar-detail-view");
-    if (!view) {
-      view = document.createElement("div");
-      view.id = "calendar-detail-view";
-      view.className = "calendar-detail-view";
-      view.style.display = "none";
-      view.innerHTML = `
-            <div class="detail-content">
-                <div class="detail-avatar-wrap">
-                    <img class="detail-avatar" id="detail-avatar" src="" alt="">
-                </div>
-                <div class="detail-info">
-                    <div class="detail-name" id="detail-name"></div>
-                    <div class="detail-stats" id="detail-stats"></div>
-                </div>
-            </div>
-        `;
-      document.body.appendChild(view);
-      view.addEventListener("click", hideDetailView);
-    }
-    return view;
-  }
   async function openCalendarView() {
     if (isCalculating) return;
     isCalculating = true;
@@ -3884,23 +3861,9 @@ ${message}` : message;
                         <button class="calendar-debug-btn" id="calendar-debug">DATA</button>
                     </div>
                     
-                    <div class="calendar-main">
-                        <div class="calendar-grid-wrapper">
-                            <div class="calendar-weekdays">
-                                <span class="sun">S</span>
-                                <span>M</span>
-                                <span>T</span>
-                                <span>W</span>
-                                <span>T</span>
-                                <span>F</span>
-                                <span class="sat">S</span>
-                            </div>
-                            
-                            <div class="calendar-grid" id="calendar-grid"></div>
-                        </div>
+                    <div class="calendar-main" id="calendar-main">
+                        <div class="calendar-grid" id="calendar-grid"></div>
                     </div>
-                    
-                    <div class="calendar-footer" id="calendar-footer"></div>
                 </div>
                 
                 <!-- \uB514\uBC84\uADF8/\uC0AD\uC81C \uBAA8\uB2EC -->
@@ -3926,11 +3889,9 @@ ${message}` : message;
         calendarOverlay.querySelector("#debug-clear-all").addEventListener("click", handleClearAll);
         const grid = calendarOverlay.querySelector("#calendar-grid");
         grid.addEventListener("click", handleDateClick);
-        grid.addEventListener("mouseover", handleMouseOver);
-        grid.addEventListener("mouseout", handleMouseOut);
-        const wrapper = calendarOverlay.querySelector(".calendar-grid-wrapper");
-        wrapper.addEventListener("touchstart", handleTouchStart, { passive: true });
-        wrapper.addEventListener("touchend", handleTouchEnd, { passive: true });
+        const main = calendarOverlay.querySelector("#calendar-main");
+        main.addEventListener("touchstart", handleTouchStart, { passive: true });
+        main.addEventListener("touchend", handleTouchEnd, { passive: true });
       }
       selectedDateInfo = null;
       hideDetailView();
@@ -4106,19 +4067,14 @@ ${message}` : message;
   function renderCalendar() {
     const title = calendarOverlay.querySelector("#calendar-title");
     const grid = calendarOverlay.querySelector("#calendar-grid");
-    const footer = calendarOverlay.querySelector("#calendar-footer");
     const prevBtn = calendarOverlay.querySelector("#calendar-prev");
     const nextBtn = calendarOverlay.querySelector("#calendar-next");
     title.textContent = currentMonth + 1;
     prevBtn.disabled = currentMonth === 0;
     nextBtn.disabled = currentMonth === 11;
-    const firstDay = new Date(THIS_YEAR2, currentMonth, 1).getDay();
     const daysInMonth = new Date(THIS_YEAR2, currentMonth + 1, 0).getDate();
     const snapshots = loadSnapshots();
     let html = "";
-    for (let i = 0; i < firstDay; i++) {
-      html += '<div class="calendar-day empty"></div>';
-    }
     const today = getLocalDateString();
     for (let day = 1; day <= daysInMonth; day++) {
       const date = `${THIS_YEAR2}-${String(currentMonth + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
@@ -4126,83 +4082,35 @@ ${message}` : message;
       const isToday = date === today;
       const hasData = !!snapshot;
       let avatarHtml = "";
+      let infoHtml = "";
       if (hasData && snapshot.topChar) {
         const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
-        avatarHtml = `<img class="day-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">`;
+        const charName = snapshot.topChar.replace(/\.[^/.]+$/, "");
+        const charMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
+        avatarHtml = `<img class="cal-card-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">`;
+        infoHtml = `
+                <div class="cal-card-gradient"></div>
+                <div class="cal-card-info">
+                    <div class="cal-card-day">${day}</div>
+                    <div class="cal-card-name">${charName}</div>
+                    <div class="cal-card-count">${charMsgs} / ${snapshot.total}</div>
+                </div>
+            `;
+      } else {
+        infoHtml = `<div class="cal-card-empty">${day}</div>`;
       }
       html += `
-            <div class="calendar-day ${isToday ? "today" : ""} ${hasData ? "has-data" : ""}" data-date="${date}">
-                <span class="day-number">${day}</span>
+            <div class="cal-card ${isToday ? "today" : ""} ${hasData ? "has-data" : ""}" data-date="${date}">
                 ${avatarHtml}
+                ${infoHtml}
             </div>
         `;
     }
     grid.innerHTML = html;
-    const totalDays = Object.keys(snapshots).length;
-    footer.textContent = `${totalDays} days recorded`;
-  }
-  function handleMouseOver(e) {
-    if (window.innerWidth < 769) return;
-    const dayEl = e.target.closest(".calendar-day");
-    if (!dayEl || dayEl.classList.contains("empty")) return;
-    dayEl.classList.add("hover");
-  }
-  function handleMouseOut(e) {
-    const dayEl = e.target.closest(".calendar-day");
-    if (!dayEl) return;
-    dayEl.classList.remove("hover");
   }
   function handleDateClick(e) {
-    const dayEl = e.target.closest(".calendar-day");
-    if (!dayEl || dayEl.classList.contains("empty")) return;
-    const date = dayEl.dataset.date;
-    const snapshot = getSnapshot(date);
-    if (!snapshot) return;
-    showDetailView(date, snapshot);
-  }
-  function showDetailView(date, snapshot) {
-    const view = ensureDetailView();
-    const avatarEl = view.querySelector("#detail-avatar");
-    const nameEl = view.querySelector("#detail-name");
-    const statsEl = view.querySelector("#detail-stats");
-    if (!snapshot.topChar) {
-      return;
-    }
-    const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
-    avatarEl.src = avatarUrl;
-    avatarEl.onerror = () => {
-      avatarEl.src = "/img/ai4.png";
-    };
-    const charName = snapshot.topChar.replace(/\.[^/.]+$/, "");
-    nameEl.textContent = charName;
-    const [year, month, day] = date.split("-").map(Number);
-    const dateObj = new Date(year, month - 1, day);
-    dateObj.setDate(dateObj.getDate() - 1);
-    const prevDateStr = getLocalDateString(dateObj);
-    const prevSnapshot = getSnapshot(prevDateStr);
-    const charToday = snapshot.byChar?.[snapshot.topChar] || 0;
-    const charYesterday = prevSnapshot?.byChar?.[snapshot.topChar] || 0;
-    const charIncrease = charToday - charYesterday;
-    if (prevSnapshot) {
-      if (charIncrease === 0) {
-        statsEl.textContent = "No change";
-      } else if (charIncrease > 0) {
-        statsEl.textContent = `+${charIncrease}`;
-      } else {
-        statsEl.textContent = `${charIncrease}`;
-      }
-      statsEl.className = charIncrease >= 0 ? "detail-stats positive" : "detail-stats negative";
-    } else {
-      statsEl.textContent = `${snapshot.total} msgs`;
-      statsEl.className = "detail-stats";
-    }
-    view.style.display = "flex";
   }
   function hideDetailView() {
-    const view = document.getElementById("calendar-detail-view");
-    if (view) {
-      view.style.display = "none";
-    }
   }
   function showDebugModal() {
     const modal = calendarOverlay.querySelector("#calendar-debug-modal");

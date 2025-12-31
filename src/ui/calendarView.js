@@ -17,37 +17,6 @@ let touchStartX = 0;
 let touchEndX = 0;
 
 /**
- * 상세뷰 싱글톤 (fullscreen) - 모바일 생존 패턴
- */
-function ensureDetailView() {
-    let view = document.getElementById('calendar-detail-view');
-    
-    if (!view) {
-        view = document.createElement('div');
-        view.id = 'calendar-detail-view';
-        view.className = 'calendar-detail-view';
-        view.style.display = 'none';
-        view.innerHTML = `
-            <div class="detail-content">
-                <div class="detail-avatar-wrap">
-                    <img class="detail-avatar" id="detail-avatar" src="" alt="">
-                </div>
-                <div class="detail-info">
-                    <div class="detail-name" id="detail-name"></div>
-                    <div class="detail-stats" id="detail-stats"></div>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(view);
-        
-        // 화면 클릭하면 닫기
-        view.addEventListener('click', hideDetailView);
-    }
-    
-    return view;
-}
-
-/**
  * 캘린더 뷰 열기
  */
 export async function openCalendarView() {
@@ -73,23 +42,9 @@ export async function openCalendarView() {
                         <button class="calendar-debug-btn" id="calendar-debug">DATA</button>
                     </div>
                     
-                    <div class="calendar-main">
-                        <div class="calendar-grid-wrapper">
-                            <div class="calendar-weekdays">
-                                <span class="sun">S</span>
-                                <span>M</span>
-                                <span>T</span>
-                                <span>W</span>
-                                <span>T</span>
-                                <span>F</span>
-                                <span class="sat">S</span>
-                            </div>
-                            
-                            <div class="calendar-grid" id="calendar-grid"></div>
-                        </div>
+                    <div class="calendar-main" id="calendar-main">
+                        <div class="calendar-grid" id="calendar-grid"></div>
                     </div>
-                    
-                    <div class="calendar-footer" id="calendar-footer"></div>
                 </div>
                 
                 <!-- 디버그/삭제 모달 -->
@@ -122,14 +77,10 @@ export async function openCalendarView() {
             const grid = calendarOverlay.querySelector('#calendar-grid');
             grid.addEventListener('click', handleDateClick);
             
-            // 호버 이벤트 (debounce 적용)
-            grid.addEventListener('mouseover', handleMouseOver);
-            grid.addEventListener('mouseout', handleMouseOut);
-            
-            // 모바일 스와이프
-            const wrapper = calendarOverlay.querySelector('.calendar-grid-wrapper');
-            wrapper.addEventListener('touchstart', handleTouchStart, { passive: true });
-            wrapper.addEventListener('touchend', handleTouchEnd, { passive: true });
+            // 모바일 스와이프 (월 이동)
+            const main = calendarOverlay.querySelector('#calendar-main');
+            main.addEventListener('touchstart', handleTouchStart, { passive: true });
+            main.addEventListener('touchend', handleTouchEnd, { passive: true });
         }
         
         selectedDateInfo = null;
@@ -387,12 +338,11 @@ async function saveTodaySnapshot() {
 }
 
 /**
- * 캘린더 렌더링
+ * 캘린더 렌더링 - 봇카드 그리드 스타일
  */
 function renderCalendar() {
     const title = calendarOverlay.querySelector('#calendar-title');
     const grid = calendarOverlay.querySelector('#calendar-grid');
-    const footer = calendarOverlay.querySelector('#calendar-footer');
     const prevBtn = calendarOverlay.querySelector('#calendar-prev');
     const nextBtn = calendarOverlay.querySelector('#calendar-next');
     
@@ -401,17 +351,10 @@ function renderCalendar() {
     prevBtn.disabled = (currentMonth === 0);
     nextBtn.disabled = (currentMonth === 11);
     
-    const firstDay = new Date(THIS_YEAR, currentMonth, 1).getDay();
     const daysInMonth = new Date(THIS_YEAR, currentMonth + 1, 0).getDate();
     const snapshots = loadSnapshots();
     
     let html = '';
-    
-    // 빈 셀
-    for (let i = 0; i < firstDay; i++) {
-        html += '<div class="calendar-day empty"></div>';
-    }
-    
     const today = getLocalDateString();
     
     for (let day = 1; day <= daysInMonth; day++) {
@@ -420,120 +363,51 @@ function renderCalendar() {
         const isToday = date === today;
         const hasData = !!snapshot;
         
+        // 봇카드 스타일
         let avatarHtml = '';
+        let infoHtml = '';
+        
         if (hasData && snapshot.topChar) {
             const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
-            avatarHtml = `<img class="day-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">`;
+            const charName = snapshot.topChar.replace(/\.[^/.]+$/, '');
+            const charMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
+            
+            avatarHtml = `<img class="cal-card-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">`;
+            infoHtml = `
+                <div class="cal-card-gradient"></div>
+                <div class="cal-card-info">
+                    <div class="cal-card-day">${day}</div>
+                    <div class="cal-card-name">${charName}</div>
+                    <div class="cal-card-count">${charMsgs} / ${snapshot.total}</div>
+                </div>
+            `;
+        } else {
+            // 데이터 없으면 날짜만
+            infoHtml = `<div class="cal-card-empty">${day}</div>`;
         }
         
         html += `
-            <div class="calendar-day ${isToday ? 'today' : ''} ${hasData ? 'has-data' : ''}" data-date="${date}">
-                <span class="day-number">${day}</span>
+            <div class="cal-card ${isToday ? 'today' : ''} ${hasData ? 'has-data' : ''}" data-date="${date}">
                 ${avatarHtml}
+                ${infoHtml}
             </div>
         `;
     }
     
     grid.innerHTML = html;
-    
-    const totalDays = Object.keys(snapshots).length;
-    footer.textContent = `${totalDays} days recorded`;
 }
 
 /**
- * 호버 이벤트 - PC 전용 (모바일은 클릭만)
- */
-function handleMouseOver(e) {
-    // 모바일은 hover 무시
-    if (window.innerWidth < 769) return;
-    
-    const dayEl = e.target.closest('.calendar-day');
-    if (!dayEl || dayEl.classList.contains('empty')) return;
-    
-    // PC에서는 hover 시 하이라이트만
-    dayEl.classList.add('hover');
-}
-
-function handleMouseOut(e) {
-    const dayEl = e.target.closest('.calendar-day');
-    if (!dayEl) return;
-    
-    dayEl.classList.remove('hover');
-}
-
-/**
- * 날짜 클릭 → 상세뷰 열기
+ * 날짜 클릭 - 지금은 아무 동작 없음 (정보가 카드에 다 표시됨)
  */
 function handleDateClick(e) {
-    const dayEl = e.target.closest('.calendar-day');
-    if (!dayEl || dayEl.classList.contains('empty')) return;
-    
-    const date = dayEl.dataset.date;
-    const snapshot = getSnapshot(date);
-    
-    if (!snapshot) return;
-    
-    showDetailView(date, snapshot);
+    // 클릭 시 아무것도 안함 - 정보는 카드에 이미 표시됨
 }
 
 /**
- * 상세뷰 표시 (fullscreen) - 모바일 생존 패턴
+ * hideDetailView - 더 이상 사용 안함 (호환성 유지용)
  */
-function showDetailView(date, snapshot) {
-    const view = ensureDetailView();
-    
-    const avatarEl = view.querySelector('#detail-avatar');
-    const nameEl = view.querySelector('#detail-name');
-    const statsEl = view.querySelector('#detail-stats');
-    
-    if (!snapshot.topChar) {
-        return;
-    }
-    
-    const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
-    avatarEl.src = avatarUrl;
-    avatarEl.onerror = () => { avatarEl.src = '/img/ai4.png'; };
-    
-    const charName = snapshot.topChar.replace(/\.[^/.]+$/, '');
-    nameEl.textContent = charName;
-    
-    // 해당 캐릭터 증감량 계산
-    const [year, month, day] = date.split('-').map(Number);
-    const dateObj = new Date(year, month - 1, day);
-    dateObj.setDate(dateObj.getDate() - 1);
-    const prevDateStr = getLocalDateString(dateObj);
-    const prevSnapshot = getSnapshot(prevDateStr);
-    
-    const charToday = snapshot.byChar?.[snapshot.topChar] || 0;
-    const charYesterday = prevSnapshot?.byChar?.[snapshot.topChar] || 0;
-    const charIncrease = charToday - charYesterday;
-    
-    if (prevSnapshot) {
-        // 어제 데이터 있음 → 증감량 표시
-        if (charIncrease === 0) {
-            statsEl.textContent = 'No change';
-        } else if (charIncrease > 0) {
-            statsEl.textContent = `+${charIncrease}`;
-        } else {
-            statsEl.textContent = `${charIncrease}`;
-        }
-        statsEl.className = charIncrease >= 0 ? 'detail-stats positive' : 'detail-stats negative';
-    } else {
-        // 첫날
-        statsEl.textContent = `${snapshot.total} msgs`;
-        statsEl.className = 'detail-stats';
-    }
-    
-    // fullscreen 표시
-    view.style.display = 'flex';
-}
-
-function hideDetailView() {
-    const view = document.getElementById('calendar-detail-view');
-    if (view) {
-        view.style.display = 'none';
-    }
-}
+function hideDetailView() {}
 
 /**
  * 디버그 모달 - 데이터 출처 표시
