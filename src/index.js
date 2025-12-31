@@ -672,6 +672,19 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
             case 'random-char':
                 handleRandomCharacter();
                 break;
+            case 'toggle-header-menu':
+                toggleHeaderMenu();
+                break;
+        }
+    }
+    
+    /**
+     * 모바일 헤더 메뉴 토글
+     */
+    function toggleHeaderMenu() {
+        const header = document.getElementById('chat-lobby-header');
+        if (header) {
+            header.classList.toggle('menu-open');
         }
     }
     
@@ -795,8 +808,6 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                 });
             }
         }
-        
-        showToast(`🎲 "${randomChar.name}" 선택!`, 'info');
     }
     
     // ============================================
