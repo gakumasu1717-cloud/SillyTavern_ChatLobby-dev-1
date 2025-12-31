@@ -23,6 +23,8 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
 (function() {
     'use strict';
     
+    // MutationObserver 참조 (cleanup용)
+    let hamburgerObserver = null;
     
     // ============================================
     // 이벤트 핸들러 참조 저장 (cleanup용)
@@ -190,7 +192,7 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
      * 기존 UI 요소 제거
      */
     function removeExistingUI() {
-        ['chat-lobby-overlay', 'chat-lobby-fab', 'chat-lobby-folder-modal', 'chat-lobby-global-tooltip'].forEach(id => {
+        ['chat-lobby-overlay', 'chat-lobby-fab', 'chat-lobby-folder-modal', 'chat-lobby-global-tooltip', 'chat-preview-tooltip'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.remove();
         });
@@ -365,6 +367,26 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
     
     // 전역 API (네임스페이스 정리)
     window.ChatLobby = window.ChatLobby || {};
+    
+    /**
+     * 전역 정리 함수 (확장 재로드 시 호출)
+     * 모든 이벤트 리스너, observer, 메모리 정리
+     * ⚠️ idempotent: 여러 번 호출해도 안전해야 함
+     */
+    function cleanup() {
+        cleanupSillyTavernEvents();
+        cleanupEventDelegation();
+        cleanupIntegration();
+        intervalManager.clearAll();
+        removeExistingUI();
+    }
+    
+    // 기존 인스턴스 정리 (확장 재로드 대비)
+    if (window.ChatLobby._cleanup) {
+        window.ChatLobby._cleanup();
+    }
+    window.ChatLobby._cleanup = cleanup;
+    
     window.ChatLobby.refresh = async function() {
         cache.invalidateAll();
         
@@ -386,6 +408,8 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
     
     // 이벤트 리스너 중복 등록 방지 플래그
     let eventsInitialized = false;
+    // 이벤트 핸들러 참조 저장 (cleanup용)
+    let refreshGridHandler = null;
     
     /**
      * 이벤트 위임 설정
@@ -411,9 +435,27 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         bindDropdownEvents();
         
         // 순환참조 방지용 이벤트 리스너
-        window.addEventListener('chatlobby:refresh-grid', () => {
+        refreshGridHandler = () => {
             renderCharacterGrid(store.searchTerm);
-        });
+        };
+        window.addEventListener('chatlobby:refresh-grid', refreshGridHandler);
+    }
+    
+    /**
+     * 이벤트 위임 정리 (확장 재로드 대비)
+     */
+    function cleanupEventDelegation() {
+        if (!eventsInitialized) return;
+        
+        document.body.removeEventListener('click', handleBodyClick);
+        document.removeEventListener('keydown', handleKeydown);
+        
+        if (refreshGridHandler) {
+            window.removeEventListener('chatlobby:refresh-grid', refreshGridHandler);
+            refreshGridHandler = null;
+        }
+        
+        eventsInitialized = false;
     }
     
     /**
@@ -905,14 +947,20 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
             // 초기 추가
             addHamburgerButton();
             
+            // 기존 observer 정리
+            if (hamburgerObserver) {
+                hamburgerObserver.disconnect();
+                hamburgerObserver = null;
+            }
+            
             // DOM 변화 감지 (CustomTheme이 empty() 후 다시 채울 때)
-            const observer = new MutationObserver(() => {
+            hamburgerObserver = new MutationObserver(() => {
                 // 버튼이 없으면 다시 추가
                 if (!document.getElementById('st-chatlobby-hamburger-btn')) {
                     addHamburgerButton();
                 }
             });
-            observer.observe(dropdown, { childList: true });
+            hamburgerObserver.observe(dropdown, { childList: true });
         };
         
         // 4. 사이드바: 즉시 시도 → 실패 시 polling (최대 20회, 10초)
@@ -930,6 +978,20 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         setupHamburgerObserver();
         
         return true;
+    }
+    
+    /**
+     * 통합 UI 정리 (MutationObserver 등)
+     */
+    function cleanupIntegration() {
+        // MutationObserver 정리
+        if (hamburgerObserver) {
+            hamburgerObserver.disconnect();
+            hamburgerObserver = null;
+        }
+        
+        // 플래그 초기화 (확장 재로드 대비)
+        window._chatLobbyCustomThemeInit = false;
     }
 
     // ============================================

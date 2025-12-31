@@ -72,8 +72,8 @@
     --z-header: 100;
     --z-card-hover: 200;
     --z-panel: 500;
-    --z-modal: 1000;
-    --z-wrapped: 2000;
+    --z-modal: 60000;
+    --z-wrapped: 70000;
     
     /* Border Radius */
     --radius-sm: 4px;
@@ -248,6 +248,8 @@
     background: transparent;
     gap: 12px;
     flex-shrink: 0;
+    position: relative;
+    z-index: 1;
 }
 
 #chat-lobby-persona-list {
@@ -357,6 +359,8 @@
     padding: 6px 30px;
     background: transparent;
     transition: all var(--transition-normal);
+    position: relative;
+    z-index: 1;
 }
 
 #chat-lobby-search input {
@@ -403,9 +407,12 @@
     align-items: center;
     gap: 6px;
     padding: 4px 30px;
+    margin-bottom: 12px;
     overflow-x: auto;
     scrollbar-width: none;
     transition: all var(--transition-normal);
+    position: relative;
+    z-index: 1;
 }
 
 #chat-lobby-tag-bar::-webkit-scrollbar {
@@ -566,6 +573,8 @@
     align-content: start;
     scrollbar-width: thin;
     scrollbar-color: var(--lobby-bg-hover) transparent;
+    position: relative;
+    z-index: 10;
 }
 
 #chat-lobby-characters::-webkit-scrollbar {

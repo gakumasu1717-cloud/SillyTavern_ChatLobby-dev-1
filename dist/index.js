@@ -3712,6 +3712,7 @@ ${message}` : message;
   // src/index.js
   (function() {
     "use strict";
+    let hamburgerObserver = null;
     let eventHandlers = null;
     let eventsRegistered = false;
     async function init() {
@@ -3810,7 +3811,7 @@ ${message}` : message;
       return store.isLobbyOpen;
     }
     function removeExistingUI() {
-      ["chat-lobby-overlay", "chat-lobby-fab", "chat-lobby-folder-modal", "chat-lobby-global-tooltip"].forEach((id) => {
+      ["chat-lobby-overlay", "chat-lobby-fab", "chat-lobby-folder-modal", "chat-lobby-global-tooltip", "chat-preview-tooltip"].forEach((id) => {
         const el = document.getElementById(id);
         if (el) el.remove();
       });
@@ -3911,6 +3912,17 @@ ${message}` : message;
       closeChatPanel();
     }
     window.ChatLobby = window.ChatLobby || {};
+    function cleanup() {
+      cleanupSillyTavernEvents();
+      cleanupEventDelegation();
+      cleanupIntegration();
+      intervalManager.clearAll();
+      removeExistingUI();
+    }
+    if (window.ChatLobby._cleanup) {
+      window.ChatLobby._cleanup();
+    }
+    window.ChatLobby._cleanup = cleanup;
     window.ChatLobby.refresh = async function() {
       cache.invalidateAll();
       const context = api.getContext();
@@ -3922,6 +3934,7 @@ ${message}` : message;
     };
     window.chatLobbyRefresh = window.ChatLobby.refresh;
     let eventsInitialized = false;
+    let refreshGridHandler = null;
     function setupEventDelegation() {
       if (eventsInitialized) return;
       eventsInitialized = true;
@@ -3932,9 +3945,20 @@ ${message}` : message;
         searchInput.addEventListener("input", (e) => handleSearch(e.target.value));
       }
       bindDropdownEvents();
-      window.addEventListener("chatlobby:refresh-grid", () => {
+      refreshGridHandler = () => {
         renderCharacterGrid(store.searchTerm);
-      });
+      };
+      window.addEventListener("chatlobby:refresh-grid", refreshGridHandler);
+    }
+    function cleanupEventDelegation() {
+      if (!eventsInitialized) return;
+      document.body.removeEventListener("click", handleBodyClick);
+      document.removeEventListener("keydown", handleKeydown);
+      if (refreshGridHandler) {
+        window.removeEventListener("chatlobby:refresh-grid", refreshGridHandler);
+        refreshGridHandler = null;
+      }
+      eventsInitialized = false;
     }
     function setupPersonaWheelScroll() {
       const personaList = document.getElementById("chat-lobby-persona-list");
@@ -4255,12 +4279,16 @@ ${message}` : message;
           return;
         }
         addHamburgerButton();
-        const observer = new MutationObserver(() => {
+        if (hamburgerObserver) {
+          hamburgerObserver.disconnect();
+          hamburgerObserver = null;
+        }
+        hamburgerObserver = new MutationObserver(() => {
           if (!document.getElementById("st-chatlobby-hamburger-btn")) {
             addHamburgerButton();
           }
         });
-        observer.observe(dropdown, { childList: true });
+        hamburgerObserver.observe(dropdown, { childList: true });
       };
       if (!addSidebarButton()) {
         let attempts = 0;
@@ -4273,6 +4301,13 @@ ${message}` : message;
       }
       setupHamburgerObserver();
       return true;
+    }
+    function cleanupIntegration() {
+      if (hamburgerObserver) {
+        hamburgerObserver.disconnect();
+        hamburgerObserver = null;
+      }
+      window._chatLobbyCustomThemeInit = false;
     }
     async function waitForSillyTavern(maxAttempts = 30, interval = 500) {
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
