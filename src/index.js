@@ -93,6 +93,12 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         
         const { eventSource, eventTypes } = context;
         
+        // CHAT_CHANGED debounce함수 (연속 호출 방지)
+        const debouncedChatChanged = debounce(() => {
+            cache.invalidate('characters');
+            cache.invalidate('chats');
+        }, 300);
+        
         // 핸들러 함수들을 별도로 정의 (off 호출 가능하도록)
         eventHandlers = {
             onCharacterDeleted: () => {
@@ -110,11 +116,7 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                     renderCharacterGrid(store.searchTerm);
                 }
             },
-            onChatChanged: () => {
-                cache.invalidate('characters');
-                cache.invalidate('chats');
-                // 리렌더 제거 - 삭제는 deleteChat에서 element.remove()로 처리
-            },
+            onChatChanged: debouncedChatChanged,
             // 메시지 전송/수신 이벤트 (현재 미사용)
             onMessageSent: () => {},
             onMessageReceived: () => {}

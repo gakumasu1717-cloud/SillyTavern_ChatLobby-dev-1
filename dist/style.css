@@ -402,7 +402,6 @@
     align-items: center;
     gap: 6px;
     padding: 4px 30px;
-    margin-bottom: 12px;
     overflow-x: auto;
     scrollbar-width: none;
     transition: all var(--transition-normal);

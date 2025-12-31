@@ -3771,6 +3771,10 @@ ${message}` : message;
         return;
       }
       const { eventSource, eventTypes } = context;
+      const debouncedChatChanged = debounce(() => {
+        cache.invalidate("characters");
+        cache.invalidate("chats");
+      }, 300);
       eventHandlers = {
         onCharacterDeleted: () => {
           cache.invalidate("characters");
@@ -3787,10 +3791,7 @@ ${message}` : message;
             renderCharacterGrid(store.searchTerm);
           }
         },
-        onChatChanged: () => {
-          cache.invalidate("characters");
-          cache.invalidate("chats");
-        },
+        onChatChanged: debouncedChatChanged,
         // 메시지 전송/수신 이벤트 (현재 미사용)
         onMessageSent: () => {
         },
