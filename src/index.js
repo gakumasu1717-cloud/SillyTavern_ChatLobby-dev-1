@@ -93,19 +93,19 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         
         const { eventSource, eventTypes } = context;
         
-        // CHAT_CHANGED 핸들러 - UI 락 + 캐시 무효화 + 재렌더링
+        // CHAT_CHANGED 핸들러 - 캐시 무효화 (락 중이면 스킵)
         const debouncedChatChanged = debounce(async () => {
+            // 락 걸려있으면 스킵 (캐릭터 선택/채팅 로딩 중)
+            if (store.isLobbyLocked) {
+                return;
+            }
+            
             cache.invalidate('characters');
             cache.invalidate('chats');
             
-            // 로비 열려있으면 UI 락 → 재렌더링 → 락 해제
+            // 로비 열려있으면 재렌더링
             if (isLobbyOpen()) {
-                store.setLobbyLocked(true);
-                try {
-                    await renderCharacterGrid(store.searchTerm);
-                } finally {
-                    store.setLobbyLocked(false);
-                }
+                await renderCharacterGrid(store.searchTerm);
             }
         }, 100);  // 100ms debounce (빠른 연속 이벤트 병합)
         

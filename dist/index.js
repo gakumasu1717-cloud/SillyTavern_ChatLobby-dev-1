@@ -2501,6 +2501,7 @@ ${message}` : message;
           return;
         }
         isSelectingCharacter = true;
+        store.setLobbyLocked(true);
         try {
           const chatsPanel = document.getElementById("chat-lobby-chats");
           const isPanelVisible = chatsPanel?.classList.contains("visible");
@@ -2529,6 +2530,7 @@ ${message}` : message;
         } catch (error) {
           console.error("[CharacterGrid] Handler error:", error);
         } finally {
+          store.setLobbyLocked(false);
           setTimeout(() => {
             isSelectingCharacter = false;
           }, 300);
@@ -3793,15 +3795,13 @@ ${message}` : message;
       }
       const { eventSource, eventTypes } = context;
       const debouncedChatChanged = debounce(async () => {
+        if (store.isLobbyLocked) {
+          return;
+        }
         cache.invalidate("characters");
         cache.invalidate("chats");
         if (isLobbyOpen()) {
-          store.setLobbyLocked(true);
-          try {
-            await renderCharacterGrid(store.searchTerm);
-          } finally {
-            store.setLobbyLocked(false);
-          }
+          await renderCharacterGrid(store.searchTerm);
         }
       }, 100);
       eventHandlers = {

@@ -409,7 +409,7 @@ function bindCharacterEvents(container) {
         
         // 캐릭터 카드 클릭 (선택) - 중복 클릭 방지 (전역 플래그)
         createTouchClickHandler(card, async () => {
-            // 로비 락 상태면 클릭 차단 (CHAT_CHANGED 처리 중)
+            // 로비 락 상태면 클릭 차단
             if (store.isLobbyLocked) {
                 return;
             }
@@ -419,6 +419,9 @@ function bindCharacterEvents(container) {
                 return;
             }
             isSelectingCharacter = true;
+            
+            // 채팅 로딩 완료까지 UI 락 설정
+            store.setLobbyLocked(true);
             
             try {
                 // 채팅 패널이 열려있고 같은 캐릭터면 닫기
@@ -458,6 +461,9 @@ function bindCharacterEvents(container) {
             } catch (error) {
                 console.error('[CharacterGrid] Handler error:', error);
             } finally {
+                // 채팅 로딩 완료 → 락 해제
+                store.setLobbyLocked(false);
+                
                 // 처리 완료 후 플래그 해제 (약간의 딜레이로 빠른 재클릭 방지)
                 setTimeout(() => {
                     isSelectingCharacter = false;
