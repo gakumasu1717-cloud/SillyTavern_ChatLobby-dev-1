@@ -93,8 +93,8 @@ export function createLobbyHTML() {
                                     <option value="all">📁 전체</option>
                                     <option value="favorites">⭐ 즐겨찾기</option>
                                 </select>
-                                <button id="chat-lobby-batch-mode" data-action="toggle-batch" title="다중 선택">☑️</button>
-                                <button id="chat-lobby-folder-manage" data-action="open-folder-modal" title="폴더 관리">📁</button>
+                                <button id="chat-lobby-batch-mode" class="icon-btn" data-action="toggle-batch" title="다중 선택"><span class="icon">☑️</span></button>
+                                <button id="chat-lobby-folder-manage" class="icon-btn" data-action="open-folder-modal" title="폴더 관리"><span class="icon">📁</span></button>
                             </div>
                         </div>
                     </section>
