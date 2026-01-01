@@ -1891,11 +1891,19 @@ ${message}` : message;
      * @returns {Promise<void>}
      */
     async initializeAll(characters, batchSize = 5) {
-      if (this.initializing) {
-        console.log("[LastChatCache] Already initializing, skip");
-        return;
+      if (this._initPromise) {
+        console.log("[LastChatCache] Already initializing, waiting for existing...");
+        return this._initPromise;
       }
-      this.initializing = true;
+      this._initPromise = this._doInitializeAll(characters, batchSize).finally(() => {
+        this._initPromise = null;
+      });
+      return this._initPromise;
+    }
+    /**
+     * 실제 초기화 로직 (내부용)
+     */
+    async _doInitializeAll(characters, batchSize) {
       console.log("[LastChatCache] Initializing for", characters.length, "characters");
       try {
         for (let i = 0; i < characters.length; i += batchSize) {
@@ -1915,8 +1923,9 @@ ${message}` : message;
         this.initialized = true;
         this._saveToStorage();
         console.log("[LastChatCache] Initialized with", this.lastChatTimes.size, "entries");
-      } finally {
-        this.initializing = false;
+      } catch (e) {
+        console.error("[LastChatCache] Initialization failed:", e);
+        this.initialized = true;
       }
     }
     /**
@@ -4805,11 +4814,20 @@ ${message}` : message;
             }
           }
         }
+      } catch (e) {
+        console.error("[ChatLobby] openLobby failed:", e);
+        if (container) container.style.display = "none";
+        if (fab) fab.style.display = "flex";
+        store.setLobbyOpen(false);
+        store.setLobbyLocked(false);
+        showToast("\uB85C\uBE44\uB97C \uC5EC\uB294 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "error");
       } finally {
         isOpeningLobby = false;
-        setTimeout(() => {
-          store.setLobbyLocked(false);
-        }, 500);
+        if (store.isLobbyOpen) {
+          setTimeout(() => {
+            store.setLobbyLocked(false);
+          }, 500);
+        }
       }
     }
     async function closeLobby() {
@@ -5240,6 +5258,10 @@ ${message}` : message;
             isCleared = true;
             intervalManager.clear(checkInterval);
           }
+        } catch (e) {
+          console.error("[ChatLobby] Import check error:", e);
+          isCleared = true;
+          intervalManager.clear(checkInterval);
         } finally {
           isChecking = false;
         }

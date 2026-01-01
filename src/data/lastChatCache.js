@@ -200,12 +200,24 @@ class LastChatCache {
      * @returns {Promise<void>}
      */
     async initializeAll(characters, batchSize = 5) {
-        if (this.initializing) {
-            console.log('[LastChatCache] Already initializing, skip');
-            return;
+        // 🔥 Promise 패턴: 이미 초기화 중이면 기존 Promise 재사용
+        if (this._initPromise) {
+            console.log('[LastChatCache] Already initializing, waiting for existing...');
+            return this._initPromise;
         }
         
-        this.initializing = true;
+        this._initPromise = this._doInitializeAll(characters, batchSize)
+            .finally(() => {
+                this._initPromise = null;
+            });
+        
+        return this._initPromise;
+    }
+    
+    /**
+     * 실제 초기화 로직 (내부용)
+     */
+    async _doInitializeAll(characters, batchSize) {
         console.log('[LastChatCache] Initializing for', characters.length, 'characters');
         
         try {
@@ -238,8 +250,10 @@ class LastChatCache {
             this.initialized = true;
             this._saveToStorage(); // 초기화 완료 후 저장
             console.log('[LastChatCache] Initialized with', this.lastChatTimes.size, 'entries');
-        } finally {
-            this.initializing = false;
+        } catch (e) {
+            console.error('[LastChatCache] Initialization failed:', e);
+            // 실패해도 initialized는 true로 설정 (무한 재시도 방지)
+            this.initialized = true;
         }
     }
     

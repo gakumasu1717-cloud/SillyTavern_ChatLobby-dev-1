@@ -377,10 +377,10 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         const chatsPanel = document.getElementById('chat-lobby-chats');
         
         try {
-        if (overlay) {
-            overlay.style.display = 'flex';
-            if (container) container.style.display = 'flex';
-            if (fab) fab.style.display = 'none';
+            if (overlay) {
+                overlay.style.display = 'flex';
+                if (container) container.style.display = 'flex';
+                if (fab) fab.style.display = 'none';
             
             // 핸들러가 설정되어 있는지 확인
             if (!store.onCharacterSelect) {
@@ -446,17 +446,26 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                         }
                     }, 200);
                 }
+                }
             }
-            
-        }
+        } catch (e) {
+            // 🔥 에러 발생 시 UI 복구 (stuck 방지)
+            console.error('[ChatLobby] openLobby failed:', e);
+            if (container) container.style.display = 'none';
+            if (fab) fab.style.display = 'flex';
+            store.setLobbyOpen(false);
+            store.setLobbyLocked(false);
+            showToast('로비를 여는 중 오류가 발생했습니다.', 'error');
         } finally {
             // 열기 완료 후 플래그 해제
             isOpeningLobby = false;
             
             // 안정화 시간 후 락 해제 (CHAT_CHANGED debounce settle 대기)
-            setTimeout(() => {
-                store.setLobbyLocked(false);
-            }, 500);
+            if (store.isLobbyOpen) {
+                setTimeout(() => {
+                    store.setLobbyLocked(false);
+                }, 500);
+            }
         }
     }
     
@@ -1114,6 +1123,11 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                     intervalManager.clear(checkInterval);
                     // 사용자에게 알리지 않음 (취소했을 수도 있으니까)
                 }
+            } catch (e) {
+                // 🔥 예외 발생 시 interval 정리 (메모리 누수 방지)
+                console.error('[ChatLobby] Import check error:', e);
+                isCleared = true;
+                intervalManager.clear(checkInterval);
             } finally {
                 isChecking = false;
             }
