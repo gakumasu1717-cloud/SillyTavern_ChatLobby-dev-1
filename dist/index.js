@@ -3018,6 +3018,13 @@ ${message}` : message;
       showToast("\uC0AD\uC81C\uD560 \uCC44\uD305 \uC815\uBCF4\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
       return;
     }
+    const context = api.getContext();
+    const currentChatFile = context?.characters?.[context?.characterId]?.chat;
+    const fileNameWithoutExt = fileName.replace(".jsonl", "");
+    if (currentChatFile === fileNameWithoutExt) {
+      showToast("\uD604\uC7AC \uC5F4\uB9B0 \uCC44\uD305\uC740 \uC0AD\uC81C\uD560 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.\n\uB2E4\uB978 \uCC44\uD305\uC73C\uB85C \uC774\uB3D9 \uD6C4 \uC0AD\uC81C\uD574\uC8FC\uC138\uC694.", "warning");
+      return;
+    }
     const displayName = fileName.replace(".jsonl", "");
     const confirmed = await showConfirm(
       `"${displayName}" \uCC44\uD305\uC744 \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?
@@ -3050,10 +3057,10 @@ ${message}` : message;
             updateChatCountAfterDelete();
           }, 200);
         }
-        const context = api.getContext();
-        if (context?.reloadCurrentChat) {
+        const context2 = api.getContext();
+        if (context2?.reloadCurrentChat) {
           try {
-            await context.reloadCurrentChat();
+            await context2.reloadCurrentChat();
           } catch (e) {
             console.warn("[ChatLobby] reloadCurrentChat failed:", e);
           }

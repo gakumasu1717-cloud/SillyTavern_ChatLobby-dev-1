@@ -164,6 +164,16 @@ export async function deleteChat(chatInfo) {
         return;
     }
     
+    // 🔥 현재 열린 채팅인지 확인 (삭제 방지)
+    const context = api.getContext();
+    const currentChatFile = context?.characters?.[context?.characterId]?.chat;
+    const fileNameWithoutExt = fileName.replace('.jsonl', '');
+    
+    if (currentChatFile === fileNameWithoutExt) {
+        showToast('현재 열린 채팅은 삭제할 수 없습니다.\n다른 채팅으로 이동 후 삭제해주세요.', 'warning');
+        return;
+    }
+    
     // 삭제 확인
     const displayName = fileName.replace('.jsonl', '');
     const confirmed = await showConfirm(
