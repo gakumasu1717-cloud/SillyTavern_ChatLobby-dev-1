@@ -6,6 +6,7 @@ import { api } from '../api/sillyTavern.js';
 import { cache } from '../data/cache.js';
 import { storage } from '../data/storage.js';
 import { store } from '../data/store.js';
+import { lastChatCache } from '../data/lastChatCache.js';
 import { refreshChatList, getCurrentCharacter, closeChatPanel } from '../ui/chatList.js';
 import { showToast, showConfirm, showAlert } from '../ui/notifications.js';
 import { CONFIG } from '../config.js';
@@ -44,6 +45,10 @@ export async function openChat(chatInfo) {
         
         // 파일명 정규화 (확장자 제거)
         const chatFileName = fileName.replace('.jsonl', '');
+        
+        // ★ 마지막 채팅 시간 갱신 (채팅 열기 = 접속)
+        // 예전 채팅을 열어도 "이 캐릭터와 대화했다"로 기록
+        lastChatCache.updateNow(charAvatar);
         
         // 1. 캐릭터 선택
         await api.selectCharacterById(index);

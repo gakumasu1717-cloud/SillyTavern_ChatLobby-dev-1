@@ -6,6 +6,7 @@ import { api } from '../api/sillyTavern.js';
 import { cache } from '../data/cache.js';
 import { storage } from '../data/storage.js';
 import { store } from '../data/store.js';
+import { lastChatCache } from '../data/lastChatCache.js';
 import { escapeHtml } from '../utils/textUtils.js';
 import { createTouchClickHandler, debounce } from '../utils/eventHelpers.js';
 import { showToast } from './notifications.js';
@@ -234,6 +235,7 @@ function renderCharacterCard(char, index) {
 
 /**
  * 백그라운드에서 채팅 수 로딩 후 UI 업데이트
+ * 배치 처리로 메모리 최적화 + 메인 스레드 블로킹 방지
  * @param {Array} characters - 캐릭터 배열
  */
 async function loadChatCountsAsync(characters) {
@@ -260,6 +262,11 @@ async function loadChatCountsAsync(characters) {
                 
                 cache.set('chatCounts', count, char.avatar);
                 cache.set('messageCounts', messageCount, char.avatar);
+                
+                // ★ lastChatCache에도 마지막 채팅 시간 갱신 (재접속 정렬 정확도 향상)
+                if (chatArray.length > 0) {
+                    await lastChatCache.refreshForCharacter(char.avatar, chatArray);
+                }
                 
                 // DOM 업데이트 (CSS.escape로 특수문자 처리)
                 const card = document.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(char.avatar)}"]`);
@@ -290,6 +297,11 @@ async function loadChatCountsAsync(characters) {
                 console.error('[CharacterGrid] Failed to load chat count:', char.name, e);
             }
         }));
+        
+        // 배치 간 약간의 딜레이로 메인 스레드 블로킹 방지 + GC 기회 제공
+        if (i + BATCH_SIZE < characters.length) {
+            await new Promise(r => setTimeout(r, 10));
+        }
     }
 }
 
@@ -371,9 +383,10 @@ async function sortCharacters(characters, sortOption) {
             return (a.name || '').localeCompare(b.name || '', 'ko');
         }
         
-        // 기본: 최근 채팅순 (SillyTavern의 date_last_chat 사용)
-        const aDate = a.date_last_chat || 0;
-        const bDate = b.date_last_chat || 0;
+        // 기본: 최근 채팅순 (lastChatCache 사용 - localStorage에 영구 저장됨)
+        // 재접속 시에도 정확한 정렬 유지
+        const aDate = lastChatCache.getForSort(a);
+        const bDate = lastChatCache.getForSort(b);
         return bDate - aDate;
     });
     

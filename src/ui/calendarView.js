@@ -227,6 +227,7 @@ function handleDoubleTap(e) {
 /**
  * 첫 접근 시 베이스라인 스냅샷 저장 (어제 날짜로)
  * 이후 증감량 계산의 기준점이 됨
+ * 배치 처리로 메모리 최적화
  */
 async function saveBaselineSnapshot() {
     const yesterday = getLocalDateString(new Date(Date.now() - 86400000));
@@ -263,6 +264,11 @@ async function saveBaselineSnapshot() {
             })
         );
         rankings.push(...batchResults);
+        
+        // 배치 간 약간의 딜레이로 메인 스레드 블로킹 방지
+        if (i + BATCH_SIZE < characters.length) {
+            await new Promise(r => setTimeout(r, 10));
+        }
     }
     
     rankings.sort((a, b) => b.messageCount - a.messageCount);
@@ -308,6 +314,7 @@ function findRecentSnapshot(beforeDate, maxDays = 7) {
 
 /**
  * 오늘 스냅샷 저장 - 가장 증가한 캐릭터 찾기
+ * 배치 처리로 메모리 최적화
  */
 async function saveTodaySnapshot() {
     try {
@@ -351,6 +358,11 @@ async function saveTodaySnapshot() {
                 })
             );
             rankings.push(...batchResults);
+            
+            // 배치 간 약간의 딜레이로 메인 스레드 블로킹 방지
+            if (i + BATCH_SIZE < characters.length) {
+                await new Promise(r => setTimeout(r, 10));
+            }
         }
         
         rankings.sort((a, b) => b.messageCount - a.messageCount);
