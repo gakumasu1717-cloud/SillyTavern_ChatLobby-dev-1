@@ -3165,11 +3165,11 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 .lastmsg-avatar {
     position: absolute;
     left: 0;
-    top: -10%; /* 상단 10% 자르기 */
+    top: 0;
     width: 200px;
-    height: 120%; /* 확대해서 중앙부 보이게 */
+    height: 100%;
     object-fit: cover;
-    object-position: center 30%; /* 중앙부 보이게 */
+    object-position: 50% 30%;
 }
 
 /* 이미지 하단 그라데이션 오버레이 (이름 가독성) */
