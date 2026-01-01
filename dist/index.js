@@ -1959,6 +1959,38 @@ ${message}` : message;
         console.warn("[LastChatCache] Failed to clear storage:", e);
       }
     }
+    /**
+     * 특정 캐릭터 삭제
+     * @param {string} charAvatar - 삭제할 캐릭터 아바타
+     */
+    remove(charAvatar) {
+      if (!charAvatar) return;
+      if (this.lastChatTimes.has(charAvatar)) {
+        this.lastChatTimes.delete(charAvatar);
+        this._scheduleSave();
+        console.log("[LastChatCache] Removed:", charAvatar);
+      }
+    }
+    /**
+     * 삭제된 캐릭터들 정리
+     * 현재 존재하는 캐릭터 목록과 비교하여 없는 캐릭터 제거
+     * @param {Array} existingCharacters - 현재 존재하는 캐릭터 목록
+     */
+    cleanupDeleted(existingCharacters) {
+      if (!existingCharacters || !Array.isArray(existingCharacters)) return;
+      const existingAvatars = new Set(existingCharacters.map((c) => c.avatar));
+      let cleaned = 0;
+      for (const avatar of this.lastChatTimes.keys()) {
+        if (!existingAvatars.has(avatar)) {
+          this.lastChatTimes.delete(avatar);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        console.log("[LastChatCache] Cleaned", cleaned, "deleted characters");
+        this._scheduleSave();
+      }
+    }
   };
   var lastChatCache = new LastChatCache();
 
@@ -4585,6 +4617,12 @@ ${message}` : message;
       eventHandlers = {
         onCharacterDeleted: () => {
           cache.invalidate("characters");
+          setTimeout(() => {
+            const currentChars = api.getCharacters();
+            if (currentChars && currentChars.length > 0) {
+              lastChatCache.cleanupDeleted(currentChars);
+            }
+          }, 100);
           if (isLobbyOpen()) {
             renderCharacterGrid(store.searchTerm);
           }

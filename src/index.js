@@ -155,6 +155,16 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         eventHandlers = {
             onCharacterDeleted: () => {
                 cache.invalidate('characters');
+                
+                // 🔥 삭제된 캐릭터를 lastChatCache에서도 정리
+                // 약간의 딜레이 후 현재 캐릭터 목록과 비교하여 정리
+                setTimeout(() => {
+                    const currentChars = api.getCharacters();
+                    if (currentChars && currentChars.length > 0) {
+                        lastChatCache.cleanupDeleted(currentChars);
+                    }
+                }, 100);
+                
                 if (isLobbyOpen()) {
                     renderCharacterGrid(store.searchTerm);
                 }
