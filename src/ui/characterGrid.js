@@ -151,7 +151,7 @@ async function renderCharacterList(container, characters, searchTerm, sortOverri
     const indexMap = new Map(originalCharacters.map((c, i) => [c.avatar, i]));
     
     container.innerHTML = filtered.map(char => {
-        return renderCharacterCard(char, indexMap.get(char.avatar));
+        return renderCharacterCard(char, indexMap.get(char.avatar), sortOption);
     }).join('');
     
     bindCharacterEvents(container);
@@ -173,14 +173,27 @@ async function renderCharacterList(container, characters, searchTerm, sortOverri
  * 캐릭터 카드 HTML 생성 - 넷플릭스 스타일 + 호버 정보
  * @param {Object} char - 캐릭터 객체
  * @param {number} index - 원본 인덱스
+ * @param {string} sortOption - 정렬 옵션
  * @returns {string}
  */
-function renderCharacterCard(char, index) {
+function renderCharacterCard(char, index, sortOption = 'recent') {
     const avatarUrl = char.avatar ? `/characters/${encodeURIComponent(char.avatar)}` : '/img/ai4.png';
     const name = char.name || 'Unknown';
     const safeAvatar = escapeHtml(char.avatar || '');
     
     const isFav = isFavoriteChar(char);
+    
+    // 최근 채팅순 정렬일 때만 시간 표시
+    let lastChatTimeStr = '';
+    if (sortOption === 'recent') {
+        const lastChatTime = lastChatCache.getForSort(char);
+        if (lastChatTime > 0) {
+            const date = new Date(lastChatTime);
+            const hours = date.getHours();
+            const minutes = String(date.getMinutes()).padStart(2, '0');
+            lastChatTimeStr = `${hours}:${minutes}`;
+        }
+    }
     
     // 채팅 수 (캐시에서 가져오기, 없으면 API 응답 필드 사용)
     const cachedChatCount = cache.get('chatCounts', char.avatar);
@@ -215,7 +228,7 @@ function renderCharacterCard(char, index) {
              draggable="false"
              onerror="this.src='/img/ai4.png'">
         <div class="lobby-char-name">
-            <span class="char-name-text">${escapeHtml(name)}</span>
+            <span class="char-name-text">${escapeHtml(name)}${lastChatTimeStr ? ` <span class="char-last-time">${lastChatTimeStr}</span>` : ''}</span>
             <div class="char-hover-info">
                 <div class="info-row">
                     <span class="info-icon">💬</span>

@@ -647,10 +647,9 @@ function showLastMessagePanel(date) {
             cardsHtml += `
                 <div class="lastmsg-card">
                     <img class="lastmsg-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0.3'">
-                    <div class="lastmsg-overlay"></div>
                     <div class="lastmsg-name">${charName}</div>
                     <div class="lastmsg-stats">
-                        <div class="lastmsg-label">Recent Chat</div>
+                        <div class="lastmsg-label">Last Chat</div>
                         <div class="lastmsg-time">${timeStr}</div>
                     </div>
                 </div>

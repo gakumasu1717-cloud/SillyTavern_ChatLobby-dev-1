@@ -2703,7 +2703,7 @@ ${message}` : message;
     const originalCharacters = api.getCharacters();
     const indexMap = new Map(originalCharacters.map((c, i) => [c.avatar, i]));
     container.innerHTML = filtered.map((char) => {
-      return renderCharacterCard(char, indexMap.get(char.avatar));
+      return renderCharacterCard(char, indexMap.get(char.avatar), sortOption);
     }).join("");
     bindCharacterEvents(container);
     const currentChar = store.currentCharacter;
@@ -2715,11 +2715,21 @@ ${message}` : message;
     }
     loadChatCountsAsync(filtered);
   }
-  function renderCharacterCard(char, index) {
+  function renderCharacterCard(char, index, sortOption = "recent") {
     const avatarUrl = char.avatar ? `/characters/${encodeURIComponent(char.avatar)}` : "/img/ai4.png";
     const name = char.name || "Unknown";
     const safeAvatar = escapeHtml(char.avatar || "");
     const isFav = isFavoriteChar(char);
+    let lastChatTimeStr = "";
+    if (sortOption === "recent") {
+      const lastChatTime = lastChatCache.getForSort(char);
+      if (lastChatTime > 0) {
+        const date = new Date(lastChatTime);
+        const hours = date.getHours();
+        const minutes = String(date.getMinutes()).padStart(2, "0");
+        lastChatTimeStr = `${hours}:${minutes}`;
+      }
+    }
     const cachedChatCount = cache.get("chatCounts", char.avatar);
     const cachedMessageCount = cache.get("messageCounts", char.avatar);
     const hasCount = typeof cachedChatCount === "number";
@@ -2741,7 +2751,7 @@ ${message}` : message;
              draggable="false"
              onerror="this.src='/img/ai4.png'">
         <div class="lobby-char-name">
-            <span class="char-name-text">${escapeHtml(name)}</span>
+            <span class="char-name-text">${escapeHtml(name)}${lastChatTimeStr ? ` <span class="char-last-time">${lastChatTimeStr}</span>` : ""}</span>
             <div class="char-hover-info">
                 <div class="info-row">
                     <span class="info-icon">\u{1F4AC}</span>
@@ -4638,10 +4648,9 @@ ${message}` : message;
         cardsHtml += `
                 <div class="lastmsg-card">
                     <img class="lastmsg-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0.3'">
-                    <div class="lastmsg-overlay"></div>
                     <div class="lastmsg-name">${charName}</div>
                     <div class="lastmsg-stats">
-                        <div class="lastmsg-label">Recent Chat</div>
+                        <div class="lastmsg-label">Last Chat</div>
                         <div class="lastmsg-time">${timeStr}</div>
                     </div>
                 </div>
