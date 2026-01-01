@@ -39,6 +39,21 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
     let eventsRegistered = false;
     
     // ============================================
+    // 현재 채팅 중인 캐릭터 추적 (로비 밖 채팅 감지용)
+    // ============================================
+    
+    /**
+     * 현재 채팅 중인 캐릭터 아바타 가져오기
+     * @returns {string|null}
+     */
+    function getCurrentCharacterAvatar() {
+        const context = api.getContext();
+        if (!context?.characterId || context.characterId < 0) return null;
+        const char = context.characters?.[context.characterId];
+        return char?.avatar || null;
+    }
+    
+    // ============================================
     // 초기화
     // ============================================
     
@@ -154,9 +169,21 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                 }
             },
             onChatChanged: onChatChanged,
-            // 메시지 전송/수신 이벤트 (현재 미사용)
-            onMessageSent: () => {},
-            onMessageReceived: () => {}
+            // 🔥 메시지 전송/수신 이벤트 - 로비 밖에서 채팅해도 lastChatCache 갱신
+            onMessageSent: () => {
+                const charAvatar = getCurrentCharacterAvatar();
+                if (charAvatar) {
+                    lastChatCache.updateNow(charAvatar);
+                    console.log('[ChatLobby] Message sent, updated lastChatCache:', charAvatar);
+                }
+            },
+            onMessageReceived: () => {
+                const charAvatar = getCurrentCharacterAvatar();
+                if (charAvatar) {
+                    lastChatCache.updateNow(charAvatar);
+                    console.log('[ChatLobby] Message received, updated lastChatCache:', charAvatar);
+                }
+            }
         };
         
         // 이벤트 등록
