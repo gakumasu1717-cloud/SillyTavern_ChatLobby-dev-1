@@ -2912,7 +2912,6 @@ ${message}` : message;
         return;
       }
       const chatFileName = fileName.replace(".jsonl", "");
-      lastChatCache.updateNow(charAvatar);
       await api.selectCharacterById(index);
       const charSelected = await waitForCharacterSelect(charAvatar, 2e3);
       if (!charSelected) {

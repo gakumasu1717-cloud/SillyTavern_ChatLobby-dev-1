@@ -46,9 +46,8 @@ export async function openChat(chatInfo) {
         // 파일명 정규화 (확장자 제거)
         const chatFileName = fileName.replace('.jsonl', '');
         
-        // ★ 마지막 채팅 시간 갱신 (채팅 열기 = 접속)
-        // 예전 채팅을 열어도 "이 캐릭터와 대화했다"로 기록
-        lastChatCache.updateNow(charAvatar);
+        // ★ 마지막 채팅 시간 갱신은 실제 메시지 송수신 시에만 (index.js의 MESSAGE_SENT/RECEIVED 이벤트)
+        // 채팅 열기만으로는 갱신하지 않음 - "최근 채팅순"은 실제 대화한 순서를 의미
         
         // 1. 캐릭터 선택
         await api.selectCharacterById(index);
