@@ -62,14 +62,15 @@ export function getSnapshot(date) {
 }
 
 /**
- * 오래된 스냅샷 정리 (6개월 이전 삭제)
+ * 오래된 스냅샷 정리 (2년 이전만 삭제 - 장기 컨텐츠용)
+ * 캘린더는 1년치 볼 수 있도록 보관
  */
 function cleanOldSnapshots() {
-    console.log('[Calendar] Cleaning old snapshots (6 months+)');
+    console.log('[Calendar] Cleaning old snapshots (2 years+)');
     const snapshots = loadSnapshots(true);
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    const cutoff = getLocalDateString(sixMonthsAgo);
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    const cutoff = getLocalDateString(twoYearsAgo);
     
     let deleted = 0;
     for (const date of Object.keys(snapshots)) {
@@ -79,8 +80,10 @@ function cleanOldSnapshots() {
         }
     }
     
-    console.log('[Calendar] Deleted', deleted, 'old snapshots');
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+    if (deleted > 0) {
+        console.log('[Calendar] Deleted', deleted, 'old snapshots (2+ years)');
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+    }
 }
 
 /**

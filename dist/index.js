@@ -521,21 +521,22 @@ ${message}` : message;
     }
     /**
      * 오래된/불필요한 데이터 정리
+     * 장기 사용자를 고려해 제한 넉넉하게 설정
      * @param {LobbyData} data
      */
     cleanup(data) {
       const assignments = Object.entries(data.chatAssignments || {});
-      if (assignments.length > 2e3) {
-        const toKeep = assignments.slice(-2e3);
+      if (assignments.length > 1e4) {
+        const toKeep = assignments.slice(-1e4);
         data.chatAssignments = Object.fromEntries(toKeep);
-        console.log(`[Storage] Cleaned chatAssignments: ${assignments.length} \u2192 2000`);
+        console.log(`[Storage] Cleaned chatAssignments: ${assignments.length} \u2192 10000`);
       }
-      if (data.favorites && data.favorites.length > 500) {
-        data.favorites = data.favorites.slice(-500);
+      if (data.favorites && data.favorites.length > 2e3) {
+        data.favorites = data.favorites.slice(-2e3);
         console.log(`[Storage] Cleaned favorites`);
       }
-      if (data.characterFavorites && data.characterFavorites.length > 300) {
-        data.characterFavorites = data.characterFavorites.slice(-300);
+      if (data.characterFavorites && data.characterFavorites.length > 1e3) {
+        data.characterFavorites = data.characterFavorites.slice(-1e3);
         console.log(`[Storage] Cleaned characterFavorites`);
       }
       this._data = data;
@@ -1347,6 +1348,7 @@ ${message}` : message;
                         <button id="chat-lobby-import-char" data-action="import-char" title="\uCE90\uB9AD\uD130 \uAC00\uC838\uC624\uAE30">\u{1F4E5}</button>
                         <button id="chat-lobby-add-persona" data-action="add-persona" title="\uD398\uB974\uC18C\uB098 \uCD94\uAC00">\u{1F464}</button>
                         <button id="chat-lobby-refresh" data-action="refresh" title="\uC0C8\uB85C\uACE0\uCE68">\u{1F504}</button>
+                        <button id="chat-lobby-debug" data-action="open-debug" title="\uB514\uBC84\uADF8 \uB370\uC774\uD130">\u{1F527}</button>
                         <button id="chat-lobby-theme-toggle" data-action="toggle-theme" title="\uD14C\uB9C8 \uC804\uD658">${savedTheme === "light" ? "\u{1F319}" : "\u2600\uFE0F"}</button>
                     </div>
                     <button id="chat-lobby-close" data-action="close-lobby" title="\uB2EB\uAE30">\u2715</button>
@@ -1730,6 +1732,235 @@ ${message}` : message;
       }
     }, CONFIG.timing.menuCloseDelay);
   }
+
+  // src/data/lastChatCache.js
+  var STORAGE_KEY = "chatLobby_lastChatTimes";
+  var LastChatCache = class {
+    constructor() {
+      this.lastChatTimes = /* @__PURE__ */ new Map();
+      this.initialized = false;
+      this.initializing = false;
+      this._dirty = false;
+      this._loadFromStorage();
+    }
+    /**
+     * localStorage에서 캐시 복원
+     */
+    _loadFromStorage() {
+      try {
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) {
+          const data = JSON.parse(stored);
+          if (data && typeof data === "object") {
+            Object.entries(data).forEach(([avatar, timestamp]) => {
+              if (typeof timestamp === "number" && timestamp > 0) {
+                this.lastChatTimes.set(avatar, timestamp);
+              }
+            });
+            console.log("[LastChatCache] Restored", this.lastChatTimes.size, "entries from storage");
+          }
+        }
+      } catch (e) {
+        console.warn("[LastChatCache] Failed to load from storage:", e);
+      }
+    }
+    /**
+     * localStorage에 캐시 저장 (debounced)
+     */
+    _saveToStorage() {
+      if (!this._dirty) return;
+      try {
+        const data = {};
+        this.lastChatTimes.forEach((timestamp, avatar) => {
+          data[avatar] = timestamp;
+        });
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        this._dirty = false;
+      } catch (e) {
+        console.warn("[LastChatCache] Failed to save to storage:", e);
+      }
+    }
+    /**
+     * 저장 예약 (debounce)
+     */
+    _scheduleSave() {
+      this._dirty = true;
+      if (this._saveTimer) clearTimeout(this._saveTimer);
+      this._saveTimer = setTimeout(() => this._saveToStorage(), 1e3);
+    }
+    /**
+     * 특정 캐릭터의 마지막 채팅 시간 가져오기
+     */
+    get(charAvatar) {
+      return this.lastChatTimes.get(charAvatar) || 0;
+    }
+    /**
+     * 특정 캐릭터의 마지막 채팅 시간 설정
+     */
+    set(charAvatar, timestamp) {
+      if (timestamp > 0) {
+        const current = this.lastChatTimes.get(charAvatar) || 0;
+        if (timestamp > current) {
+          this.lastChatTimes.set(charAvatar, timestamp);
+          this._scheduleSave();
+        }
+      }
+    }
+    /**
+     * 현재 시간으로 마지막 채팅 시간 업데이트 (메시지 전송 시)
+     */
+    updateNow(charAvatar) {
+      if (!charAvatar) return;
+      this.lastChatTimes.set(charAvatar, Date.now());
+      this._scheduleSave();
+      console.log("[LastChatCache] Updated to now:", charAvatar);
+    }
+    /**
+     * 채팅 목록에서 마지막 채팅 시간 추출
+     */
+    extractLastTime(chats) {
+      if (!Array.isArray(chats) || chats.length === 0) return 0;
+      let maxTime = 0;
+      for (const chat of chats) {
+        const chatTime = this.getChatTimestamp(chat);
+        if (chatTime > maxTime) {
+          maxTime = chatTime;
+        }
+      }
+      return maxTime;
+    }
+    /**
+     * 개별 채팅에서 타임스탬프 추출
+     */
+    getChatTimestamp(chat) {
+      if (chat.last_mes) {
+        return typeof chat.last_mes === "number" ? chat.last_mes : new Date(chat.last_mes).getTime();
+      }
+      if (chat.file_name) {
+        const timestamp = this.parseFileNameDate(chat.file_name);
+        if (timestamp) return timestamp;
+      }
+      if (chat.date) {
+        return typeof chat.date === "number" ? chat.date : new Date(chat.date).getTime();
+      }
+      return 0;
+    }
+    /**
+     * 파일명에서 날짜 파싱
+     * 형식: "2024-12-30@15h30m45s.jsonl" 또는 "캐릭터명 - 2024-12-30@15h30m45s.jsonl"
+     */
+    parseFileNameDate(fileName) {
+      const match = fileName.match(/(\d{4})-(\d{2})-(\d{2})@(\d{2})h(\d{2})m(\d{2})s/);
+      if (!match) return null;
+      const [, year, month, day, hour, min, sec] = match;
+      return new Date(
+        parseInt(year),
+        parseInt(month) - 1,
+        parseInt(day),
+        parseInt(hour),
+        parseInt(min),
+        parseInt(sec)
+      ).getTime();
+    }
+    /**
+     * 캐릭터의 채팅 목록을 가져와서 마지막 시간 갱신
+     */
+    async refreshForCharacter(charAvatar, chats = null) {
+      try {
+        if (!chats) {
+          chats = cache.get("chats", charAvatar);
+          if (!chats) {
+            chats = await api.fetchChatsForCharacter(charAvatar);
+          }
+        }
+        const lastTime = this.extractLastTime(chats);
+        if (lastTime > 0) {
+          this.set(charAvatar, lastTime);
+        }
+        return lastTime;
+      } catch (e) {
+        console.error("[LastChatCache] Failed to refresh:", charAvatar, e);
+        return 0;
+      }
+    }
+    /**
+     * 모든 캐릭터의 마지막 채팅 시간 초기화 (배치 처리)
+     * 재접속 시 정확한 정렬을 위해 실제 채팅 목록에서 last_mes 확인
+     * @param {Array} characters - 캐릭터 목록
+     * @param {number} batchSize - 배치 크기
+     * @returns {Promise<void>}
+     */
+    async initializeAll(characters, batchSize = 5) {
+      if (this.initializing) {
+        console.log("[LastChatCache] Already initializing, skip");
+        return;
+      }
+      this.initializing = true;
+      console.log("[LastChatCache] Initializing for", characters.length, "characters");
+      try {
+        for (let i = 0; i < characters.length; i += batchSize) {
+          const batch = characters.slice(i, i + batchSize);
+          await Promise.all(batch.map(async (char) => {
+            const cached = this.get(char.avatar);
+            if (cached > 0) return;
+            if (char.date_last_chat) {
+              this.set(char.avatar, char.date_last_chat);
+              return;
+            }
+          }));
+          if (i + batchSize < characters.length) {
+            await new Promise((r) => setTimeout(r, 10));
+          }
+        }
+        this.initialized = true;
+        this._saveToStorage();
+        console.log("[LastChatCache] Initialized with", this.lastChatTimes.size, "entries");
+      } finally {
+        this.initializing = false;
+      }
+    }
+    /**
+     * 캐릭터 정렬용 마지막 채팅 시간 가져오기
+     * 1. localStorage에서 복원된 캐시값 (재접속 시에도 유지)
+     * 2. context의 date_last_chat (SillyTavern이 관리, 파일 mtime 기준)
+     * 3. 0 (채팅 없음)
+     */
+    getForSort(char) {
+      const cached = this.get(char.avatar);
+      if (cached > 0) return cached;
+      return char.date_last_chat || 0;
+    }
+    /**
+     * 채팅 열기 시 마지막 시간 갱신 (새 채팅 또는 이전 채팅 재진입)
+     * 메시지를 보내지 않아도 채팅을 열면 해당 시간으로 기록
+     */
+    markOpened(charAvatar) {
+      if (!charAvatar) return;
+      this.updateNow(charAvatar);
+    }
+    /**
+     * 채팅 열기만으로는 캐시를 갱신하지 않음 (하위 호환성)
+     */
+    markViewed(charAvatar) {
+      console.log("[LastChatCache] markViewed (no update):", charAvatar);
+    }
+    /**
+     * 캐시 클리어
+     */
+    clear() {
+      this.lastChatTimes.clear();
+      this.initialized = false;
+      this.initializing = false;
+      this._dirty = false;
+      if (this._saveTimer) clearTimeout(this._saveTimer);
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (e) {
+        console.warn("[LastChatCache] Failed to clear storage:", e);
+      }
+    }
+  };
+  var lastChatCache = new LastChatCache();
 
   // src/ui/characterGrid.js
   init_textUtils();
@@ -2424,6 +2655,9 @@ ${message}` : message;
           }, 0);
           cache.set("chatCounts", count, char.avatar);
           cache.set("messageCounts", messageCount, char.avatar);
+          if (chatArray.length > 0) {
+            await lastChatCache.refreshForCharacter(char.avatar, chatArray);
+          }
           const card = document.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(char.avatar)}"]`);
           if (card) {
             const chatValueEl = card.querySelector(".chat-count-value");
@@ -2450,6 +2684,9 @@ ${message}` : message;
           console.error("[CharacterGrid] Failed to load chat count:", char.name, e);
         }
       }));
+      if (i + BATCH_SIZE < characters.length) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
     }
   }
   function isFavoriteChar(char) {
@@ -2497,8 +2734,8 @@ ${message}` : message;
       if (sortOption === "name") {
         return (a.name || "").localeCompare(b.name || "", "ko");
       }
-      const aDate = a.date_last_chat || 0;
-      const bDate = b.date_last_chat || 0;
+      const aDate = lastChatCache.getForSort(a);
+      const bDate = lastChatCache.getForSort(b);
       return bDate - aDate;
     });
     return sorted;
@@ -2675,6 +2912,7 @@ ${message}` : message;
         return;
       }
       const chatFileName = fileName.replace(".jsonl", "");
+      lastChatCache.updateNow(charAvatar);
       await api.selectCharacterById(index);
       const charSelected = await waitForCharacterSelect(charAvatar, 2e3);
       if (!charSelected) {
@@ -3747,7 +3985,7 @@ ${message}` : message;
   }
 
   // src/data/calendarStorage.js
-  var STORAGE_KEY = "chatLobby_calendar";
+  var STORAGE_KEY2 = "chatLobby_calendar";
   var CURRENT_VERSION = 1;
   var THIS_YEAR = (/* @__PURE__ */ new Date()).getFullYear();
   var _snapshotsCache = null;
@@ -3759,14 +3997,14 @@ ${message}` : message;
       return _snapshotsCache;
     }
     try {
-      const data = localStorage.getItem(STORAGE_KEY);
+      const data = localStorage.getItem(STORAGE_KEY2);
       if (data) {
         const parsed = JSON.parse(data);
         const version = parsed.version || 0;
         if (version < CURRENT_VERSION) {
           console.log("[Calendar] Migrating data from version", version, "to", CURRENT_VERSION);
           const migrated = { version: CURRENT_VERSION, snapshots: parsed.snapshots || {} };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+          localStorage.setItem(STORAGE_KEY2, JSON.stringify(migrated));
         }
         _snapshotsCache = parsed.snapshots || {};
         return _snapshotsCache;
@@ -3778,11 +4016,11 @@ ${message}` : message;
     return _snapshotsCache;
   }
   function cleanOldSnapshots() {
-    console.log("[Calendar] Cleaning old snapshots (6 months+)");
+    console.log("[Calendar] Cleaning old snapshots (2 years+)");
     const snapshots = loadSnapshots(true);
-    const sixMonthsAgo = /* @__PURE__ */ new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
-    const cutoff = getLocalDateString(sixMonthsAgo);
+    const twoYearsAgo = /* @__PURE__ */ new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    const cutoff = getLocalDateString(twoYearsAgo);
     let deleted = 0;
     for (const date of Object.keys(snapshots)) {
       if (date < cutoff) {
@@ -3790,8 +4028,10 @@ ${message}` : message;
         deleted++;
       }
     }
-    console.log("[Calendar] Deleted", deleted, "old snapshots");
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+    if (deleted > 0) {
+      console.log("[Calendar] Deleted", deleted, "old snapshots (2+ years)");
+      localStorage.setItem(STORAGE_KEY2, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+    }
   }
   function saveSnapshot(date, total, topChar, byChar = {}, isBaseline = false) {
     const jan1 = `${THIS_YEAR}-01-01`;
@@ -3800,7 +4040,7 @@ ${message}` : message;
     try {
       const snapshots = loadSnapshots(true);
       snapshots[date] = { total, topChar, byChar };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+      localStorage.setItem(STORAGE_KEY2, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
       console.log("[Calendar] saveSnapshot:", date, "| total:", total, "| topChar:", topChar);
     } catch (e) {
       if (e.name === "QuotaExceededError") {
@@ -3809,7 +4049,7 @@ ${message}` : message;
         try {
           const snapshots = loadSnapshots(true);
           snapshots[date] = { total, topChar, byChar };
-          localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+          localStorage.setItem(STORAGE_KEY2, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
         } catch (e2) {
           console.error("[Calendar] Still failed after cleanup:", e2);
         }
@@ -3821,7 +4061,7 @@ ${message}` : message;
   function clearAllSnapshots() {
     try {
       _snapshotsCache = null;
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(STORAGE_KEY2);
     } catch (e) {
       console.error("[Calendar] Failed to clear snapshots:", e);
     }
@@ -4014,6 +4254,9 @@ ${message}` : message;
         })
       );
       rankings.push(...batchResults);
+      if (i + BATCH_SIZE < characters.length) {
+        await new Promise((r) => setTimeout(r, 10));
+      }
     }
     rankings.sort((a, b) => b.messageCount - a.messageCount);
     const totalMessages = rankings.reduce((sum, r) => sum + r.messageCount, 0);
@@ -4073,6 +4316,9 @@ ${message}` : message;
           })
         );
         rankings.push(...batchResults);
+        if (i + BATCH_SIZE < characters.length) {
+          await new Promise((r) => setTimeout(r, 10));
+        }
       }
       rankings.sort((a, b) => b.messageCount - a.messageCount);
       const totalMessages = rankings.reduce((sum, r) => sum + r.messageCount, 0);
@@ -4243,7 +4489,19 @@ ${message}` : message;
     let chatChangedCooldownTimer = null;
     let eventHandlers = null;
     let eventsRegistered = false;
+    function getCurrentCharacterAvatar() {
+      const context = api.getContext();
+      if (!context?.characterId || context.characterId < 0) return null;
+      const char = context.characters?.[context.characterId];
+      return char?.avatar || null;
+    }
     async function init() {
+      if (window._chatLobbyInitialized) {
+        console.warn("[ChatLobby] Already initialized, skipping duplicate init");
+        return;
+      }
+      window._chatLobbyInitialized = true;
+      console.log("[ChatLobby] \u{1F680} Initializing...");
       removeExistingUI();
       document.body.insertAdjacentHTML("beforeend", createLobbyHTML());
       const fab = document.getElementById("chat-lobby-fab");
@@ -4264,7 +4522,8 @@ ${message}` : message;
         return;
       }
       if (eventsRegistered) {
-        return;
+        console.warn("[ChatLobby] Events already registered, cleaning up first");
+        cleanupSillyTavernEvents();
       }
       const { eventSource, eventTypes } = context;
       const onChatChanged = () => {
@@ -4304,10 +4563,20 @@ ${message}` : message;
           }
         },
         onChatChanged,
-        // 메시지 전송/수신 이벤트 (현재 미사용)
+        // 🔥 메시지 전송/수신 이벤트 - 로비 밖에서 채팅해도 lastChatCache 갱신
         onMessageSent: () => {
+          const charAvatar = getCurrentCharacterAvatar();
+          if (charAvatar) {
+            lastChatCache.updateNow(charAvatar);
+            console.log("[ChatLobby] Message sent, updated lastChatCache:", charAvatar);
+          }
         },
         onMessageReceived: () => {
+          const charAvatar = getCurrentCharacterAvatar();
+          if (charAvatar) {
+            lastChatCache.updateNow(charAvatar);
+            console.log("[ChatLobby] Message received, updated lastChatCache:", charAvatar);
+          }
         }
       };
       eventSource.on(eventTypes.CHARACTER_DELETED, eventHandlers.onCharacterDeleted);
@@ -4372,12 +4641,33 @@ ${message}` : message;
     }
     async function startBackgroundPreload() {
       setTimeout(async () => {
-        await cache.preloadAll(api);
-        const characters = cache.get("characters");
-        if (characters && characters.length > 0) {
-          const recent = [...characters].sort((a, b) => (b.date_last_chat || 0) - (a.date_last_chat || 0)).slice(0, 5);
-          await cache.preloadRecentChats(api, recent);
+        console.log("[ChatLobby] Starting background preload...");
+        try {
+          await cache.preloadPersonas(api);
+          await new Promise((r) => setTimeout(r, 100));
+          await cache.preloadCharacters(api);
+          console.log("[ChatLobby] Basic preload completed");
+        } catch (e) {
+          console.error("[ChatLobby] Preload failed:", e);
+          return;
         }
+        setTimeout(async () => {
+          const characters = cache.get("characters");
+          if (!characters || characters.length === 0) return;
+          const recent = [...characters].sort((a, b) => (b.date_last_chat || 0) - (a.date_last_chat || 0)).slice(0, 3);
+          console.log("[ChatLobby] Preloading chats for", recent.length, "characters");
+          for (const char of recent) {
+            if (cache.isValid("chats", char.avatar)) continue;
+            try {
+              const chats = await api.fetchChatsForCharacter(char.avatar);
+              cache.set("chats", chats, char.avatar);
+              await new Promise((r) => setTimeout(r, 200));
+            } catch (e) {
+              console.error("[ChatLobby] Chat preload failed:", char.name, e);
+            }
+          }
+          console.log("[ChatLobby] Chat preload completed");
+        }, 3e3);
       }, CONFIG.timing.preloadDelay);
     }
     let isOpeningLobby = false;
@@ -4469,14 +4759,111 @@ ${message}` : message;
       store.reset();
       closeChatPanel();
     }
+    function openDebugModal() {
+      let modal = document.getElementById("chat-lobby-debug-modal");
+      if (modal) {
+        modal.remove();
+      }
+      const lastChatData = {};
+      if (lastChatCache.lastChatTimes) {
+        lastChatCache.lastChatTimes.forEach((timestamp, avatar) => {
+          lastChatData[avatar] = {
+            timestamp,
+            date: new Date(timestamp).toLocaleString("ko-KR")
+          };
+        });
+      }
+      const calendarSnapshots = loadSnapshots(true);
+      const storageKeys = {};
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith("chatLobby")) {
+          try {
+            const value = localStorage.getItem(key);
+            const parsed = JSON.parse(value);
+            storageKeys[key] = {
+              size: value.length,
+              itemCount: typeof parsed === "object" ? Object.keys(parsed).length : 1
+            };
+          } catch {
+            storageKeys[key] = { size: localStorage.getItem(key)?.length || 0 };
+          }
+        }
+      }
+      const debugData = {
+        _meta: {
+          timestamp: (/* @__PURE__ */ new Date()).toLocaleString("ko-KR"),
+          cacheInitialized: lastChatCache.initialized,
+          totalLastChatEntries: lastChatCache.lastChatTimes?.size || 0,
+          totalCalendarSnapshots: Object.keys(calendarSnapshots).length
+        },
+        storageKeys,
+        lastChatCache: lastChatData,
+        calendarSnapshots
+      };
+      modal = document.createElement("div");
+      modal.id = "chat-lobby-debug-modal";
+      modal.innerHTML = `
+            <div class="debug-modal-backdrop" data-action="close-debug"></div>
+            <div class="debug-modal-content">
+                <div class="debug-modal-header">
+                    <h3>\u{1F527} Debug Data</h3>
+                    <div class="debug-modal-actions">
+                        <button class="debug-copy-btn" id="debug-copy-btn">\u{1F4CB} Copy</button>
+                        <button class="debug-clear-btn" id="debug-clear-lastchat">\u{1F5D1}\uFE0F Clear LastChat</button>
+                        <button class="debug-modal-close" data-action="close-debug">\u2715</button>
+                    </div>
+                </div>
+                <div class="debug-modal-body">
+                    <pre class="debug-modal-pre">${JSON.stringify(debugData, null, 2)}</pre>
+                </div>
+            </div>
+        `;
+      modal.style.cssText = `
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 10001;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        `;
+      document.body.appendChild(modal);
+      modal.querySelector("#debug-copy-btn")?.addEventListener("click", () => {
+        navigator.clipboard.writeText(JSON.stringify(debugData, null, 2)).then(() => showToast("\uD074\uB9BD\uBCF4\uB4DC\uC5D0 \uBCF5\uC0AC\uB428", "success")).catch(() => showToast("\uBCF5\uC0AC \uC2E4\uD328", "error"));
+      });
+      modal.querySelector("#debug-clear-lastchat")?.addEventListener("click", () => {
+        if (confirm("LastChatCache \uB370\uC774\uD130\uB97C \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?")) {
+          lastChatCache.clear();
+          showToast("LastChatCache \uC0AD\uC81C\uB428", "success");
+          closeDebugModal();
+        }
+      });
+    }
+    function closeDebugModal() {
+      const modal = document.getElementById("chat-lobby-debug-modal");
+      if (modal) {
+        modal.remove();
+      }
+    }
     window.ChatLobby = window.ChatLobby || {};
     function cleanup() {
+      console.log("[ChatLobby] \u{1F9F9} Cleanup started");
       cleanupSillyTavernEvents();
       cleanupEventDelegation();
       cleanupIntegration();
       cleanupTooltip();
       intervalManager.clearAll();
+      if (chatChangedCooldownTimer) {
+        clearTimeout(chatChangedCooldownTimer);
+        chatChangedCooldownTimer = null;
+      }
+      eventsRegistered = false;
+      window._chatLobbyInitialized = false;
       removeExistingUI();
+      console.log("[ChatLobby] \u2705 Cleanup completed");
     }
     if (window.ChatLobby._cleanup) {
       window.ChatLobby._cleanup();
@@ -4643,6 +5030,12 @@ ${message}` : message;
           break;
         case "close-calendar":
           closeCalendarView();
+          break;
+        case "open-debug":
+          openDebugModal();
+          break;
+        case "close-debug":
+          closeDebugModal();
           break;
       }
     }

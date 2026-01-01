@@ -121,26 +121,27 @@ class StorageManager {
     
     /**
      * 오래된/불필요한 데이터 정리
+     * 장기 사용자를 고려해 제한 넉넉하게 설정
      * @param {LobbyData} data
      */
     cleanup(data) {
-        // 1. chatAssignments 크기 제한 (최대 2000개)
+        // 1. chatAssignments 크기 제한 (최대 10000개 - 채팅 2000개 × 캐릭터 5명 정도)
         const assignments = Object.entries(data.chatAssignments || {});
-        if (assignments.length > 2000) {
-            const toKeep = assignments.slice(-2000);  // 최근 2000개만 유지
+        if (assignments.length > 10000) {
+            const toKeep = assignments.slice(-10000);  // 최근 10000개만 유지
             data.chatAssignments = Object.fromEntries(toKeep);
-            console.log(`[Storage] Cleaned chatAssignments: ${assignments.length} → 2000`);
+            console.log(`[Storage] Cleaned chatAssignments: ${assignments.length} → 10000`);
         }
         
-        // 2. favorites 크기 제한 (최대 500개)
-        if (data.favorites && data.favorites.length > 500) {
-            data.favorites = data.favorites.slice(-500);
+        // 2. favorites 크기 제한 (최대 2000개)
+        if (data.favorites && data.favorites.length > 2000) {
+            data.favorites = data.favorites.slice(-2000);
             console.log(`[Storage] Cleaned favorites`);
         }
         
-        // 3. characterFavorites 크기 제한 (최대 300개)
-        if (data.characterFavorites && data.characterFavorites.length > 300) {
-            data.characterFavorites = data.characterFavorites.slice(-300);
+        // 3. characterFavorites 크기 제한 (최대 1000개)
+        if (data.characterFavorites && data.characterFavorites.length > 1000) {
+            data.characterFavorites = data.characterFavorites.slice(-1000);
             console.log(`[Storage] Cleaned characterFavorites`);
         }
         
