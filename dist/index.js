@@ -102,11 +102,65 @@
   // src/ui/notifications.js
   var notifications_exports = {};
   __export(notifications_exports, {
+    initNotifications: () => initNotifications,
     showAlert: () => showAlert,
     showConfirm: () => showConfirm,
     showPrompt: () => showPrompt,
     showToast: () => showToast
   });
+  async function requestNotificationPermission() {
+    if (!("Notification" in window)) {
+      console.log("[Notification] Browser does not support notifications");
+      return "denied";
+    }
+    if (Notification.permission === "granted") {
+      notificationPermission = "granted";
+      return "granted";
+    }
+    if (Notification.permission !== "denied") {
+      try {
+        const permission = await Notification.requestPermission();
+        notificationPermission = permission;
+        return permission;
+      } catch (e) {
+        console.warn("[Notification] Permission request failed:", e);
+        return "denied";
+      }
+    }
+    notificationPermission = Notification.permission;
+    return Notification.permission;
+  }
+  function showBrowserNotification(message, type) {
+    if (!("Notification" in window) || Notification.permission !== "granted") {
+      return false;
+    }
+    const icons = {
+      success: "\u2705",
+      error: "\u274C",
+      warning: "\u26A0\uFE0F",
+      info: "\u2139\uFE0F"
+    };
+    const titles = {
+      success: "Success",
+      error: "Error",
+      warning: "Warning",
+      info: "Info"
+    };
+    try {
+      const notification = new Notification(`${icons[type]} ${titles[type]}`, {
+        body: message,
+        icon: "/favicon.ico",
+        tag: `chatlobby-${type}-${Date.now()}`,
+        requireInteraction: false,
+        silent: type !== "error"
+      });
+      setTimeout(() => notification.close(), 3e3);
+      return true;
+    } catch (e) {
+      console.warn("[Notification] Failed to show notification:", e);
+      return false;
+    }
+  }
   function initToastContainer() {
     if (toastContainer) return;
     toastContainer = document.createElement("div");
@@ -135,6 +189,7 @@
                 pointer-events: auto;
                 animation: toastSlideIn 0.3s ease;
                 max-width: 350px;
+                font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
             }
             .chat-lobby-toast.success { border-left: 4px solid #4caf50; }
             .chat-lobby-toast.error { border-left: 4px solid #f44336; }
@@ -167,11 +222,23 @@
                 from { transform: translateX(0); opacity: 1; }
                 to { transform: translateX(100%); opacity: 0; }
             }
+            
+            /* \uBAA8\uBC14\uC77C\uC5D0\uC11C\uB3C4 \uD1A0\uC2A4\uD2B8 \uD45C\uC2DC\uB418\uB3C4\uB85D \uAC15\uD654 */
+            @media (max-width: 768px) {
+                #chat-lobby-toast-container {
+                    left: 10px;
+                    right: 10px;
+                    bottom: 80px;
+                }
+                .chat-lobby-toast {
+                    max-width: 100%;
+                }
+            }
         </style>
     `;
     document.body.appendChild(toastContainer);
   }
-  function showToast(message, type = "info", duration = CONFIG.timing.toastDuration) {
+  function showDOMToast(message, type, duration) {
     initToastContainer();
     const icons = {
       success: "\u2713",
@@ -190,6 +257,16 @@
     closeBtn.addEventListener("click", () => removeToast(toast));
     toastContainer.appendChild(toast);
     setTimeout(() => removeToast(toast), duration);
+  }
+  function showToast(message, type = "info", duration = CONFIG.timing.toastDuration) {
+    const isMobile2 = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    const notificationShown = showBrowserNotification(message, type);
+    if (isMobile2 || !notificationShown) {
+      showDOMToast(message, type, duration);
+    }
+  }
+  async function initNotifications() {
+    await requestNotificationPermission();
   }
   function removeToast(toast) {
     if (!toast.parentNode) return;
@@ -215,12 +292,13 @@ ${message}` : message;
 ${message}` : message;
     return Promise.resolve(prompt(fullMessage, defaultValue));
   }
-  var toastContainer;
+  var toastContainer, notificationPermission;
   var init_notifications = __esm({
     "src/ui/notifications.js"() {
       init_config();
       init_textUtils();
       toastContainer = null;
+      notificationPermission = "default";
     }
   });
 
@@ -4070,6 +4148,10 @@ ${message}` : message;
     _snapshotsCache = {};
     return _snapshotsCache;
   }
+  function getSnapshot(date) {
+    const snapshots = loadSnapshots();
+    return snapshots[date] || null;
+  }
   function cleanOldSnapshots() {
     console.log("[Calendar] Cleaning old snapshots (2 years+)");
     const snapshots = loadSnapshots(true);
@@ -4088,22 +4170,22 @@ ${message}` : message;
       localStorage.setItem(STORAGE_KEY2, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
     }
   }
-  function saveSnapshot(date, total, topChar, byChar = {}, isBaseline = false) {
+  function saveSnapshot(date, total, topChar, byChar = {}, lastChatTimes = {}, isBaseline = false) {
     const jan1 = `${THIS_YEAR}-01-01`;
     if (!isBaseline && date < jan1) return;
     _snapshotsCache = null;
     try {
       const snapshots = loadSnapshots(true);
-      snapshots[date] = { total, topChar, byChar };
+      snapshots[date] = { total, topChar, byChar, lastChatTimes };
       localStorage.setItem(STORAGE_KEY2, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
-      console.log("[Calendar] saveSnapshot:", date, "| total:", total, "| topChar:", topChar);
+      console.log("[Calendar] saveSnapshot:", date, "| total:", total, "| topChar:", topChar, "| lastChatTimes count:", Object.keys(lastChatTimes).length);
     } catch (e) {
       if (e.name === "QuotaExceededError") {
         console.warn("[Calendar] QuotaExceededError - cleaning old data");
         cleanOldSnapshots();
         try {
           const snapshots = loadSnapshots(true);
-          snapshots[date] = { total, topChar, byChar };
+          snapshots[date] = { total, topChar, byChar, lastChatTimes };
           localStorage.setItem(STORAGE_KEY2, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
         } catch (e2) {
           console.error("[Calendar] Still failed after cleanup:", e2);
@@ -4196,6 +4278,16 @@ ${message}` : message;
                         <pre class="debug-modal-content" id="debug-modal-content"></pre>
                     </div>
                 </div>
+                
+                <!-- Statistics \uC2AC\uB77C\uC774\uB4DC \uD31D\uC5C5 -->
+                <div class="calendar-stats-panel" id="calendar-stats-panel">
+                    <div class="stats-panel-header">
+                        <span class="stats-panel-title">Statistics</span>
+                        <button class="stats-panel-close" id="stats-panel-close">\xD7</button>
+                    </div>
+                    <div class="stats-panel-date" id="stats-panel-date"></div>
+                    <div class="stats-panel-content" id="stats-panel-content"></div>
+                </div>
             `;
         document.body.appendChild(calendarOverlay);
         calendarOverlay.querySelector("#calendar-close").addEventListener("click", closeCalendarView);
@@ -4204,6 +4296,7 @@ ${message}` : message;
         calendarOverlay.querySelector("#calendar-debug").addEventListener("click", showDebugModal);
         calendarOverlay.querySelector("#debug-modal-close").addEventListener("click", hideDebugModal);
         calendarOverlay.querySelector("#debug-clear-all").addEventListener("click", handleClearAll);
+        calendarOverlay.querySelector("#stats-panel-close").addEventListener("click", closeStatsPanel);
         const main = calendarOverlay.querySelector("#calendar-main");
         main.addEventListener("touchstart", handlePinchStart, { passive: true });
         main.addEventListener("touchmove", handlePinchMove, { passive: false });
@@ -4340,8 +4433,15 @@ ${message}` : message;
     rankings.forEach((r) => {
       byChar[r.avatar] = r.messageCount;
     });
+    const lastChatTimes = {};
+    rankings.forEach((r) => {
+      const lastTime = lastChatCache.get(r.avatar);
+      if (lastTime > 0) {
+        lastChatTimes[r.avatar] = lastTime;
+      }
+    });
     const topChar = rankings[0]?.avatar || "";
-    saveSnapshot(yesterday, totalMessages, topChar, byChar, true);
+    saveSnapshot(yesterday, totalMessages, topChar, byChar, lastChatTimes, true);
   }
   function findRecentSnapshot(beforeDate, maxDays = 7) {
     const snapshots = loadSnapshots();
@@ -4402,6 +4502,13 @@ ${message}` : message;
       rankings.forEach((r) => {
         byChar[r.avatar] = r.messageCount;
       });
+      const lastChatTimes = {};
+      rankings.forEach((r) => {
+        const lastTime = lastChatCache.get(r.avatar);
+        if (lastTime > 0) {
+          lastChatTimes[r.avatar] = lastTime;
+        }
+      });
       let topChar = "";
       let maxIncrease = -Infinity;
       let maxMsgCountOnTie = -1;
@@ -4420,7 +4527,7 @@ ${message}` : message;
       if (!recentData) {
         topChar = rankings[0]?.avatar || "";
       }
-      saveSnapshot(today, totalMessages, topChar, byChar);
+      saveSnapshot(today, totalMessages, topChar, byChar, lastChatTimes);
     } catch (e) {
       console.error("[Calendar] Failed to save snapshot:", e);
     }
@@ -4496,6 +4603,71 @@ ${message}` : message;
         `;
     }
     grid.innerHTML = html;
+    grid.querySelectorAll(".cal-card.has-data").forEach((card) => {
+      card.addEventListener("click", () => {
+        const date = card.dataset.date;
+        showStatsPanel(date);
+      });
+    });
+  }
+  function showStatsPanel(date) {
+    const panel = calendarOverlay.querySelector("#calendar-stats-panel");
+    const dateLabel = calendarOverlay.querySelector("#stats-panel-date");
+    const content = calendarOverlay.querySelector("#stats-panel-content");
+    const snapshot = getSnapshot(date);
+    if (!snapshot) return;
+    const [year, month, day] = date.split("-");
+    dateLabel.textContent = `${parseInt(month)}/${parseInt(day)}`;
+    const lastChatTimes = snapshot.lastChatTimes || {};
+    const byChar = snapshot.byChar || {};
+    let topChars = [];
+    if (Object.keys(lastChatTimes).length > 0) {
+      topChars = Object.entries(lastChatTimes).filter(([avatar]) => isCharacterExists(avatar)).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([avatar, time]) => ({
+        avatar,
+        lastChatTime: time,
+        messageCount: byChar[avatar] || 0
+      }));
+    } else {
+      topChars = Object.entries(byChar).filter(([avatar]) => isCharacterExists(avatar)).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([avatar, count]) => ({
+        avatar,
+        lastChatTime: 0,
+        messageCount: count
+      }));
+    }
+    let cardsHtml = "";
+    if (topChars.length === 0) {
+      cardsHtml = '<div class="stats-no-data">No character data</div>';
+    } else {
+      topChars.forEach((char, index) => {
+        const avatarUrl = `/characters/${encodeURIComponent(char.avatar)}`;
+        const charName = char.avatar.replace(/\.[^/.]+$/, "");
+        const timeStr = char.lastChatTime > 0 ? formatLastChatTime(char.lastChatTime) : "-";
+        cardsHtml += `
+                <div class="stats-char-card" data-rank="${index + 1}">
+                    <img class="stats-char-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0.3'">
+                    <div class="stats-char-gradient"></div>
+                    <div class="stats-char-info">
+                        <div class="stats-char-name">${charName}</div>
+                        <div class="stats-char-time">${timeStr}</div>
+                    </div>
+                </div>
+            `;
+      });
+    }
+    content.innerHTML = cardsHtml;
+    panel.classList.add("open");
+  }
+  function closeStatsPanel() {
+    const panel = calendarOverlay.querySelector("#calendar-stats-panel");
+    panel.classList.remove("open");
+  }
+  function formatLastChatTime(timestamp) {
+    const date = new Date(timestamp);
+    const hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, "0");
+    const ampm = hours < 12 ? "AM" : "PM";
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes} ${ampm}`;
   }
   function showDebugModal() {
     const modal = calendarOverlay.querySelector("#calendar-debug-modal");

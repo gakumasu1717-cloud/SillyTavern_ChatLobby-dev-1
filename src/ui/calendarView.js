@@ -5,6 +5,7 @@
 import { api } from '../api/sillyTavern.js';
 import { cache } from '../data/cache.js';
 import { loadSnapshots, getSnapshot, saveSnapshot, getLocalDateString, clearAllSnapshots } from '../data/calendarStorage.js';
+import { lastChatCache } from '../data/lastChatCache.js';
 
 let calendarOverlay = null;
 const THIS_YEAR = new Date().getFullYear();
@@ -109,6 +110,16 @@ export async function openCalendarView() {
                         <pre class="debug-modal-content" id="debug-modal-content"></pre>
                     </div>
                 </div>
+                
+                <!-- Statistics 슬라이드 팝업 -->
+                <div class="calendar-stats-panel" id="calendar-stats-panel">
+                    <div class="stats-panel-header">
+                        <span class="stats-panel-title">Statistics</span>
+                        <button class="stats-panel-close" id="stats-panel-close">×</button>
+                    </div>
+                    <div class="stats-panel-date" id="stats-panel-date"></div>
+                    <div class="stats-panel-content" id="stats-panel-content"></div>
+                </div>
             `;
             document.body.appendChild(calendarOverlay);
             
@@ -121,6 +132,9 @@ export async function openCalendarView() {
             calendarOverlay.querySelector('#calendar-debug').addEventListener('click', showDebugModal);
             calendarOverlay.querySelector('#debug-modal-close').addEventListener('click', hideDebugModal);
             calendarOverlay.querySelector('#debug-clear-all').addEventListener('click', handleClearAll);
+            
+            // Statistics 패널 닫기
+            calendarOverlay.querySelector('#stats-panel-close').addEventListener('click', closeStatsPanel);
             
             // 핀치줌 이벤트
             const main = calendarOverlay.querySelector('#calendar-main');
@@ -322,11 +336,20 @@ async function saveBaselineSnapshot() {
         byChar[r.avatar] = r.messageCount;
     });
     
+    // 캐릭터별 마지막 채팅 시간 복사 (현재 lastChatCache에서)
+    const lastChatTimes = {};
+    rankings.forEach(r => {
+        const lastTime = lastChatCache.get(r.avatar);
+        if (lastTime > 0) {
+            lastChatTimes[r.avatar] = lastTime;
+        }
+    });
+    
     // 메시지 1위 캐릭터
     const topChar = rankings[0]?.avatar || '';
     
     // 어제 날짜로 저장 (베이스라인 - 작년도 허용)
-    saveSnapshot(yesterday, totalMessages, topChar, byChar, true);
+    saveSnapshot(yesterday, totalMessages, topChar, byChar, lastChatTimes, true);
 }
 
 /**
@@ -416,6 +439,15 @@ async function saveTodaySnapshot() {
             byChar[r.avatar] = r.messageCount;
         });
         
+        // 캐릭터별 마지막 채팅 시간 복사 (현재 lastChatCache에서)
+        const lastChatTimes = {};
+        rankings.forEach(r => {
+            const lastTime = lastChatCache.get(r.avatar);
+            if (lastTime > 0) {
+                lastChatTimes[r.avatar] = lastTime;
+            }
+        });
+        
         // 가장 증가한 캐릭터 찾기 (메시지 수 기준)
         let topChar = '';
         let maxIncrease = -Infinity;
@@ -443,7 +475,7 @@ async function saveTodaySnapshot() {
             topChar = rankings[0]?.avatar || '';
         }
         
-        saveSnapshot(today, totalMessages, topChar, byChar);
+        saveSnapshot(today, totalMessages, topChar, byChar, lastChatTimes);
         
     } catch (e) {
         console.error('[Calendar] Failed to save snapshot:', e);
@@ -549,6 +581,113 @@ function renderCalendar() {
     }
     
     grid.innerHTML = html;
+    
+    // cal-card 클릭 이벤트 (데이터 있는 날짜만)
+    grid.querySelectorAll('.cal-card.has-data').forEach(card => {
+        card.addEventListener('click', () => {
+            const date = card.dataset.date;
+            showStatsPanel(date);
+        });
+    });
+}
+
+/**
+ * Statistics 패널 열기
+ * @param {string} date - YYYY-MM-DD 형식
+ */
+function showStatsPanel(date) {
+    const panel = calendarOverlay.querySelector('#calendar-stats-panel');
+    const dateLabel = calendarOverlay.querySelector('#stats-panel-date');
+    const content = calendarOverlay.querySelector('#stats-panel-content');
+    
+    const snapshot = getSnapshot(date);
+    if (!snapshot) return;
+    
+    // 날짜 표시
+    const [year, month, day] = date.split('-');
+    dateLabel.textContent = `${parseInt(month)}/${parseInt(day)}`;
+    
+    // 마지막 채팅 시간 기준 상위 3명 캐릭터 찾기
+    const lastChatTimes = snapshot.lastChatTimes || {};
+    const byChar = snapshot.byChar || {};
+    
+    // lastChatTimes가 있으면 시간 기준, 없으면 메시지 수 기준
+    let topChars = [];
+    
+    if (Object.keys(lastChatTimes).length > 0) {
+        // 마지막 채팅 시간 기준 정렬
+        topChars = Object.entries(lastChatTimes)
+            .filter(([avatar]) => isCharacterExists(avatar))
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([avatar, time]) => ({
+                avatar,
+                lastChatTime: time,
+                messageCount: byChar[avatar] || 0
+            }));
+    } else {
+        // fallback: 메시지 수 기준 정렬
+        topChars = Object.entries(byChar)
+            .filter(([avatar]) => isCharacterExists(avatar))
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 3)
+            .map(([avatar, count]) => ({
+                avatar,
+                lastChatTime: 0,
+                messageCount: count
+            }));
+    }
+    
+    // 카드 HTML 생성
+    let cardsHtml = '';
+    
+    if (topChars.length === 0) {
+        cardsHtml = '<div class="stats-no-data">No character data</div>';
+    } else {
+        topChars.forEach((char, index) => {
+            const avatarUrl = `/characters/${encodeURIComponent(char.avatar)}`;
+            const charName = char.avatar.replace(/\.[^/.]+$/, '');
+            const timeStr = char.lastChatTime > 0 
+                ? formatLastChatTime(char.lastChatTime)
+                : '-';
+            
+            cardsHtml += `
+                <div class="stats-char-card" data-rank="${index + 1}">
+                    <img class="stats-char-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0.3'">
+                    <div class="stats-char-gradient"></div>
+                    <div class="stats-char-info">
+                        <div class="stats-char-name">${charName}</div>
+                        <div class="stats-char-time">${timeStr}</div>
+                    </div>
+                </div>
+            `;
+        });
+    }
+    
+    content.innerHTML = cardsHtml;
+    panel.classList.add('open');
+}
+
+/**
+ * Statistics 패널 닫기
+ */
+function closeStatsPanel() {
+    const panel = calendarOverlay.querySelector('#calendar-stats-panel');
+    panel.classList.remove('open');
+}
+
+/**
+ * 마지막 채팅 시간 포맷
+ * @param {number} timestamp - Unix timestamp
+ * @returns {string} 포맷된 시간
+ */
+function formatLastChatTime(timestamp) {
+    const date = new Date(timestamp);
+    const hours = date.getHours();
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const ampm = hours < 12 ? 'AM' : 'PM';
+    const displayHours = hours % 12 || 12;
+    return `${displayHours}:${minutes} ${ampm}`;
 }
 
 /**

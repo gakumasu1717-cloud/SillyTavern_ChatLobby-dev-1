@@ -3071,6 +3071,190 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     min-height: 100%;
 }
 
+/* ========== Statistics 슬라이드 패널 ========== */
+.calendar-stats-panel {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, #0a0a0a 0%, #141414 100%);
+    border-radius: 20px 20px 0 0;
+    padding: 0;
+    transform: translateY(100%);
+    transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 83000;
+    max-height: 60vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
+    box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.calendar-stats-panel.open {
+    transform: translateY(0);
+}
+
+.stats-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.stats-panel-title {
+    font-size: 1.1em;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: -0.3px;
+}
+
+.stats-panel-close {
+    background: transparent;
+    border: none;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 1.6em;
+    cursor: pointer;
+    padding: 4px 8px;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.stats-panel-close:hover {
+    color: #fff;
+}
+
+.stats-panel-date {
+    padding: 8px 24px 16px;
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.4);
+    font-weight: 500;
+}
+
+.stats-panel-content {
+    padding: 0 24px 24px;
+    display: flex;
+    gap: 12px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+}
+
+.stats-panel-content::-webkit-scrollbar {
+    display: none;
+}
+
+/* Statistics 캐릭터 카드 - 직사각형 */
+.stats-char-card {
+    position: relative;
+    width: 140px;
+    min-width: 140px;
+    height: 200px;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #1a1a1a;
+    flex-shrink: 0;
+    cursor: pointer;
+    transition: transform 0.2s ease;
+}
+
+.stats-char-card:hover {
+    transform: scale(1.03);
+}
+
+.stats-char-avatar {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.stats-char-gradient {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 60%;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.7) 40%, transparent 100%);
+    z-index: 2;
+}
+
+.stats-char-info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 12px;
+    z-index: 3;
+}
+
+.stats-char-name {
+    font-size: 0.9em;
+    font-weight: 600;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 4px;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.stats-char-time {
+    font-size: 0.75em;
+    color: rgba(255, 255, 255, 0.85);
+    font-weight: 500;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.stats-no-data {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 255, 255, 0.3);
+    font-size: 0.9em;
+    font-style: italic;
+}
+
+/* 모바일 최적화 */
+@media (max-width: 768px) {
+    .calendar-stats-panel {
+        max-height: 50vh;
+    }
+    
+    .stats-char-card {
+        width: 120px;
+        min-width: 120px;
+        height: 170px;
+    }
+    
+    .stats-char-name {
+        font-size: 0.85em;
+    }
+    
+    .stats-char-time {
+        font-size: 0.7em;
+    }
+}
+
+/* 클릭 가능 표시 - cal-card */
+.cal-card.has-data {
+    cursor: pointer;
+    transition: transform 0.15s ease;
+}
+
+.cal-card.has-data:hover {
+    transform: scale(1.02);
+}
+
+.cal-card.has-data:active {
+    transform: scale(0.98);
+}
+
 /* ========== 라이트 모드 - 모노톤 ========== */
 #chat-lobby-container.light-mode ~ #calendar-overlay,
 body.light-mode #calendar-overlay {

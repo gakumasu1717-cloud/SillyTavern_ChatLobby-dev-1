@@ -92,9 +92,10 @@ function cleanOldSnapshots() {
  * @param {number} total - 전체 채팅 수
  * @param {string} topChar - 1위 캐릭터 아바타
  * @param {Object} byChar - 캐릭터별 채팅수 { avatar: count }
+ * @param {Object} lastChatTimes - 캐릭터별 마지막 채팅 시간 { avatar: timestamp }
  * @param {boolean} isBaseline - 베이스라인 여부 (작년 날짜 허용)
  */
-export function saveSnapshot(date, total, topChar, byChar = {}, isBaseline = false) {
+export function saveSnapshot(date, total, topChar, byChar = {}, lastChatTimes = {}, isBaseline = false) {
     // 올해 1월 1일 이전 데이터는 저장 안 함 (베이스라인 예외)
     const jan1 = `${THIS_YEAR}-01-01`;
     if (!isBaseline && date < jan1) return;
@@ -104,9 +105,9 @@ export function saveSnapshot(date, total, topChar, byChar = {}, isBaseline = fal
     
     try {
         const snapshots = loadSnapshots(true);
-        snapshots[date] = { total, topChar, byChar };
+        snapshots[date] = { total, topChar, byChar, lastChatTimes };
         localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
-        console.log('[Calendar] saveSnapshot:', date, '| total:', total, '| topChar:', topChar);
+        console.log('[Calendar] saveSnapshot:', date, '| total:', total, '| topChar:', topChar, '| lastChatTimes count:', Object.keys(lastChatTimes).length);
     } catch (e) {
         // 용량 초과 시 오래된 데이터 정리
         if (e.name === 'QuotaExceededError') {
@@ -115,7 +116,7 @@ export function saveSnapshot(date, total, topChar, byChar = {}, isBaseline = fal
             // 재시도
             try {
                 const snapshots = loadSnapshots(true);
-                snapshots[date] = { total, topChar, byChar };
+                snapshots[date] = { total, topChar, byChar, lastChatTimes };
                 localStorage.setItem(STORAGE_KEY, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
             } catch (e2) {
                 console.error('[Calendar] Still failed after cleanup:', e2);
