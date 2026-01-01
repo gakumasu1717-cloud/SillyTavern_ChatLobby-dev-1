@@ -4652,7 +4652,11 @@ ${message}` : message;
             console.log("[ChatLobby] Message sent, updated lastChatCache:", charAvatar);
           }
         },
-        onMessageReceived: () => {
+        onMessageReceived: (chatId, type) => {
+          if (type === "first_message") {
+            console.log("[ChatLobby] Skipping first_message for lastChatCache");
+            return;
+          }
           const charAvatar = getCurrentCharacterAvatar();
           if (charAvatar) {
             lastChatCache.updateNow(charAvatar);

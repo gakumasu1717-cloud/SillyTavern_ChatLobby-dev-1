@@ -185,7 +185,14 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                     console.log('[ChatLobby] Message sent, updated lastChatCache:', charAvatar);
                 }
             },
-            onMessageReceived: () => {
+            onMessageReceived: (chatId, type) => {
+                // 🔥 first_message는 캐릭터 첫 진입 시 자동 생성되는 인사말
+                // 실제 대화가 아니므로 lastChatCache를 갱신하지 않음
+                if (type === 'first_message') {
+                    console.log('[ChatLobby] Skipping first_message for lastChatCache');
+                    return;
+                }
+                
                 const charAvatar = getCurrentCharacterAvatar();
                 if (charAvatar) {
                     lastChatCache.updateNow(charAvatar);
