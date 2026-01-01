@@ -4074,6 +4074,27 @@ ${message}` : message;
   var originalViewport = null;
   var currentScale = 1;
   var lastDistance = 0;
+  function isCharacterExists(avatar) {
+    if (!avatar) return false;
+    const characters = api.getCharacters();
+    if (!characters || !Array.isArray(characters)) return false;
+    return characters.some((c) => c.avatar === avatar);
+  }
+  function findValidTopChar(snapshot) {
+    if (!snapshot) return null;
+    if (snapshot.topChar && isCharacterExists(snapshot.topChar)) {
+      return snapshot.topChar;
+    }
+    if (snapshot.byChar && typeof snapshot.byChar === "object") {
+      const sortedChars = Object.entries(snapshot.byChar).sort((a, b) => b[1] - a[1]);
+      for (const [avatar, msgCount] of sortedChars) {
+        if (isCharacterExists(avatar)) {
+          return avatar;
+        }
+      }
+    }
+    return null;
+  }
   async function openCalendarView() {
     if (isCalculating) return;
     isCalculating = true;
@@ -4370,14 +4391,15 @@ ${message}` : message;
       const isToday = date === today;
       const hasData = !!snapshot;
       let contentHtml = "";
-      if (hasData && snapshot.topChar) {
-        const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
-        const charName = snapshot.topChar.replace(/\.[^/.]+$/, "");
+      const validTopChar = hasData ? findValidTopChar(snapshot) : null;
+      if (hasData && validTopChar) {
+        const avatarUrl = `/characters/${encodeURIComponent(validTopChar)}`;
+        const charName = validTopChar.replace(/\.[^/.]+$/, "");
         const currentDate = new Date(THIS_YEAR2, currentMonth, day);
         const recentData = findRecentSnapshot(currentDate);
         const prevSnapshot = recentData?.snapshot;
-        const prevCharMsgs = prevSnapshot?.byChar?.[snapshot.topChar] || 0;
-        const todayCharMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
+        const prevCharMsgs = prevSnapshot?.byChar?.[validTopChar] || 0;
+        const todayCharMsgs = snapshot.byChar?.[validTopChar] || 0;
         const charIncrease = todayCharMsgs - prevCharMsgs;
         const prevTotal = prevSnapshot?.total || 0;
         const todayTotal = snapshot.total || 0;
@@ -4391,6 +4413,21 @@ ${message}` : message;
                 <div class="cal-card-info">
                     <div class="cal-card-name">${charName}</div>
                     <div class="cal-card-count">${charText}/${totalText}</div>
+                </div>
+            `;
+      } else if (hasData && !validTopChar) {
+        const currentDate = new Date(THIS_YEAR2, currentMonth, day);
+        const recentData = findRecentSnapshot(currentDate);
+        const prevSnapshot = recentData?.snapshot;
+        const prevTotal = prevSnapshot?.total || 0;
+        const todayTotal = snapshot.total || 0;
+        const totalIncrease = todayTotal - prevTotal;
+        const totalText = totalIncrease >= 0 ? `+${totalIncrease}` : `${totalIncrease}`;
+        contentHtml = `
+                <div class="cal-card-day">${day}</div>
+                <div class="cal-card-info cal-card-info-only">
+                    <div class="cal-card-name" style="opacity: 0.5;">\uC0AD\uC81C\uB428</div>
+                    <div class="cal-card-count">-/${totalText}</div>
                 </div>
             `;
       } else {

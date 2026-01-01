@@ -17,6 +17,48 @@ let currentScale = 1;
 let lastDistance = 0;
 
 /**
+ * 캐릭터가 실제로 존재하는지 확인
+ * @param {string} avatar - 캐릭터 아바타 파일명
+ * @returns {boolean}
+ */
+function isCharacterExists(avatar) {
+    if (!avatar) return false;
+    const characters = api.getCharacters();
+    if (!characters || !Array.isArray(characters)) return false;
+    return characters.some(c => c.avatar === avatar);
+}
+
+/**
+ * 스냅샷에서 실제 존재하는 top 캐릭터 찾기
+ * topChar가 삭제되었으면 byChar에서 다음 순위 찾기
+ * @param {object} snapshot - 스냅샷 데이터
+ * @returns {string|null} 존재하는 캐릭터 avatar 또는 null
+ */
+function findValidTopChar(snapshot) {
+    if (!snapshot) return null;
+    
+    // 1순위: 기록된 topChar가 존재하면 그대로 사용
+    if (snapshot.topChar && isCharacterExists(snapshot.topChar)) {
+        return snapshot.topChar;
+    }
+    
+    // 2순위: byChar에서 메시지 수 기준으로 존재하는 캐릭터 찾기
+    if (snapshot.byChar && typeof snapshot.byChar === 'object') {
+        const sortedChars = Object.entries(snapshot.byChar)
+            .sort((a, b) => b[1] - a[1]); // 메시지 수 내림차순
+        
+        for (const [avatar, msgCount] of sortedChars) {
+            if (isCharacterExists(avatar)) {
+                return avatar;
+            }
+        }
+    }
+    
+    // 존재하는 캐릭터 없음
+    return null;
+}
+
+/**
  * 캘린더 뷰 열기
  */
 export async function openCalendarView() {
@@ -442,18 +484,21 @@ function renderCalendar() {
         
         let contentHtml = '';
         
-        if (hasData && snapshot.topChar) {
-            const avatarUrl = `/characters/${encodeURIComponent(snapshot.topChar)}`;
-            const charName = snapshot.topChar.replace(/\.[^/.]+$/, '');
+        // 실제 존재하는 top 캐릭터 찾기 (삭제된 경우 fallback)
+        const validTopChar = hasData ? findValidTopChar(snapshot) : null;
+        
+        if (hasData && validTopChar) {
+            const avatarUrl = `/characters/${encodeURIComponent(validTopChar)}`;
+            const charName = validTopChar.replace(/\.[^/.]+$/, '');
             
             // 가장 최근 스냅샷 찾기 (최대 7일 전까지)
             const currentDate = new Date(THIS_YEAR, currentMonth, day);
             const recentData = findRecentSnapshot(currentDate);
             const prevSnapshot = recentData?.snapshot;
             
-            // 캐릭터 증감량
-            const prevCharMsgs = prevSnapshot?.byChar?.[snapshot.topChar] || 0;
-            const todayCharMsgs = snapshot.byChar?.[snapshot.topChar] || 0;
+            // 캐릭터 증감량 (validTopChar 기준)
+            const prevCharMsgs = prevSnapshot?.byChar?.[validTopChar] || 0;
+            const todayCharMsgs = snapshot.byChar?.[validTopChar] || 0;
             const charIncrease = todayCharMsgs - prevCharMsgs;
             
             // 전체 증감량
@@ -471,6 +516,24 @@ function renderCalendar() {
                 <div class="cal-card-info">
                     <div class="cal-card-name">${charName}</div>
                     <div class="cal-card-count">${charText}/${totalText}</div>
+                </div>
+            `;
+        } else if (hasData && !validTopChar) {
+            // 데이터는 있지만 해당 캐릭터가 모두 삭제됨 - 전체 증감량만 표시
+            const currentDate = new Date(THIS_YEAR, currentMonth, day);
+            const recentData = findRecentSnapshot(currentDate);
+            const prevSnapshot = recentData?.snapshot;
+            
+            const prevTotal = prevSnapshot?.total || 0;
+            const todayTotal = snapshot.total || 0;
+            const totalIncrease = todayTotal - prevTotal;
+            const totalText = totalIncrease >= 0 ? `+${totalIncrease}` : `${totalIncrease}`;
+            
+            contentHtml = `
+                <div class="cal-card-day">${day}</div>
+                <div class="cal-card-info cal-card-info-only">
+                    <div class="cal-card-name" style="opacity: 0.5;">삭제됨</div>
+                    <div class="cal-card-count">-/${totalText}</div>
                 </div>
             `;
         } else {
