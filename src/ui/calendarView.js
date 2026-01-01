@@ -426,14 +426,17 @@ async function saveTodaySnapshot() {
             byChar[r.avatar] = r.messageCount;
         });
         
-        // 캐릭터별 마지막 채팅 시간 복사 (현재 lastChatCache에서)
+        // 🔥 캐릭터별 마지막 채팅 시간 복사 (현재 lastChatCache에서)
         const lastChatTimes = {};
+        let savedTimeCount = 0;
         rankings.forEach(r => {
             const lastTime = lastChatCache.get(r.avatar);
             if (lastTime > 0) {
                 lastChatTimes[r.avatar] = lastTime;
+                savedTimeCount++;
             }
         });
+        console.log('[Calendar] Saving lastChatTimes for', savedTimeCount, 'characters');
         
         // 가장 증가한 캐릭터 찾기 (메시지 수 기준)
         let topChar = '';
@@ -605,23 +608,33 @@ function showLastMessagePanel(date) {
     const [year, month, day] = date.split('-');
     const dateStr = `${parseInt(month)}/${parseInt(day)}`;
     
-    // 🔥 lastChatTimes 기준으로 가장 최근 채팅한 캐릭터 3명 정렬
+    // 🔥 lastChatTimes 기준으로 가장 최근 채팅한 캐릭터 정렬
+    // 방어로직: 삭제된 캐릭터는 스킵하고 다음 캐릭터로 대체
     const snapshotLastChatTimes = snapshot.lastChatTimes || {};
     
-    // lastChatTimes에서 시간 기준 정렬 (가장 최근 채팅 순)
-    let topChars = Object.entries(snapshotLastChatTimes)
-        .filter(([avatar]) => isCharacterExists(avatar))
-        .sort((a, b) => b[1] - a[1]) // 시간 내림차순 (최신이 위로)
-        .slice(0, 3)
-        .map(([avatar, time]) => ({
-            avatar,
-            lastChatTime: time
-        }));
+    // 전체 시간순 정렬 후 존재하는 캐릭터만 필터링하여 상위 3명 추출
+    const allSortedByTime = Object.entries(snapshotLastChatTimes)
+        .sort((a, b) => b[1] - a[1]); // 시간 내림차순
+    
+    const topChars = [];
+    for (const [avatar, time] of allSortedByTime) {
+        // 🛡️ 방어로직: 캐릭터가 존재하는지 확인
+        if (!isCharacterExists(avatar)) {
+            console.log('[LastMessage] Skipping deleted character:', avatar);
+            continue; // 삭제된 캐릭터는 스킵, 다음 캐릭터로
+        }
+        
+        topChars.push({ avatar, lastChatTime: time });
+        
+        // 3명 채우면 종료
+        if (topChars.length >= 3) break;
+    }
     
     // 카드 HTML 생성
     let cardsHtml = '';
     
     if (topChars.length === 0) {
+        // 🛡️ 방어로직: 모든 캐릭터가 삭제됐거나 데이터 없음
         cardsHtml = '<div class="lastmsg-no-data">No character data</div>';
     } else {
         topChars.forEach((char) => {

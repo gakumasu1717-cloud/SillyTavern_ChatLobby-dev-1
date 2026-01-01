@@ -4492,12 +4492,15 @@ ${message}` : message;
         byChar[r.avatar] = r.messageCount;
       });
       const lastChatTimes = {};
+      let savedTimeCount = 0;
       rankings.forEach((r) => {
         const lastTime = lastChatCache.get(r.avatar);
         if (lastTime > 0) {
           lastChatTimes[r.avatar] = lastTime;
+          savedTimeCount++;
         }
       });
+      console.log("[Calendar] Saving lastChatTimes for", savedTimeCount, "characters");
       let topChar = "";
       let maxIncrease = -Infinity;
       let maxMsgCountOnTie = -1;
@@ -4614,10 +4617,16 @@ ${message}` : message;
     const [year, month, day] = date.split("-");
     const dateStr = `${parseInt(month)}/${parseInt(day)}`;
     const snapshotLastChatTimes = snapshot.lastChatTimes || {};
-    let topChars = Object.entries(snapshotLastChatTimes).filter(([avatar]) => isCharacterExists(avatar)).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([avatar, time]) => ({
-      avatar,
-      lastChatTime: time
-    }));
+    const allSortedByTime = Object.entries(snapshotLastChatTimes).sort((a, b) => b[1] - a[1]);
+    const topChars = [];
+    for (const [avatar, time] of allSortedByTime) {
+      if (!isCharacterExists(avatar)) {
+        console.log("[LastMessage] Skipping deleted character:", avatar);
+        continue;
+      }
+      topChars.push({ avatar, lastChatTime: time });
+      if (topChars.length >= 3) break;
+    }
     let cardsHtml = "";
     if (topChars.length === 0) {
       cardsHtml = '<div class="lastmsg-no-data">No character data</div>';
