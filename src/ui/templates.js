@@ -84,7 +84,7 @@ export function createLobbyHTML() {
                             <div class="chat-count" id="chat-panel-count"></div>
                         </div>
                         <button id="chat-lobby-delete-char" data-action="delete-char" title="캐릭터 삭제" style="display:none;">🗑️</button>
-                        <button id="chat-lobby-new-chat" data-action="new-chat" style="display:none;">+ 새 채팅</button>
+                        <button id="chat-lobby-new-chat" data-action="new-chat" data-has-chats="false" style="display:none;">+ 새 채팅</button>
                     </header>
                     
                     <!-- 필터 섹션 -->

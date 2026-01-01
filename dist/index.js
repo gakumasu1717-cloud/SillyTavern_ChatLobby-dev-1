@@ -1402,7 +1402,7 @@ ${message}` : message;
                             <div class="chat-count" id="chat-panel-count"></div>
                         </div>
                         <button id="chat-lobby-delete-char" data-action="delete-char" title="\uCE90\uB9AD\uD130 \uC0AD\uC81C" style="display:none;">\u{1F5D1}\uFE0F</button>
-                        <button id="chat-lobby-new-chat" data-action="new-chat" style="display:none;">+ \uC0C8 \uCC44\uD305</button>
+                        <button id="chat-lobby-new-chat" data-action="new-chat" data-has-chats="false" style="display:none;">+ \uC0C8 \uCC44\uD305</button>
                     </header>
                     
                     <!-- \uD544\uD130 \uC139\uC158 -->
@@ -2447,7 +2447,7 @@ ${message}` : message;
   }
   function updateHasChats(totalCount) {
     const newChatBtn = document.getElementById("chat-lobby-new-chat");
-    if (newChatBtn) newChatBtn.dataset.hasChats = totalCount > 1 ? "true" : "false";
+    if (newChatBtn) newChatBtn.dataset.hasChats = totalCount > 0 ? "true" : "false";
   }
   function showFolderBar(visible) {
     const filtersSection = document.getElementById("chat-lobby-filters");
