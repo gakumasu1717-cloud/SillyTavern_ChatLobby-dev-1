@@ -740,6 +740,7 @@
     flex-wrap: wrap;
     gap: var(--card-gap);
     align-content: start;
+    justify-content: center;
     scrollbar-width: thin;
     scrollbar-color: var(--lobby-bg-hover) transparent;
     position: relative;
