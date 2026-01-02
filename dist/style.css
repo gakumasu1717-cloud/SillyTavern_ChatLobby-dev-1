@@ -2786,37 +2786,27 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
 .calendar-grid {
     display: grid;
     grid-template-columns: repeat(7, 1fr);
-    gap: 2px;
+    gap: 8px;
+    padding: 8px;
     position: relative;
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
     overflow: visible;
+    background: #000;
 }
 
-/* 각 날짜 셀 - 테두리 없음 */
+/* 각 날짜 셀 - 라운드 없음 */
 .cal-card {
     position: relative;
     aspect-ratio: 2 / 3;
     min-width: 80px;
-    background: transparent;
-    overflow: visible;
+    background: #0a0a0a;
+    overflow: hidden;
+    border-radius: 0;
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
-/* 가로선 - 행의 첫번째 셀에서만, 7셀 전체 너비 + 오른쪽 흐려짐 */
+/* 가로선 제거 */
 .cal-card:nth-child(7n+1)::after {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 750%;
-    height: 1px;
-    background: linear-gradient(to right, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0.5) 93%, transparent 100%);
-    z-index: 5;
-    pointer-events: none;
-}
-
-/* 첫번째 행은 위에 선 없음 */
-.cal-card:nth-child(-n+7)::after {
     display: none;
 }
 
@@ -2849,13 +2839,13 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     z-index: 2;
 }
 
-/* 날짜 - 좌측 상단, 14pt */
+/* 날짜 - 좌측 상단, 16pt Light */
 .cal-card-day {
     position: absolute;
     top: 8px;
     left: 10px;
-    font-size: 14pt;
-    font-weight: 600;
+    font-size: 16pt;
+    font-weight: 300;
     color: #fff;
     z-index: 6;
     text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
@@ -2887,14 +2877,14 @@ body.st-menu-layout-hamburger #chat-lobby-fab {
     color: rgba(255, 255, 255, 0.6);
 }
 
-/* 빈 카드 - 좌측 상단에 날짜만, 16pt */
+/* 빈 카드 - 좌측 상단에 날짜만, 16pt Light 회색 */
 .cal-card-empty {
     position: absolute;
     top: 8px;
     left: 10px;
     font-size: 16pt;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.4);
+    font-weight: 300;
+    color: rgba(255, 255, 255, 0.25);
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, sans-serif;
 }
 
