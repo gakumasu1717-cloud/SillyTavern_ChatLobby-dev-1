@@ -4460,9 +4460,13 @@ ${message}` : message;
       byChar[r.avatar] = r.messageCount;
     });
     const lastChatTimes = {};
+    const yesterdayStart = (/* @__PURE__ */ new Date(yesterday + "T00:00:00")).getTime();
+    const todayStart = /* @__PURE__ */ new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const todayStartMs = todayStart.getTime();
     rankings.forEach((r) => {
       const lastTime = lastChatCache.get(r.avatar);
-      if (lastTime > 0) {
+      if (lastTime >= yesterdayStart && lastTime < todayStartMs) {
         lastChatTimes[r.avatar] = lastTime;
       }
     });
