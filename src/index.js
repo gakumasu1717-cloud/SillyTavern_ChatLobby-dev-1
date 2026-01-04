@@ -17,7 +17,7 @@ import { showToast } from './ui/notifications.js';
 import { openStatsView, closeStatsView, isStatsViewOpen } from './ui/statsView.js';
 import { openCalendarView, closeCalendarView } from './ui/calendarView.js';
 import { lastChatCache } from './data/lastChatCache.js';
-import { loadSnapshots as loadCalendarSnapshots } from './data/calendarStorage.js';
+import { loadSnapshots as loadCalendarSnapshots, getLocalDateString } from './data/calendarStorage.js';
 import { debounce, isMobile } from './utils/eventHelpers.js';
 import { waitFor, waitForCharacterSelect, waitForElement } from './utils/waitFor.js';
 import { intervalManager } from './utils/intervalManager.js';
@@ -51,6 +51,80 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         if (context?.characterId === undefined || context?.characterId === null || context.characterId < 0) return null;
         const char = context.characters?.[context.characterId];
         return char?.avatar || null;
+    }
+    
+    // ============================================
+    // FAB 프리뷰 (호버 시 오늘 마지막 캐릭터 + 스트릭 표시)
+    // ============================================
+    
+    /**
+     * 오늘 채팅한 캐릭터 목록 (최신순)
+     * @returns {Array<{avatar: string, time: number}>}
+     */
+    function getTodayChats() {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStart = today.getTime();
+        
+        const result = [];
+        lastChatCache.lastChatTimes.forEach((time, avatar) => {
+            if (time >= todayStart) {
+                result.push({ avatar, time });
+            }
+        });
+        
+        return result.sort((a, b) => b.time - a.time);
+    }
+    
+    /**
+     * 연속 출석일 계산 (스트릭)
+     * @returns {number}
+     */
+    function getStreak() {
+        const snapshots = loadCalendarSnapshots();
+        let streak = 0;
+        const checkDate = new Date();
+        
+        // 오늘부터 거슬러 올라가며 체크
+        for (let i = 0; i < 365; i++) {
+            const dateStr = getLocalDateString(checkDate);
+            if (snapshots[dateStr] && snapshots[dateStr].total > 0) {
+                streak++;
+                checkDate.setDate(checkDate.getDate() - 1);
+            } else {
+                break;
+            }
+        }
+        return streak;
+    }
+    
+    /**
+     * FAB 프리뷰 업데이트
+     */
+    function updateFabPreview() {
+        const avatar = document.querySelector('.fab-preview-avatar');
+        const streakEl = document.querySelector('.fab-streak');
+        
+        if (!avatar || !streakEl) return;
+        
+        // 오늘 마지막 캐릭터
+        const todayChats = getTodayChats();
+        if (todayChats.length > 0) {
+            const lastChar = todayChats[0];
+            avatar.src = `/characters/${encodeURIComponent(lastChar.avatar)}`;
+            avatar.style.display = 'block';
+        } else {
+            avatar.style.display = 'none';
+        }
+        
+        // 스트릭
+        const streak = getStreak();
+        if (streak > 0) {
+            streakEl.textContent = `🔥 ${streak}`;
+            streakEl.style.display = 'block';
+        } else {
+            streakEl.style.display = 'none';
+        }
     }
     
     // ============================================
@@ -99,6 +173,9 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         
         // CustomTheme 사이드바에 버튼 추가 (있으면)
         setTimeout(() => addToCustomThemeSidebar(), CONFIG.timing.initDelay);
+        
+        // FAB 프리뷰 초기화
+        updateFabPreview();
         
     }
     
@@ -183,6 +260,8 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                 if (charAvatar) {
                     lastChatCache.updateNow(charAvatar);
                     console.log('[ChatLobby] Message sent, updated lastChatCache:', charAvatar);
+                    // FAB 프리뷰 갱신
+                    updateFabPreview();
                 }
             },
             onMessageReceived: (chatId, type) => {
@@ -197,6 +276,8 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
                 if (charAvatar) {
                     lastChatCache.updateNow(charAvatar);
                     console.log('[ChatLobby] Message received, updated lastChatCache:', charAvatar);
+                    // FAB 프리뷰 갱신
+                    updateFabPreview();
                 }
             }
         };
@@ -510,6 +591,9 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         store.setLobbyOpen(false);
         store.reset(); // 상태 초기화
         closeChatPanel();
+        
+        // FAB 프리뷰 갱신 (로비 닫을 때)
+        updateFabPreview();
     }
     
     // ============================================

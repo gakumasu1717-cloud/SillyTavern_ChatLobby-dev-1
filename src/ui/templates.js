@@ -13,7 +13,13 @@ export function createLobbyHTML() {
     const collapsedClass = isCollapsed ? 'collapsed' : '';
     
     return `
-    <div id="chat-lobby-fab" data-action="open-lobby" title="Chat Lobby 열기">💬</div>
+    <div id="chat-lobby-fab" data-action="open-lobby" title="Chat Lobby 열기">
+        <div class="fab-preview">
+            <img class="fab-preview-avatar" src="" alt="" onerror="this.style.display='none'">
+            <span class="fab-streak"></span>
+        </div>
+        <span class="fab-icon">💬</span>
+    </div>
     <div id="chat-lobby-overlay" style="display: none;">
         <div id="chat-lobby-container" class="${themeClass}">
             <!-- 헤더 - 넷플릭스 스타일 -->

@@ -1409,7 +1409,13 @@ ${message}` : message;
     const themeClass = savedTheme === "light" ? "light-mode" : "dark-mode";
     const collapsedClass = isCollapsed ? "collapsed" : "";
     return `
-    <div id="chat-lobby-fab" data-action="open-lobby" title="Chat Lobby \uC5F4\uAE30">\u{1F4AC}</div>
+    <div id="chat-lobby-fab" data-action="open-lobby" title="Chat Lobby \uC5F4\uAE30">
+        <div class="fab-preview">
+            <img class="fab-preview-avatar" src="" alt="" onerror="this.style.display='none'">
+            <span class="fab-streak"></span>
+        </div>
+        <span class="fab-icon">\u{1F4AC}</span>
+    </div>
     <div id="chat-lobby-overlay" style="display: none;">
         <div id="chat-lobby-container" class="${themeClass}">
             <!-- \uD5E4\uB354 - \uB137\uD50C\uB9AD\uC2A4 \uC2A4\uD0C0\uC77C -->
@@ -4807,6 +4813,53 @@ ${message}` : message;
       const char = context.characters?.[context.characterId];
       return char?.avatar || null;
     }
+    function getTodayChats() {
+      const today = /* @__PURE__ */ new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStart = today.getTime();
+      const result = [];
+      lastChatCache.lastChatTimes.forEach((time, avatar) => {
+        if (time >= todayStart) {
+          result.push({ avatar, time });
+        }
+      });
+      return result.sort((a, b) => b.time - a.time);
+    }
+    function getStreak() {
+      const snapshots = loadSnapshots();
+      let streak = 0;
+      const checkDate = /* @__PURE__ */ new Date();
+      for (let i = 0; i < 365; i++) {
+        const dateStr = getLocalDateString(checkDate);
+        if (snapshots[dateStr] && snapshots[dateStr].total > 0) {
+          streak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+      return streak;
+    }
+    function updateFabPreview() {
+      const avatar = document.querySelector(".fab-preview-avatar");
+      const streakEl = document.querySelector(".fab-streak");
+      if (!avatar || !streakEl) return;
+      const todayChats = getTodayChats();
+      if (todayChats.length > 0) {
+        const lastChar = todayChats[0];
+        avatar.src = `/characters/${encodeURIComponent(lastChar.avatar)}`;
+        avatar.style.display = "block";
+      } else {
+        avatar.style.display = "none";
+      }
+      const streak = getStreak();
+      if (streak > 0) {
+        streakEl.textContent = `\u{1F525} ${streak}`;
+        streakEl.style.display = "block";
+      } else {
+        streakEl.style.display = "none";
+      }
+    }
     async function init() {
       if (window._chatLobbyInitialized) {
         console.warn("[ChatLobby] Already initialized, skipping duplicate init");
@@ -4826,6 +4879,7 @@ ${message}` : message;
       startBackgroundPreload();
       addLobbyToOptionsMenu();
       setTimeout(() => addToCustomThemeSidebar(), CONFIG.timing.initDelay);
+      updateFabPreview();
     }
     function setupSillyTavernEvents() {
       const context = window.SillyTavern?.getContext?.();
@@ -4885,6 +4939,7 @@ ${message}` : message;
           if (charAvatar) {
             lastChatCache.updateNow(charAvatar);
             console.log("[ChatLobby] Message sent, updated lastChatCache:", charAvatar);
+            updateFabPreview();
           }
         },
         onMessageReceived: (chatId, type) => {
@@ -4896,6 +4951,7 @@ ${message}` : message;
           if (charAvatar) {
             lastChatCache.updateNow(charAvatar);
             console.log("[ChatLobby] Message received, updated lastChatCache:", charAvatar);
+            updateFabPreview();
           }
         }
       };
@@ -5087,6 +5143,7 @@ ${message}` : message;
       store.setLobbyOpen(false);
       store.reset();
       closeChatPanel();
+      updateFabPreview();
     }
     let isDebugPanelOpen = false;
     function openDebugModal() {

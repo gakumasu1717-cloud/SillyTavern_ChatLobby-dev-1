@@ -129,6 +129,65 @@
     transform: scale(0.95);
 }
 
+/* FAB 아이콘 */
+.fab-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+/* FAB 프리뷰 (PC only) */
+.fab-preview {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: 8px;
+    background: rgba(30, 30, 40, 0.95);
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    min-width: 60px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+}
+
+.fab-preview-avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid rgba(255,255,255,0.2);
+}
+
+.fab-streak {
+    font-size: 12px;
+    color: #fff;
+    white-space: nowrap;
+}
+
+/* PC 호버 시 표시 */
+@media (min-width: 769px) {
+    #chat-lobby-fab:hover .fab-preview {
+        display: flex;
+        opacity: 1;
+    }
+}
+
+/* 모바일 숨김 */
+@media (max-width: 768px) {
+    .fab-preview {
+        display: none !important;
+    }
+}
+
 /* ============================================
    ?�버?�이 & 컨테?�너
    ============================================ */
@@ -556,6 +615,18 @@
 #chat-lobby-container.light-mode #chat-lobby-collapse-btn:hover,
 #chat-lobby-container.light-mode .header-actions button:hover {
     background: rgba(0, 0, 0, 0.1);
+}
+
+/* FAB 프리뷰 라이트모드 */
+.light-mode .fab-preview,
+#chat-lobby-container.light-mode ~ #chat-lobby-fab .fab-preview {
+    background: rgba(255, 255, 255, 0.95);
+    border-color: rgba(0,0,0,0.1);
+}
+
+.light-mode .fab-streak,
+#chat-lobby-container.light-mode ~ #chat-lobby-fab .fab-streak {
+    color: #333;
 }
 
 #chat-lobby-container.light-mode #chat-lobby-search input {
