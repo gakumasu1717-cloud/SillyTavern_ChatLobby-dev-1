@@ -1346,11 +1346,12 @@ ${message}` : message;
      */
     async getChatLastMessageDate(characterAvatar, fileName) {
       try {
+        const charDir = characterAvatar.replace(/\.(png|jpg|webp)$/i, "");
         const response = await this.fetchWithRetry("/api/chats/get", {
           method: "POST",
           headers: this.getRequestHeaders(),
           body: JSON.stringify({
-            ch_name: characterAvatar,
+            ch_name: charDir,
             file_name: fileName.replace(".jsonl", ""),
             avatar_url: characterAvatar
           })
@@ -2042,7 +2043,8 @@ ${message}` : message;
         }
         if (lastTime === 0 && Array.isArray(chats) && chats.length > 0) {
           console.log("[LastChatCache] Timestamp is 0, trying API fallback for:", charAvatar);
-          const fallbackPromises = chats.map(async (chat) => {
+          const chatsToCheck = chats.slice(0, 3);
+          const fallbackPromises = chatsToCheck.map(async (chat) => {
             const chatTime = this.getChatTimestamp(chat);
             if (chatTime > 0) return chatTime;
             if (chat.file_name) {

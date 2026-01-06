@@ -198,8 +198,11 @@ class LastChatCache {
             if (lastTime === 0 && Array.isArray(chats) && chats.length > 0) {
                 console.log('[LastChatCache] Timestamp is 0, trying API fallback for:', charAvatar);
                 
-                // 각 채팅에서 타임스탬프 0인 것들에 대해 API 호출
-                const fallbackPromises = chats.map(async (chat) => {
+                // 최신 3개만 확인 (과도한 API 호출 방지)
+                // 마지막 채팅 시간만 필요하니까 최신 몇 개만 봐도 충분
+                const chatsToCheck = chats.slice(0, 3);
+                
+                const fallbackPromises = chatsToCheck.map(async (chat) => {
                     const chatTime = this.getChatTimestamp(chat);
                     if (chatTime > 0) return chatTime;
                     

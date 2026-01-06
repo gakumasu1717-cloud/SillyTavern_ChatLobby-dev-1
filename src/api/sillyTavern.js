@@ -413,11 +413,13 @@ class SillyTavernAPI {
      */
     async getChatLastMessageDate(characterAvatar, fileName) {
         try {
+            const charDir = characterAvatar.replace(/\.(png|jpg|webp)$/i, '');
+            
             const response = await this.fetchWithRetry('/api/chats/get', {
                 method: 'POST',
                 headers: this.getRequestHeaders(),
                 body: JSON.stringify({
-                    ch_name: characterAvatar,
+                    ch_name: charDir,
                     file_name: fileName.replace('.jsonl', ''),
                     avatar_url: characterAvatar
                 }),
