@@ -3832,28 +3832,24 @@ ${message}` : message;
             if (Array.isArray(chats)) {
               messageCount = chats.reduce((sum, chat) => sum + (chat.chat_items || 0), 0);
               for (const chat of chats) {
+                let chatDate = null;
                 const fileName = chat.file_name || "";
                 const dateMatch = fileName.match(/(\d{4}-\d{2}-\d{2})/);
                 if (dateMatch) {
-                  const chatDate = new Date(dateMatch[1]);
-                  if (!isNaN(chatDate.getTime())) {
-                    if (!firstChatDate || chatDate < firstChatDate) {
-                      firstChatDate = chatDate;
-                    }
-                  }
+                  chatDate = new Date(dateMatch[1]);
                 }
-              }
-              if (!firstChatDate) {
-                const chatsToCheck = chats.slice(-3);
-                for (const chat of chatsToCheck) {
+                if (!chatDate) {
                   try {
                     const createdDate = await api.getChatCreatedDate(char.avatar, chat.file_name);
-                    if (createdDate && !isNaN(createdDate.getTime())) {
-                      if (!firstChatDate || createdDate < firstChatDate) {
-                        firstChatDate = createdDate;
-                      }
+                    if (createdDate) {
+                      chatDate = createdDate;
                     }
                   } catch (e) {
+                  }
+                }
+                if (chatDate && !isNaN(chatDate.getTime())) {
+                  if (!firstChatDate || chatDate < firstChatDate) {
+                    firstChatDate = chatDate;
                   }
                 }
               }
