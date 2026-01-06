@@ -401,11 +401,13 @@ class SillyTavernAPI {
                     if (typeof firstMessage.send_date === 'number') {
                         return new Date(firstMessage.send_date);
                     }
-                    // 문자열이면 파싱
-                    const date = new Date(firstMessage.send_date);
+                    // 문자열이면 am/pm 앞에 공백 추가 후 파싱
+                    const fixedStr = String(firstMessage.send_date).replace(/(\d+)(am|pm)/i, '$1 $2');
+                    const date = new Date(fixedStr);
                     if (!isNaN(date.getTime())) {
                         return date;
                     }
+                    console.warn('[API] Failed to parse send_date:', firstMessage.send_date);
                 }
             }
             
@@ -449,7 +451,9 @@ class SillyTavernAPI {
                     if (typeof lastMessage.send_date === 'number') {
                         return lastMessage.send_date;
                     }
-                    const date = new Date(lastMessage.send_date);
+                    // 문자열이면 am/pm 앞에 공백 추가 후 파싱
+                    const fixedStr = String(lastMessage.send_date).replace(/(\d+)(am|pm)/i, '$1 $2');
+                    const date = new Date(fixedStr);
                     if (!isNaN(date.getTime())) {
                         return date.getTime();
                     }

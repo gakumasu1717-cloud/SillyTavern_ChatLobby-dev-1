@@ -1334,10 +1334,12 @@ ${message}` : message;
             if (typeof firstMessage.send_date === "number") {
               return new Date(firstMessage.send_date);
             }
-            const date = new Date(firstMessage.send_date);
+            const fixedStr = String(firstMessage.send_date).replace(/(\d+)(am|pm)/i, "$1 $2");
+            const date = new Date(fixedStr);
             if (!isNaN(date.getTime())) {
               return date;
             }
+            console.warn("[API] Failed to parse send_date:", firstMessage.send_date);
           }
         }
         return null;
@@ -1372,7 +1374,8 @@ ${message}` : message;
             if (typeof lastMessage.send_date === "number") {
               return lastMessage.send_date;
             }
-            const date = new Date(lastMessage.send_date);
+            const fixedStr = String(lastMessage.send_date).replace(/(\d+)(am|pm)/i, "$1 $2");
+            const date = new Date(fixedStr);
             if (!isNaN(date.getTime())) {
               return date.getTime();
             }
