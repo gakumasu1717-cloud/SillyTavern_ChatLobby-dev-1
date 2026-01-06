@@ -3040,9 +3040,9 @@ ${message}` : message;
         await new Promise((r) => setTimeout(r, 10));
       }
     }
-    saveTodaySnapshotFromCache();
+    await saveTodaySnapshotFromCache();
   }
-  function saveTodaySnapshotFromCache() {
+  async function saveTodaySnapshotFromCache() {
     try {
       const today = getLocalDateString();
       const characters = api.getCharacters();
@@ -3060,12 +3060,15 @@ ${message}` : message;
       const todayStart = /* @__PURE__ */ new Date();
       todayStart.setHours(0, 0, 0, 0);
       const todayStartMs = todayStart.getTime();
-      characters.forEach((char) => {
-        const lastTime = lastChatCache.get(char.avatar);
+      await Promise.all(characters.map(async (char) => {
+        let lastTime = lastChatCache.get(char.avatar);
+        if (lastTime === 0) {
+          lastTime = await lastChatCache.refreshForCharacter(char.avatar);
+        }
         if (lastTime >= todayStartMs) {
           lastChatTimes[char.avatar] = lastTime;
         }
-      });
+      }));
       const snapshots = loadSnapshots();
       let topChar = "";
       let maxIncrease = -Infinity;
