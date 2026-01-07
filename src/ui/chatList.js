@@ -21,7 +21,6 @@ let tooltipElement = null;
 let tooltipTimeout = null;
 let currentTooltipTarget = null;
 let tooltipEventsInitialized = false;  // 이벤트 위임 등록 여부
-let isTooltipHovered = false;  // 툴팁 위에 마우스가 있는지 여부
 
 /**
  * 툴팁 요소 생성 (한 번만)
@@ -48,7 +47,7 @@ function ensureTooltipElement() {
         overflow-y: auto;
         overflow-x: hidden;
         box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-        pointer-events: auto;
+        pointer-events: none;
         white-space: pre-wrap;
         word-break: break-word;
         backdrop-filter: blur(10px);
@@ -73,27 +72,6 @@ function ensureTooltipElement() {
         }
     `;
     document.head.appendChild(style);
-    
-    // 툴팁에 마우스가 올라가면 hover 상태 설정
-    tooltipElement.addEventListener('mouseenter', () => {
-        isTooltipHovered = true;
-    });
-    
-    // 툴팁에서 마우스가 벗어나면 숨김
-    tooltipElement.addEventListener('mouseleave', () => {
-        isTooltipHovered = false;
-        hideTooltip();
-    });
-    
-    // 휠 이벤트로 스크롤 가능하게
-    tooltipElement.addEventListener('wheel', (e) => {
-        // 스크롤이 필요한 경우에만 이벤트 처리
-        const hasScroll = tooltipElement.scrollHeight > tooltipElement.clientHeight;
-        if (hasScroll) {
-            e.stopPropagation();
-            // 기본 스크롤 동작 허용
-        }
-    }, { passive: true });
     
     document.body.appendChild(tooltipElement);
     return tooltipElement;
@@ -150,6 +128,7 @@ function bindTooltipEvents(container) {
     chatsList.addEventListener('mouseover', handleTooltipMouseOver);
     chatsList.addEventListener('mouseout', handleTooltipMouseOut);
     chatsList.addEventListener('mousemove', handleTooltipMouseMove);
+    chatsList.addEventListener('wheel', handleTooltipWheel, { passive: false });
     
     tooltipEventsInitialized = true;
 }
@@ -190,16 +169,28 @@ function handleTooltipMouseOut(e) {
     const relatedItem = e.relatedTarget?.closest('.lobby-chat-item');
     if (relatedItem === item) return;
     
-    // 툴팁으로 이동하는 경우 숨기지 않음
-    if (e.relatedTarget === tooltipElement || tooltipElement?.contains(e.relatedTarget)) {
-        return;
-    }
-    
-    // 툴팁 위에 마우스가 있으면 숨기지 않음
-    if (isTooltipHovered) return;
-    
     if (currentTooltipTarget === item) {
         hideTooltip();
+    }
+}
+
+/**
+ * 툴팁 wheel 핸들러 - 채팅 아이템 위에서 휠 돌리면 tooltip 스크롤
+ */
+function handleTooltipWheel(e) {
+    // 툴팁이 표시 중일 때만 처리
+    if (!tooltipElement || tooltipElement.style.display !== 'block') return;
+    
+    // 스크롤이 필요한지 확인
+    const hasScroll = tooltipElement.scrollHeight > tooltipElement.clientHeight;
+    if (!hasScroll) return;
+    
+    // 채팅 아이템 위에서 휠 이벤트 발생 시 tooltip 스크롤
+    const item = e.target.closest('.lobby-chat-item');
+    if (item && currentTooltipTarget === item) {
+        e.preventDefault();
+        e.stopPropagation();
+        tooltipElement.scrollTop += e.deltaY;
     }
 }
 
@@ -209,9 +200,6 @@ function handleTooltipMouseOut(e) {
 function handleTooltipMouseMove(e) {
     const item = e.target.closest('.lobby-chat-item');
     if (!item) return;
-    
-    // 툴팁 위에 마우스가 있으면 위치 업데이트 안 함 (스크롤 가능하도록)
-    if (isTooltipHovered) return;
     
     // 툴팁이 표시 중이면 위치 업데이트
     if (tooltipElement && tooltipElement.style.display === 'block' && currentTooltipTarget === item) {
@@ -230,7 +218,6 @@ function handleTooltipMouseMove(e) {
  */
 export function cleanupTooltip() {
     hideTooltip();
-    isTooltipHovered = false;
     
     // 이벤트 위임 리스너 제거
     const chatsList = document.getElementById('chat-lobby-chats-list');
@@ -238,6 +225,7 @@ export function cleanupTooltip() {
         chatsList.removeEventListener('mouseover', handleTooltipMouseOver);
         chatsList.removeEventListener('mouseout', handleTooltipMouseOut);
         chatsList.removeEventListener('mousemove', handleTooltipMouseMove);
+        chatsList.removeEventListener('wheel', handleTooltipWheel);
     }
     tooltipEventsInitialized = false;
     

@@ -2337,7 +2337,6 @@ ${message}` : message;
   var tooltipTimeout = null;
   var currentTooltipTarget = null;
   var tooltipEventsInitialized = false;
-  var isTooltipHovered = false;
   function ensureTooltipElement() {
     if (tooltipElement) return tooltipElement;
     tooltipElement = document.createElement("div");
@@ -2359,7 +2358,7 @@ ${message}` : message;
         overflow-y: auto;
         overflow-x: hidden;
         box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-        pointer-events: auto;
+        pointer-events: none;
         white-space: pre-wrap;
         word-break: break-word;
         backdrop-filter: blur(10px);
@@ -2382,19 +2381,6 @@ ${message}` : message;
         }
     `;
     document.head.appendChild(style);
-    tooltipElement.addEventListener("mouseenter", () => {
-      isTooltipHovered = true;
-    });
-    tooltipElement.addEventListener("mouseleave", () => {
-      isTooltipHovered = false;
-      hideTooltip();
-    });
-    tooltipElement.addEventListener("wheel", (e) => {
-      const hasScroll = tooltipElement.scrollHeight > tooltipElement.clientHeight;
-      if (hasScroll) {
-        e.stopPropagation();
-      }
-    }, { passive: true });
     document.body.appendChild(tooltipElement);
     return tooltipElement;
   }
@@ -2427,6 +2413,7 @@ ${message}` : message;
     chatsList.addEventListener("mouseover", handleTooltipMouseOver);
     chatsList.addEventListener("mouseout", handleTooltipMouseOut);
     chatsList.addEventListener("mousemove", handleTooltipMouseMove);
+    chatsList.addEventListener("wheel", handleTooltipWheel, { passive: false });
     tooltipEventsInitialized = true;
   }
   function handleTooltipMouseOver(e) {
@@ -2448,18 +2435,24 @@ ${message}` : message;
     if (!item) return;
     const relatedItem = e.relatedTarget?.closest(".lobby-chat-item");
     if (relatedItem === item) return;
-    if (e.relatedTarget === tooltipElement || tooltipElement?.contains(e.relatedTarget)) {
-      return;
-    }
-    if (isTooltipHovered) return;
     if (currentTooltipTarget === item) {
       hideTooltip();
+    }
+  }
+  function handleTooltipWheel(e) {
+    if (!tooltipElement || tooltipElement.style.display !== "block") return;
+    const hasScroll = tooltipElement.scrollHeight > tooltipElement.clientHeight;
+    if (!hasScroll) return;
+    const item = e.target.closest(".lobby-chat-item");
+    if (item && currentTooltipTarget === item) {
+      e.preventDefault();
+      e.stopPropagation();
+      tooltipElement.scrollTop += e.deltaY;
     }
   }
   function handleTooltipMouseMove(e) {
     const item = e.target.closest(".lobby-chat-item");
     if (!item) return;
-    if (isTooltipHovered) return;
     if (tooltipElement && tooltipElement.style.display === "block" && currentTooltipTarget === item) {
       tooltipElement.style.left = `${e.clientX + 15}px`;
       tooltipElement.style.top = `${e.clientY + 15}px`;
@@ -2467,12 +2460,12 @@ ${message}` : message;
   }
   function cleanupTooltip() {
     hideTooltip();
-    isTooltipHovered = false;
     const chatsList = document.getElementById("chat-lobby-chats-list");
     if (chatsList && tooltipEventsInitialized) {
       chatsList.removeEventListener("mouseover", handleTooltipMouseOver);
       chatsList.removeEventListener("mouseout", handleTooltipMouseOut);
       chatsList.removeEventListener("mousemove", handleTooltipMouseMove);
+      chatsList.removeEventListener("wheel", handleTooltipWheel);
     }
     tooltipEventsInitialized = false;
     if (tooltipElement && tooltipElement.parentNode) {
