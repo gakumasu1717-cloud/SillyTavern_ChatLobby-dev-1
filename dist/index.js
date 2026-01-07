@@ -2885,12 +2885,20 @@ ${message}` : message;
     `;
   }
   function bindChatEvents(container, charAvatar) {
-    container.querySelectorAll(".lobby-chat-item").forEach((item, index) => {
+    const items = container.querySelectorAll(".lobby-chat-item");
+    console.log("[ChatList] bindChatEvents: items count =", items.length, "charAvatar =", charAvatar);
+    items.forEach((item, index) => {
       const chatContent = item.querySelector(".chat-content");
       const favBtn = item.querySelector(".chat-fav-btn");
       const delBtn = item.querySelector(".chat-delete-btn");
       const fileName = item.dataset.fileName;
+      console.log("[ChatList] Binding item", index, ":", { fileName, hasChatContent: !!chatContent });
+      if (!chatContent) {
+        console.error("[ChatList] chatContent not found for item", index);
+        return;
+      }
       createTouchClickHandler(chatContent, () => {
+        console.log("[ChatList] Chat item clicked!", { fileName, charAvatar: item.dataset.charAvatar });
         if (store.batchModeActive) {
           const cb = item.querySelector(".chat-select-cb");
           if (cb) {
@@ -2900,13 +2908,15 @@ ${message}` : message;
           return;
         }
         const handlers = store.chatHandlers;
-        if (handlers.onOpen) {
+        console.log("[ChatList] handlers =", handlers, "onOpen =", !!handlers?.onOpen);
+        if (handlers?.onOpen) {
           const charIndex = store.currentCharacter?.index || item.dataset.charIndex || null;
           const chatInfo = {
             fileName: item.dataset.fileName,
             charAvatar: item.dataset.charAvatar,
             charIndex
           };
+          console.log("[ChatList] Calling onOpen:", chatInfo);
           handlers.onOpen(chatInfo);
         } else {
           console.error("[ChatList] onOpen handler not available!");
