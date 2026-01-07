@@ -1781,7 +1781,7 @@ ${message}` : message;
     }
     /**
      * 그룹 채팅 삭제
-     * @param {string} groupId - 그룹 ID
+     * @param {string} groupId - 그룹 ID (캐시 무효화용)
      * @param {string} chatFileName - 채팅 파일명
      * @returns {Promise<boolean>}
      */
@@ -1793,12 +1793,13 @@ ${message}` : message;
           method: "POST",
           headers: this.getRequestHeaders(),
           body: JSON.stringify({
-            id: groupId,
-            chat_id: fileName
+            id: fileName
+            // 채팅 파일명 (그룹 ID 아님!)
           })
         });
         if (response.ok) {
           console.log("[API] Group chat deleted successfully");
+          cache.invalidate("groups");
           return true;
         }
         console.error("[API] Delete failed:", response.status);

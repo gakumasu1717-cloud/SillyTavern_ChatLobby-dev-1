@@ -909,7 +909,7 @@ class SillyTavernAPI {
     
     /**
      * 그룹 채팅 삭제
-     * @param {string} groupId - 그룹 ID
+     * @param {string} groupId - 그룹 ID (캐시 무효화용)
      * @param {string} chatFileName - 채팅 파일명
      * @returns {Promise<boolean>}
      */
@@ -918,18 +918,19 @@ class SillyTavernAPI {
             const fileName = chatFileName.replace('.jsonl', '');
             console.log('[API] deleteGroupChat:', { groupId, fileName });
             
-            // SillyTavern API 호출 (인증 헤더 포함)
+            // SillyTavern API는 id 파라미터에 채팅 파일명을 기대함
             const response = await this.fetchWithRetry('/api/chats/group/delete', {
                 method: 'POST',
                 headers: this.getRequestHeaders(),
                 body: JSON.stringify({
-                    id: groupId,
-                    chat_id: fileName
+                    id: fileName  // 채팅 파일명 (그룹 ID 아님!)
                 })
             });
             
             if (response.ok) {
                 console.log('[API] Group chat deleted successfully');
+                // 그룹 캐시 무효화
+                cache.invalidate('groups');
                 return true;
             }
             
