@@ -1613,28 +1613,67 @@ ${message}` : message;
     /**
      * 그룹 채팅 열기
      * @param {string} groupId - 그룹 ID
-     * @param {string} chatId - 채팅 ID
+     * @param {string} chatId - 채팅 ID (파일명)
      * @returns {Promise<boolean>}
      */
     async openGroupChat(groupId, chatId) {
       try {
         const context = this.getContext();
+        const chatFileName = chatId.replace(".jsonl", "");
+        if (typeof context?.selectGroupById === "function") {
+          await context.selectGroupById(groupId);
+        } else if (typeof context?.openGroupById === "function") {
+          await context.openGroupById(groupId, false);
+        }
+        await new Promise((resolve) => setTimeout(resolve, 300));
         if (typeof context?.openGroupChat === "function") {
-          await context.openGroupChat(groupId, chatId);
+          await context.openGroupChat(chatFileName);
           return true;
         }
         try {
           const groupChatsModule = await import("../../../../group-chats.js");
           if (typeof groupChatsModule.openGroupChat === "function") {
-            await groupChatsModule.openGroupChat(groupId, chatId);
+            await groupChatsModule.openGroupChat(chatFileName);
             return true;
           }
         } catch (e) {
           console.warn("[API] Could not import group-chats module:", e);
         }
-        return false;
+        return await this.openGroupChatByUI(groupId, chatFileName);
       } catch (error) {
         console.error("[API] Failed to open group chat:", error);
+        return false;
+      }
+    }
+    /**
+     * UI 클릭 방식으로 그룹 채팅 열기
+     * @param {string} groupId - 그룹 ID
+     * @param {string} chatFileName - 채팅 파일명
+     * @returns {Promise<boolean>}
+     */
+    async openGroupChatByUI(groupId, chatFileName) {
+      try {
+        const groupCard = document.querySelector(`.group_select_container[grid="${groupId}"]`);
+        if (groupCard) {
+          groupCard.click();
+          await new Promise((resolve) => setTimeout(resolve, 500));
+        }
+        const manageChatsBtn = document.getElementById("option_select_chat");
+        if (manageChatsBtn) {
+          manageChatsBtn.click();
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          const chatItems = document.querySelectorAll(".select_chat_block");
+          for (const item of chatItems) {
+            const itemName = item.querySelector(".select_chat_block_filename")?.textContent || "";
+            if (itemName.includes(chatFileName)) {
+              item.click();
+              return true;
+            }
+          }
+        }
+        return false;
+      } catch (e) {
+        console.error("[API] openGroupChatByUI failed:", e);
         return false;
       }
     }
@@ -3164,12 +3203,14 @@ ${message}` : message;
     return name;
   }
   function bindGroupChatEvents(container, group) {
-    container.querySelectorAll(".lobby-chat-item").forEach((item) => {
-      item.addEventListener("click", async () => {
-        const chatFile = item.dataset.chatFile;
-        if (chatFile) {
-          try {
-            await api.openGroupChat(group.id, chatFile);
+    container.querySelectorAll(".lobby-chat-item").forEach((item, index) => {
+      const chatContent = item.querySelector(".chat-content");
+      const chatFile = item.dataset.chatFile;
+      if (!chatContent || !chatFile) return;
+      createTouchClickHandler(chatContent, async () => {
+        try {
+          const success = await api.openGroupChat(group.id, chatFile);
+          if (success) {
             const overlay = document.getElementById("chat-lobby-overlay");
             const lobbyContainer = document.getElementById("chat-lobby-container");
             const fab = document.getElementById("chat-lobby-fab");
@@ -3177,12 +3218,14 @@ ${message}` : message;
             if (lobbyContainer) lobbyContainer.style.display = "none";
             if (fab) fab.style.display = "flex";
             store.setLobbyOpen(false);
-          } catch (error) {
-            console.error("[ChatList] Failed to open group chat:", error);
+          } else {
             showToast("\uADF8\uB8F9 \uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
           }
+        } catch (error) {
+          console.error("[ChatList] Failed to open group chat:", error);
+          showToast("\uADF8\uB8F9 \uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
         }
-      });
+      }, { preventDefault: true, stopPropagation: true, debugName: `group-chat-${index}` });
     });
   }
 

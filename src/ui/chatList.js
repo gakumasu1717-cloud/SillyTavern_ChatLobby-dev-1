@@ -1077,18 +1077,25 @@ function formatGroupChatName(fileName) {
 }
 
 /**
- * 그룹 채팅 이벤트 바인딩
+ * 그룹 채팅 이벤트 바인딩 - 캐릭터 채팅과 동일한 방식
  * @param {HTMLElement} container
  * @param {Object} group
  */
 function bindGroupChatEvents(container, group) {
-    container.querySelectorAll('.lobby-chat-item').forEach(item => {
-        item.addEventListener('click', async () => {
-            const chatFile = item.dataset.chatFile;
-            if (chatFile) {
-                try {
-                    await api.openGroupChat(group.id, chatFile);
-                    // 로비 닫기 - closeLobby 함수 호출
+    container.querySelectorAll('.lobby-chat-item').forEach((item, index) => {
+        const chatContent = item.querySelector('.chat-content');
+        const chatFile = item.dataset.chatFile;
+        
+        if (!chatContent || !chatFile) return;
+        
+        // 채팅 열기
+        createTouchClickHandler(chatContent, async () => {
+            try {
+                // 그룹 채팅 열기
+                const success = await api.openGroupChat(group.id, chatFile);
+                
+                if (success) {
+                    // 로비 닫기
                     const overlay = document.getElementById('chat-lobby-overlay');
                     const lobbyContainer = document.getElementById('chat-lobby-container');
                     const fab = document.getElementById('chat-lobby-fab');
@@ -1098,11 +1105,13 @@ function bindGroupChatEvents(container, group) {
                     if (fab) fab.style.display = 'flex';
                     
                     store.setLobbyOpen(false);
-                } catch (error) {
-                    console.error('[ChatList] Failed to open group chat:', error);
+                } else {
                     showToast('그룹 채팅을 열지 못했습니다.', 'error');
                 }
+            } catch (error) {
+                console.error('[ChatList] Failed to open group chat:', error);
+                showToast('그룹 채팅을 열지 못했습니다.', 'error');
             }
-        });
+        }, { preventDefault: true, stopPropagation: true, debugName: `group-chat-${index}` });
     });
 }

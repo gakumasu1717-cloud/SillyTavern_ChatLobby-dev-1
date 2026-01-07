@@ -731,33 +731,87 @@ class SillyTavernAPI {
     /**
      * 그룹 채팅 열기
      * @param {string} groupId - 그룹 ID
-     * @param {string} chatId - 채팅 ID
+     * @param {string} chatId - 채팅 ID (파일명)
      * @returns {Promise<boolean>}
      */
     async openGroupChat(groupId, chatId) {
         try {
             const context = this.getContext();
             
-            // SillyTavern의 openGroupChat 함수 사용
+            // 채팅 파일명에서 확장자 제거
+            const chatFileName = chatId.replace('.jsonl', '');
+            
+            // 1. 먼저 그룹 선택
+            if (typeof context?.selectGroupById === 'function') {
+                await context.selectGroupById(groupId);
+            } else if (typeof context?.openGroupById === 'function') {
+                await context.openGroupById(groupId, false);  // 기본 채팅 안 열기
+            }
+            
+            // 잠시 대기 (그룹 선택 완료)
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // 2. 그룹 채팅 열기
             if (typeof context?.openGroupChat === 'function') {
-                await context.openGroupChat(groupId, chatId);
+                await context.openGroupChat(chatFileName);
                 return true;
             }
             
-            // Fallback: 직접 import 시도
+            // 3. Fallback: group-chats 모듈 직접 사용
             try {
                 const groupChatsModule = await import('../../../../group-chats.js');
                 if (typeof groupChatsModule.openGroupChat === 'function') {
-                    await groupChatsModule.openGroupChat(groupId, chatId);
+                    await groupChatsModule.openGroupChat(chatFileName);
                     return true;
                 }
             } catch (e) {
                 console.warn('[API] Could not import group-chats module:', e);
             }
             
-            return false;
+            // 4. Fallback: UI 클릭 방식
+            return await this.openGroupChatByUI(groupId, chatFileName);
+            
         } catch (error) {
             console.error('[API] Failed to open group chat:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * UI 클릭 방식으로 그룹 채팅 열기
+     * @param {string} groupId - 그룹 ID
+     * @param {string} chatFileName - 채팅 파일명
+     * @returns {Promise<boolean>}
+     */
+    async openGroupChatByUI(groupId, chatFileName) {
+        try {
+            // 그룹 선택 버튼 찾기
+            const groupCard = document.querySelector(`.group_select_container[grid="${groupId}"]`);
+            if (groupCard) {
+                groupCard.click();
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+            
+            // 채팅 관리 버튼 클릭
+            const manageChatsBtn = document.getElementById('option_select_chat');
+            if (manageChatsBtn) {
+                manageChatsBtn.click();
+                await new Promise(resolve => setTimeout(resolve, 500));
+                
+                // 채팅 목록에서 해당 채팅 찾기
+                const chatItems = document.querySelectorAll('.select_chat_block');
+                for (const item of chatItems) {
+                    const itemName = item.querySelector('.select_chat_block_filename')?.textContent || '';
+                    if (itemName.includes(chatFileName)) {
+                        item.click();
+                        return true;
+                    }
+                }
+            }
+            
+            return false;
+        } catch (e) {
+            console.error('[API] openGroupChatByUI failed:', e);
             return false;
         }
     }
