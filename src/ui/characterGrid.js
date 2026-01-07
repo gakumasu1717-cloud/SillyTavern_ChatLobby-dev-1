@@ -777,6 +777,9 @@ export function getCurrentView() {
 export function switchView(view) {
     currentView = view;
     
+    // 뷰 전환 시 채팅 패널 닫기
+    closeChatPanel();
+    
     // 탭 UI 업데이트
     document.querySelectorAll('#chat-lobby-view-tabs .view-tab').forEach(tab => {
         tab.classList.toggle('active', tab.dataset.view === view);

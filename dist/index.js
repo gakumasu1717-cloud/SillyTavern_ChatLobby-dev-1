@@ -3101,14 +3101,23 @@ ${message}` : message;
     }
   }
   function updateGroupChatHeader(group) {
-    const headerTitle = document.querySelector("#chat-lobby-chats .chat-lobby-chats-header h3");
-    const headerAvatar = document.querySelector("#chat-lobby-chats .chat-lobby-chats-header img");
+    const headerTitle = document.getElementById("chat-panel-name");
+    const headerAvatar = document.getElementById("chat-panel-avatar");
+    const deleteBtn = document.getElementById("chat-lobby-delete-char");
+    const newChatBtn = document.getElementById("chat-lobby-new-chat");
     if (headerTitle) {
       headerTitle.textContent = group.name || "\uADF8\uB8F9";
     }
     if (headerAvatar) {
       headerAvatar.src = api.getGroupAvatarUrl(group);
       headerAvatar.alt = group.name || "\uADF8\uB8F9";
+      headerAvatar.style.display = "block";
+    }
+    if (deleteBtn) {
+      deleteBtn.style.display = "none";
+    }
+    if (newChatBtn) {
+      newChatBtn.style.display = "none";
     }
   }
   function renderGroupChats(container, chats, group) {
@@ -3621,6 +3630,7 @@ ${message}` : message;
   var currentView = "characters";
   function switchView(view) {
     currentView = view;
+    closeChatPanel();
     document.querySelectorAll("#chat-lobby-view-tabs .view-tab").forEach((tab) => {
       tab.classList.toggle("active", tab.dataset.view === view);
     });

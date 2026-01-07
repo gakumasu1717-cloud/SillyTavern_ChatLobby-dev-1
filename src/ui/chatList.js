@@ -975,8 +975,10 @@ export async function renderGroupChatList(group) {
  * @param {Object} group
  */
 function updateGroupChatHeader(group) {
-    const headerTitle = document.querySelector('#chat-lobby-chats .chat-lobby-chats-header h3');
-    const headerAvatar = document.querySelector('#chat-lobby-chats .chat-lobby-chats-header img');
+    const headerTitle = document.getElementById('chat-panel-name');
+    const headerAvatar = document.getElementById('chat-panel-avatar');
+    const deleteBtn = document.getElementById('chat-lobby-delete-char');
+    const newChatBtn = document.getElementById('chat-lobby-new-chat');
     
     if (headerTitle) {
         headerTitle.textContent = group.name || '그룹';
@@ -985,6 +987,17 @@ function updateGroupChatHeader(group) {
     if (headerAvatar) {
         headerAvatar.src = api.getGroupAvatarUrl(group);
         headerAvatar.alt = group.name || '그룹';
+        headerAvatar.style.display = 'block';
+    }
+    
+    // 그룹에서는 캐릭터 삭제 버튼 숨기기
+    if (deleteBtn) {
+        deleteBtn.style.display = 'none';
+    }
+    
+    // 새 채팅 버튼도 일단 숨기기 (그룹 채팅 생성은 별도 처리 필요)
+    if (newChatBtn) {
+        newChatBtn.style.display = 'none';
     }
 }
 
