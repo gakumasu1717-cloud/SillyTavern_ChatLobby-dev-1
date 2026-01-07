@@ -904,15 +904,24 @@ function bindGroupEvents(container) {
             store.setLobbyLocked(true);
             
             try {
-                // 채팅 패널이 열려있고 같은 그룹이면 닫기
+                // 채팅 패널이 열려있고 같은 그룹이면 닫기 (토글)
                 const chatsPanel = document.getElementById('chat-lobby-chats');
                 const isPanelVisible = chatsPanel?.classList.contains('visible');
                 const isSameGroup = store.currentGroup?.id === groupId;
                 
+                console.log('[CharacterGrid] Group click:', { groupId, isSameGroup, isPanelVisible });
+                
                 if (isPanelVisible && isSameGroup) {
+                    console.log('[CharacterGrid] Same group, toggling off');
                     card.classList.remove('selected');
                     closeChatPanel();
                     return;
+                }
+                
+                // 다른 그룹이면 현재 상태 초기화 (중복 호출 방지)
+                if (!isSameGroup) {
+                    store.setCurrentGroup(null);
+                    store.setCurrentCharacter(null);
                 }
                 
                 // 기존 선택 해제 (캐릭터 + 그룹 모두)
@@ -928,10 +937,6 @@ function bindGroupEvents(container) {
                 const group = groups.find(g => g.id === groupId);
                 
                 if (group) {
-                    // 캐릭터 초기화, 그룹 설정
-                    store.setCurrentCharacter(null);
-                    store.setCurrentGroup(group);
-                    
                     // 콜백 호출 (그룹 채팅 목록 표시)
                     const handler = store.onGroupSelect;
                     if (handler && typeof handler === 'function') {

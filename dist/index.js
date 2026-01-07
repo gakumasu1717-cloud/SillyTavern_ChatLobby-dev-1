@@ -1741,6 +1741,37 @@ ${message}` : message;
       }
       return "/img/five.png";
     }
+    /**
+     * 그룹 채팅 삭제
+     * @param {string} groupId - 그룹 ID
+     * @param {string} chatFileName - 채팅 파일명
+     * @returns {Promise<boolean>}
+     */
+    async deleteGroupChat(groupId, chatFileName) {
+      try {
+        const fileName = chatFileName.replace(".jsonl", "");
+        console.log("[API] deleteGroupChat:", { groupId, fileName });
+        const response = await fetch("/api/chats/group/delete", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            id: groupId,
+            chat_id: fileName
+          })
+        });
+        if (response.ok) {
+          console.log("[API] Group chat deleted successfully");
+          return true;
+        }
+        console.error("[API] Delete failed:", response.status);
+        return false;
+      } catch (error) {
+        console.error("[API] deleteGroupChat error:", error);
+        return false;
+      }
+    }
   };
   var api = new SillyTavernAPI();
 
@@ -3257,6 +3288,7 @@ ${message}` : message;
                     ${lastMes ? `<span>\u{1F550} ${lastMes}</span>` : ""}
                 </div>
             </div>
+            <button class="chat-delete-btn" title="\uCC44\uD305 \uC0AD\uC81C">\u{1F5D1}\uFE0F</button>
         </div>
         `;
     }
@@ -3280,6 +3312,7 @@ ${message}` : message;
   function bindGroupChatEvents(container, group) {
     container.querySelectorAll(".lobby-chat-item").forEach((item, index) => {
       const chatContent = item.querySelector(".chat-content");
+      const delBtn = item.querySelector(".chat-delete-btn");
       const chatFile = item.dataset.chatFile;
       if (!chatContent || !chatFile) return;
       createTouchClickHandler(chatContent, async () => {
@@ -3382,6 +3415,34 @@ ${message}` : message;
           showToast("\uADF8\uB8F9 \uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
         }
       }, { preventDefault: true, stopPropagation: true, debugName: `group-chat-${index}` });
+      if (delBtn) {
+        createTouchClickHandler(delBtn, async () => {
+          const confirmed = await showConfirm(`"${formatGroupChatName(chatFile)}" \uCC44\uD305\uC744 \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?`);
+          if (!confirmed) return;
+          try {
+            const success = await api.deleteGroupChat(group.id, chatFile);
+            if (success) {
+              item.remove();
+              showToast("\uCC44\uD305\uC774 \uC0AD\uC81C\uB418\uC5C8\uC2B5\uB2C8\uB2E4.", "success");
+              const remaining = container.querySelectorAll(".lobby-chat-item").length;
+              updateChatCount(remaining);
+              if (remaining === 0) {
+                container.innerHTML = `
+                                <div class="lobby-empty-state">
+                                    <i>\u{1F4AC}</i>
+                                    <div>\uADF8\uB8F9 \uCC44\uD305\uC774 \uC5C6\uC2B5\uB2C8\uB2E4</div>
+                                </div>
+                            `;
+              }
+            } else {
+              showToast("\uCC44\uD305 \uC0AD\uC81C\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.", "error");
+            }
+          } catch (error) {
+            console.error("[ChatList] Failed to delete group chat:", error);
+            showToast("\uCC44\uD305 \uC0AD\uC81C \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "error");
+          }
+        }, { preventDefault: true, stopPropagation: true, debugName: `group-del-${index}` });
+      }
     });
   }
 
@@ -3938,10 +3999,16 @@ ${message}` : message;
           const chatsPanel = document.getElementById("chat-lobby-chats");
           const isPanelVisible = chatsPanel?.classList.contains("visible");
           const isSameGroup = store.currentGroup?.id === groupId;
+          console.log("[CharacterGrid] Group click:", { groupId, isSameGroup, isPanelVisible });
           if (isPanelVisible && isSameGroup) {
+            console.log("[CharacterGrid] Same group, toggling off");
             card.classList.remove("selected");
             closeChatPanel();
             return;
+          }
+          if (!isSameGroup) {
+            store.setCurrentGroup(null);
+            store.setCurrentCharacter(null);
           }
           container.querySelectorAll(".lobby-char-card.selected, .lobby-group-card.selected").forEach((el) => {
             el.classList.remove("selected");
@@ -3950,8 +4017,6 @@ ${message}` : message;
           const groups = await api.getGroups();
           const group = groups.find((g) => g.id === groupId);
           if (group) {
-            store.setCurrentCharacter(null);
-            store.setCurrentGroup(group);
             const handler = store.onGroupSelect;
             if (handler && typeof handler === "function") {
               await handler(group);

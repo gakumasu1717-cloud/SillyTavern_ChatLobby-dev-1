@@ -898,6 +898,42 @@ class SillyTavernAPI {
         
         return '/img/five.png';
     }
+    
+    /**
+     * 그룹 채팅 삭제
+     * @param {string} groupId - 그룹 ID
+     * @param {string} chatFileName - 채팅 파일명
+     * @returns {Promise<boolean>}
+     */
+    async deleteGroupChat(groupId, chatFileName) {
+        try {
+            const fileName = chatFileName.replace('.jsonl', '');
+            console.log('[API] deleteGroupChat:', { groupId, fileName });
+            
+            // SillyTavern API 호출
+            const response = await fetch('/api/chats/group/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    id: groupId,
+                    chat_id: fileName
+                })
+            });
+            
+            if (response.ok) {
+                console.log('[API] Group chat deleted successfully');
+                return true;
+            }
+            
+            console.error('[API] Delete failed:', response.status);
+            return false;
+        } catch (error) {
+            console.error('[API] deleteGroupChat error:', error);
+            return false;
+        }
+    }
 }
 
 // 싱글톤 인스턴스

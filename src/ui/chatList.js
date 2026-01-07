@@ -9,7 +9,7 @@ import { store } from '../data/store.js';
 import { escapeHtml, truncateText } from '../utils/textUtils.js';
 import { formatDate, getTimestamp } from '../utils/dateUtils.js';
 import { createTouchClickHandler, isMobile } from '../utils/eventHelpers.js';
-import { showToast, showAlert } from './notifications.js';
+import { showToast, showAlert, showConfirm } from './notifications.js';
 import { CONFIG } from '../config.js';
 import { getFoldersOptionsHTML } from './templates.js';
 
@@ -1074,6 +1074,7 @@ function renderGroupChats(container, chats, group) {
                     ${lastMes ? `<span>🕐 ${lastMes}</span>` : ''}
                 </div>
             </div>
+            <button class="chat-delete-btn" title="채팅 삭제">🗑️</button>
         </div>
         `;
     }
@@ -1117,6 +1118,7 @@ function formatGroupChatName(fileName) {
 function bindGroupChatEvents(container, group) {
     container.querySelectorAll('.lobby-chat-item').forEach((item, index) => {
         const chatContent = item.querySelector('.chat-content');
+        const delBtn = item.querySelector('.chat-delete-btn');
         const chatFile = item.dataset.chatFile;
         
         if (!chatContent || !chatFile) return;
@@ -1250,5 +1252,38 @@ function bindGroupChatEvents(container, group) {
                 showToast('그룹 채팅을 열지 못했습니다.', 'error');
             }
         }, { preventDefault: true, stopPropagation: true, debugName: `group-chat-${index}` });
+        
+        // 삭제 버튼 이벤트
+        if (delBtn) {
+            createTouchClickHandler(delBtn, async () => {
+                const confirmed = await showConfirm(`"${formatGroupChatName(chatFile)}" 채팅을 삭제하시겠습니까?`);
+                if (!confirmed) return;
+                
+                try {
+                    // 그룹 채팅 삭제 API 호출
+                    const success = await api.deleteGroupChat(group.id, chatFile);
+                    if (success) {
+                        item.remove();
+                        showToast('채팅이 삭제되었습니다.', 'success');
+                        // 채팅 수 업데이트
+                        const remaining = container.querySelectorAll('.lobby-chat-item').length;
+                        updateChatCount(remaining);
+                        if (remaining === 0) {
+                            container.innerHTML = `
+                                <div class="lobby-empty-state">
+                                    <i>💬</i>
+                                    <div>그룹 채팅이 없습니다</div>
+                                </div>
+                            `;
+                        }
+                    } else {
+                        showToast('채팅 삭제에 실패했습니다.', 'error');
+                    }
+                } catch (error) {
+                    console.error('[ChatList] Failed to delete group chat:', error);
+                    showToast('채팅 삭제 중 오류가 발생했습니다.', 'error');
+                }
+            }, { preventDefault: true, stopPropagation: true, debugName: `group-del-${index}` });
+        }
     });
 }
