@@ -522,8 +522,8 @@ function renderChatItem(chat, charAvatar, index) {
     const folder = data.folders.find(f => f.id === folderId);
     const folderName = folder?.name || '';
     
-    // 툴팁용 미리보기 (2000자까지)
-    const tooltipPreview = truncateText(preview, 2000);
+    // 툴팁용 미리보기 (10000자까지)
+    const tooltipPreview = truncateText(preview, 10000);
     const safeAvatar = escapeHtml(charAvatar || '');
     const safeFileName = escapeHtml(fileName || '');
     // 툴팁용 전문 (HTML 이스케이프)
