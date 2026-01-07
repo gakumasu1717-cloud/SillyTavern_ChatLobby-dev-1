@@ -2230,6 +2230,7 @@ ${message}` : message;
   var tooltipTimeout = null;
   var currentTooltipTarget = null;
   var tooltipEventsInitialized = false;
+  var isTooltipHovered = false;
   function ensureTooltipElement() {
     if (tooltipElement) return tooltipElement;
     tooltipElement = document.createElement("div");
@@ -2239,7 +2240,7 @@ ${message}` : message;
         position: fixed;
         display: none;
         max-width: 400px;
-        max-height: 250px;
+        max-height: 300px;
         padding: 12px 16px;
         background: rgba(20, 20, 30, 0.95);
         border: 1px solid rgba(255,255,255,0.15);
@@ -2248,13 +2249,39 @@ ${message}` : message;
         font-size: 13px;
         line-height: 1.6;
         z-index: 100000;
-        overflow: hidden;
+        overflow-y: auto;
+        overflow-x: hidden;
         box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-        pointer-events: none;
+        pointer-events: auto;
         white-space: pre-wrap;
         word-break: break-word;
         backdrop-filter: blur(10px);
     `;
+    const style = document.createElement("style");
+    style.textContent = `
+        .chat-preview-tooltip::-webkit-scrollbar {
+            width: 6px;
+        }
+        .chat-preview-tooltip::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+        }
+        .chat-preview-tooltip::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+        .chat-preview-tooltip::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    `;
+    document.head.appendChild(style);
+    tooltipElement.addEventListener("mouseenter", () => {
+      isTooltipHovered = true;
+    });
+    tooltipElement.addEventListener("mouseleave", () => {
+      isTooltipHovered = false;
+      hideTooltip();
+    });
     document.body.appendChild(tooltipElement);
     return tooltipElement;
   }
@@ -2308,6 +2335,10 @@ ${message}` : message;
     if (!item) return;
     const relatedItem = e.relatedTarget?.closest(".lobby-chat-item");
     if (relatedItem === item) return;
+    if (e.relatedTarget === tooltipElement || tooltipElement?.contains(e.relatedTarget)) {
+      return;
+    }
+    if (isTooltipHovered) return;
     if (currentTooltipTarget === item) {
       hideTooltip();
     }
@@ -2315,6 +2346,7 @@ ${message}` : message;
   function handleTooltipMouseMove(e) {
     const item = e.target.closest(".lobby-chat-item");
     if (!item) return;
+    if (isTooltipHovered) return;
     if (tooltipElement && tooltipElement.style.display === "block" && currentTooltipTarget === item) {
       tooltipElement.style.left = `${e.clientX + 15}px`;
       tooltipElement.style.top = `${e.clientY + 15}px`;
@@ -2322,6 +2354,7 @@ ${message}` : message;
   }
   function cleanupTooltip() {
     hideTooltip();
+    isTooltipHovered = false;
     const chatsList = document.getElementById("chat-lobby-chats-list");
     if (chatsList && tooltipEventsInitialized) {
       chatsList.removeEventListener("mouseover", handleTooltipMouseOver);
@@ -4841,11 +4874,13 @@ ${message}` : message;
       return streak;
     }
     function updateFabPreview() {
+      const preview = document.querySelector(".fab-preview");
       const avatar = document.querySelector(".fab-preview-avatar");
       const streakEl = document.querySelector(".fab-streak");
-      if (!avatar || !streakEl) return;
+      if (!preview || !avatar || !streakEl) return;
       const todayChats = getTodayChats();
-      if (todayChats.length > 0) {
+      const hasAvatar = todayChats.length > 0;
+      if (hasAvatar) {
         const lastChar = todayChats[0];
         avatar.src = `/characters/${encodeURIComponent(lastChar.avatar)}`;
         avatar.style.display = "block";
@@ -4853,12 +4888,14 @@ ${message}` : message;
         avatar.style.display = "none";
       }
       const streak = getStreak();
-      if (streak > 0) {
+      const hasStreak = streak > 0;
+      if (hasStreak) {
         streakEl.textContent = `\u{1F525} ${streak}`;
         streakEl.style.display = "block";
       } else {
         streakEl.style.display = "none";
       }
+      preview.dataset.empty = !hasAvatar && !hasStreak ? "true" : "false";
     }
     async function init() {
       if (window._chatLobbyInitialized) {

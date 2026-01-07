@@ -21,6 +21,7 @@ let tooltipElement = null;
 let tooltipTimeout = null;
 let currentTooltipTarget = null;
 let tooltipEventsInitialized = false;  // 이벤트 위임 등록 여부
+let isTooltipHovered = false;  // 툴팁 위에 마우스가 있는지 여부
 
 /**
  * 툴팁 요소 생성 (한 번만)
@@ -35,7 +36,7 @@ function ensureTooltipElement() {
         position: fixed;
         display: none;
         max-width: 400px;
-        max-height: 250px;
+        max-height: 300px;
         padding: 12px 16px;
         background: rgba(20, 20, 30, 0.95);
         border: 1px solid rgba(255,255,255,0.15);
@@ -44,13 +45,46 @@ function ensureTooltipElement() {
         font-size: 13px;
         line-height: 1.6;
         z-index: 100000;
-        overflow: hidden;
+        overflow-y: auto;
+        overflow-x: hidden;
         box-shadow: 0 8px 32px rgba(0,0,0,0.6);
-        pointer-events: none;
+        pointer-events: auto;
         white-space: pre-wrap;
         word-break: break-word;
         backdrop-filter: blur(10px);
     `;
+    
+    // 스크롤바 스타일 추가
+    const style = document.createElement('style');
+    style.textContent = `
+        .chat-preview-tooltip::-webkit-scrollbar {
+            width: 6px;
+        }
+        .chat-preview-tooltip::-webkit-scrollbar-track {
+            background: rgba(255,255,255,0.05);
+            border-radius: 3px;
+        }
+        .chat-preview-tooltip::-webkit-scrollbar-thumb {
+            background: rgba(255,255,255,0.2);
+            border-radius: 3px;
+        }
+        .chat-preview-tooltip::-webkit-scrollbar-thumb:hover {
+            background: rgba(255,255,255,0.3);
+        }
+    `;
+    document.head.appendChild(style);
+    
+    // 툴팁에 마우스가 올라가면 hover 상태 설정
+    tooltipElement.addEventListener('mouseenter', () => {
+        isTooltipHovered = true;
+    });
+    
+    // 툴팁에서 마우스가 벗어나면 숨김
+    tooltipElement.addEventListener('mouseleave', () => {
+        isTooltipHovered = false;
+        hideTooltip();
+    });
+    
     document.body.appendChild(tooltipElement);
     return tooltipElement;
 }
@@ -146,6 +180,14 @@ function handleTooltipMouseOut(e) {
     const relatedItem = e.relatedTarget?.closest('.lobby-chat-item');
     if (relatedItem === item) return;
     
+    // 툴팁으로 이동하는 경우 숨기지 않음
+    if (e.relatedTarget === tooltipElement || tooltipElement?.contains(e.relatedTarget)) {
+        return;
+    }
+    
+    // 툴팁 위에 마우스가 있으면 숨기지 않음
+    if (isTooltipHovered) return;
+    
     if (currentTooltipTarget === item) {
         hideTooltip();
     }
@@ -157,6 +199,9 @@ function handleTooltipMouseOut(e) {
 function handleTooltipMouseMove(e) {
     const item = e.target.closest('.lobby-chat-item');
     if (!item) return;
+    
+    // 툴팁 위에 마우스가 있으면 위치 업데이트 안 함 (스크롤 가능하도록)
+    if (isTooltipHovered) return;
     
     // 툴팁이 표시 중이면 위치 업데이트
     if (tooltipElement && tooltipElement.style.display === 'block' && currentTooltipTarget === item) {
@@ -175,6 +220,7 @@ function handleTooltipMouseMove(e) {
  */
 export function cleanupTooltip() {
     hideTooltip();
+    isTooltipHovered = false;
     
     // 이벤트 위임 리스너 제거
     const chatsList = document.getElementById('chat-lobby-chats-list');

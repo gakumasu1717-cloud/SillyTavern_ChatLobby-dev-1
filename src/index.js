@@ -102,14 +102,16 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
      * FAB 프리뷰 업데이트
      */
     function updateFabPreview() {
+        const preview = document.querySelector('.fab-preview');
         const avatar = document.querySelector('.fab-preview-avatar');
         const streakEl = document.querySelector('.fab-streak');
         
-        if (!avatar || !streakEl) return;
+        if (!preview || !avatar || !streakEl) return;
         
         // 오늘 마지막 캐릭터
         const todayChats = getTodayChats();
-        if (todayChats.length > 0) {
+        const hasAvatar = todayChats.length > 0;
+        if (hasAvatar) {
             const lastChar = todayChats[0];
             avatar.src = `/characters/${encodeURIComponent(lastChar.avatar)}`;
             avatar.style.display = 'block';
@@ -119,12 +121,16 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         
         // 스트릭
         const streak = getStreak();
-        if (streak > 0) {
+        const hasStreak = streak > 0;
+        if (hasStreak) {
             streakEl.textContent = `🔥 ${streak}`;
             streakEl.style.display = 'block';
         } else {
             streakEl.style.display = 'none';
         }
+        
+        // 둘 다 없으면 프리뷰 자체 숨김
+        preview.dataset.empty = (!hasAvatar && !hasStreak) ? 'true' : 'false';
     }
     
     // ============================================
