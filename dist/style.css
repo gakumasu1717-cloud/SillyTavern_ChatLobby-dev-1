@@ -504,6 +504,95 @@
     color: #333;
 }
 
+/* 그룹 아바타 그리드 (카카오톡 스타일) */
+.group-avatar-grid {
+    width: 100%;
+    height: 100%;
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    background: var(--lobby-bg-light);
+}
+
+.group-avatar-grid img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* 1명: 단독 표시 */
+.group-avatar-grid .grid-single {
+    width: 100%;
+    height: 100%;
+}
+
+.group-avatar-grid .grid-single img {
+    width: 100%;
+    height: 100%;
+}
+
+/* 2명: 가로 2분할 */
+.group-avatar-grid .grid-two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    width: 100%;
+    height: 100%;
+    gap: 2px;
+}
+
+.group-avatar-grid .grid-two img {
+    width: 100%;
+    height: 100%;
+}
+
+/* 3명: 위 1 + 아래 2 */
+.group-avatar-grid .grid-three {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    gap: 2px;
+}
+
+.group-avatar-grid .grid-three .grid-top {
+    flex: 1;
+    overflow: hidden;
+}
+
+.group-avatar-grid .grid-three .grid-top img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.group-avatar-grid .grid-three .grid-bottom {
+    flex: 1;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+}
+
+.group-avatar-grid .grid-three .grid-bottom img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* 4명: 2x2 그리드 */
+.group-avatar-grid .grid-four {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
+    width: 100%;
+    height: 100%;
+    gap: 2px;
+}
+
+.group-avatar-grid .grid-four img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
 /* ============================================
    검색 + 정렬 (접기 가능)
    ============================================ */

@@ -884,27 +884,16 @@ function renderGroupCard(group) {
     const name = group.name || 'Unknown Group';
     const memberCount = Array.isArray(group.members) ? group.members.length : 0;
     const chatCount = Array.isArray(group.chats) ? group.chats.length : 0;
-    const avatarUrl = api.getGroupAvatarUrl(group);
     
-    // 멤버 이름 목록 (최대 3명)
-    const characters = api.getCharacters();
-    const memberNames = (group.members || [])
-        .slice(0, 3)
-        .map(avatar => {
-            const char = characters.find(c => c.avatar === avatar);
-            return char?.name || avatar.replace(/\.[^.]+$/, '');
-        })
-        .join(', ');
-    const moreMembers = memberCount > 3 ? ` 외 ${memberCount - 3}명` : '';
+    // 멤버 아바타 그리드 생성 (최대 4명)
+    const members = group.members || [];
+    const avatarGridHtml = renderMemberAvatarGrid(members.slice(0, 4), memberCount);
     
     return `
     <div class="lobby-char-card lobby-group-card" data-group-id="${escapeHtml(group.id)}">
-        <img class="lobby-char-avatar" 
-             src="${avatarUrl}" 
-             alt="${escapeHtml(name)}" 
-             loading="lazy"
-             draggable="false"
-             onerror="this.src='/img/ai4.png'">
+        <div class="group-avatar-grid">
+            ${avatarGridHtml}
+        </div>
         <div class="lobby-char-name">
             <span class="char-name-text">${escapeHtml(name)}</span>
             <div class="char-hover-info">
@@ -921,6 +910,58 @@ function renderGroupCard(group) {
         <div class="group-member-badge">👥 ${memberCount}</div>
     </div>
     `;
+}
+
+/**
+ * 멤버 아바타 그리드 HTML 생성 (카카오톡 스타일)
+ * @param {Array} members - 멤버 아바타 배열 (최대 4개)
+ * @param {number} totalCount - 전체 멤버 수
+ * @returns {string}
+ */
+function renderMemberAvatarGrid(members, totalCount) {
+    const count = members.length;
+    
+    if (count === 0) {
+        // 멤버 없으면 기본 아이콘
+        return `<div class="grid-single"><img src="/img/ai4.png" alt="그룹" draggable="false"></div>`;
+    }
+    
+    if (count === 1) {
+        // 1명이면 단독 표시
+        const avatar = members[0];
+        const avatarUrl = `/characters/${encodeURIComponent(avatar)}`;
+        return `<div class="grid-single"><img src="${avatarUrl}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'"></div>`;
+    }
+    
+    if (count === 2) {
+        // 2명이면 가로 2분할
+        return `<div class="grid-two">${members.map(avatar => {
+            const avatarUrl = `/characters/${encodeURIComponent(avatar)}`;
+            return `<img src="${avatarUrl}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">`;
+        }).join('')}</div>`;
+    }
+    
+    if (count === 3) {
+        // 3명이면 위 1 + 아래 2
+        const avatarUrl0 = `/characters/${encodeURIComponent(members[0])}`;
+        const avatarUrl1 = `/characters/${encodeURIComponent(members[1])}`;
+        const avatarUrl2 = `/characters/${encodeURIComponent(members[2])}`;
+        return `
+            <div class="grid-three">
+                <div class="grid-top"><img src="${avatarUrl0}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'"></div>
+                <div class="grid-bottom">
+                    <img src="${avatarUrl1}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">
+                    <img src="${avatarUrl2}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">
+                </div>
+            </div>
+        `;
+    }
+    
+    // 4명 이상이면 2x2 그리드
+    return `<div class="grid-four">${members.slice(0, 4).map(avatar => {
+        const avatarUrl = `/characters/${encodeURIComponent(avatar)}`;
+        return `<img src="${avatarUrl}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">`;
+    }).join('')}</div>`;
 }
 
 /**
