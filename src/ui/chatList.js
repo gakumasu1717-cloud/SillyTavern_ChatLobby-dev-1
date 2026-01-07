@@ -559,7 +559,6 @@ function renderChatItem(chat, charAvatar, index) {
  * @param {string} charAvatar
  */
 function bindChatEvents(container, charAvatar) {
-    
     container.querySelectorAll('.lobby-chat-item').forEach((item, index) => {
         const chatContent = item.querySelector('.chat-content');
         const favBtn = item.querySelector('.chat-fav-btn');
@@ -568,7 +567,6 @@ function bindChatEvents(container, charAvatar) {
         
         // 채팅 열기
         createTouchClickHandler(chatContent, () => {
-            
             if (store.batchModeActive) {
                 const cb = item.querySelector('.chat-select-cb');
                 if (cb) {
