@@ -1022,24 +1022,27 @@ function renderGroupChats(container, chats, group) {
     
     for (const chat of sortedChats) {
         const fileName = chat.file_name || '';
-        const displayName = fileName.replace('.jsonl', '').split('_').pop() || '채팅';
+        // 파일명에서 날짜 부분 추출해서 보기 좋게 표시
+        const displayName = formatGroupChatName(fileName);
         const lastMes = chat.last_mes ? formatDate(chat.last_mes) : '';
-        const mesCount = chat.chat_size || 0;
-        const preview = chat.preview_message || '';
+        const mesCount = chat.chat_items || 0;
+        const preview = chat.mes || '';
+        const safePreview = escapeHtml(truncateText(preview, 10000));
         
         html += `
-            <div class="lobby-chat-item" 
-                 data-group-id="${escapeHtml(group.id)}"
-                 data-chat-file="${escapeHtml(fileName)}"
-                 data-preview="${escapeHtml(preview)}">
-                <div class="lobby-chat-info">
-                    <div class="lobby-chat-title">${escapeHtml(displayName)}</div>
-                    <div class="lobby-chat-meta">
-                        <span class="lobby-chat-date">${lastMes}</span>
-                        <span class="lobby-chat-count">${mesCount} messages</span>
-                    </div>
+        <div class="lobby-chat-item" 
+             data-group-id="${escapeHtml(group.id)}"
+             data-chat-file="${escapeHtml(fileName)}"
+             data-full-preview="${safePreview}">
+            <div class="chat-content">
+                <div class="chat-name">${escapeHtml(displayName)}</div>
+                <div class="chat-preview">${escapeHtml(truncateText(preview, 80))}</div>
+                <div class="chat-meta">
+                    ${mesCount > 0 ? `<span>💬 ${mesCount}개</span>` : ''}
+                    ${lastMes ? `<span>🕐 ${lastMes}</span>` : ''}
                 </div>
             </div>
+        </div>
         `;
     }
     
@@ -1055,6 +1058,25 @@ function renderGroupChats(container, chats, group) {
 }
 
 /**
+ * 그룹 채팅 파일명을 보기 좋게 포맷
+ * @param {string} fileName - 예: "2026-01-07@16h48m17s"
+ * @returns {string}
+ */
+function formatGroupChatName(fileName) {
+    // .jsonl 제거
+    let name = fileName.replace('.jsonl', '');
+    
+    // 날짜 패턴 매칭 (2026-01-07@16h48m17s)
+    const dateMatch = name.match(/(\d{4}-\d{2}-\d{2})@(\d{2})h(\d{2})m(\d{2})s/);
+    if (dateMatch) {
+        const [, date, hour, min] = dateMatch;
+        return `${date} ${hour}:${min}`;
+    }
+    
+    return name;
+}
+
+/**
  * 그룹 채팅 이벤트 바인딩
  * @param {HTMLElement} container
  * @param {Object} group
@@ -1066,8 +1088,16 @@ function bindGroupChatEvents(container, group) {
             if (chatFile) {
                 try {
                     await api.openGroupChat(group.id, chatFile);
-                    // 로비 닫기
-                    document.getElementById('chat-lobby-overlay')?.click();
+                    // 로비 닫기 - closeLobby 함수 호출
+                    const overlay = document.getElementById('chat-lobby-overlay');
+                    const lobbyContainer = document.getElementById('chat-lobby-container');
+                    const fab = document.getElementById('chat-lobby-fab');
+                    
+                    if (overlay) overlay.style.display = 'none';
+                    if (lobbyContainer) lobbyContainer.style.display = 'none';
+                    if (fab) fab.style.display = 'flex';
+                    
+                    store.setLobbyOpen(false);
                 } catch (error) {
                     console.error('[ChatList] Failed to open group chat:', error);
                     showToast('그룹 채팅을 열지 못했습니다.', 'error');

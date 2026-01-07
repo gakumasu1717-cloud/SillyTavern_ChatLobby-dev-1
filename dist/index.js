@@ -3131,23 +3131,25 @@ ${message}` : message;
     let html = "";
     for (const chat of sortedChats) {
       const fileName = chat.file_name || "";
-      const displayName = fileName.replace(".jsonl", "").split("_").pop() || "\uCC44\uD305";
+      const displayName = formatGroupChatName(fileName);
       const lastMes = chat.last_mes ? formatDate(chat.last_mes) : "";
-      const mesCount = chat.chat_size || 0;
-      const preview = chat.preview_message || "";
+      const mesCount = chat.chat_items || 0;
+      const preview = chat.mes || "";
+      const safePreview = escapeHtml(truncateText(preview, 1e4));
       html += `
-            <div class="lobby-chat-item" 
-                 data-group-id="${escapeHtml(group.id)}"
-                 data-chat-file="${escapeHtml(fileName)}"
-                 data-preview="${escapeHtml(preview)}">
-                <div class="lobby-chat-info">
-                    <div class="lobby-chat-title">${escapeHtml(displayName)}</div>
-                    <div class="lobby-chat-meta">
-                        <span class="lobby-chat-date">${lastMes}</span>
-                        <span class="lobby-chat-count">${mesCount} messages</span>
-                    </div>
+        <div class="lobby-chat-item" 
+             data-group-id="${escapeHtml(group.id)}"
+             data-chat-file="${escapeHtml(fileName)}"
+             data-full-preview="${safePreview}">
+            <div class="chat-content">
+                <div class="chat-name">${escapeHtml(displayName)}</div>
+                <div class="chat-preview">${escapeHtml(truncateText(preview, 80))}</div>
+                <div class="chat-meta">
+                    ${mesCount > 0 ? `<span>\u{1F4AC} ${mesCount}\uAC1C</span>` : ""}
+                    ${lastMes ? `<span>\u{1F550} ${lastMes}</span>` : ""}
                 </div>
             </div>
+        </div>
         `;
     }
     container.innerHTML = html || `
@@ -3158,6 +3160,15 @@ ${message}` : message;
     `;
     bindGroupChatEvents(container, group);
   }
+  function formatGroupChatName(fileName) {
+    let name = fileName.replace(".jsonl", "");
+    const dateMatch = name.match(/(\d{4}-\d{2}-\d{2})@(\d{2})h(\d{2})m(\d{2})s/);
+    if (dateMatch) {
+      const [, date, hour, min] = dateMatch;
+      return `${date} ${hour}:${min}`;
+    }
+    return name;
+  }
   function bindGroupChatEvents(container, group) {
     container.querySelectorAll(".lobby-chat-item").forEach((item) => {
       item.addEventListener("click", async () => {
@@ -3165,7 +3176,13 @@ ${message}` : message;
         if (chatFile) {
           try {
             await api.openGroupChat(group.id, chatFile);
-            document.getElementById("chat-lobby-overlay")?.click();
+            const overlay = document.getElementById("chat-lobby-overlay");
+            const lobbyContainer = document.getElementById("chat-lobby-container");
+            const fab = document.getElementById("chat-lobby-fab");
+            if (overlay) overlay.style.display = "none";
+            if (lobbyContainer) lobbyContainer.style.display = "none";
+            if (fab) fab.style.display = "flex";
+            store.setLobbyOpen(false);
           } catch (error) {
             console.error("[ChatList] Failed to open group chat:", error);
             showToast("\uADF8\uB8F9 \uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
