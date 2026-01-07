@@ -899,4 +899,167 @@ export function closeChatPanel() {
     const chatsPanel = document.getElementById('chat-lobby-chats');
     if (chatsPanel) chatsPanel.classList.remove('visible');
     store.setCurrentCharacter(null);
+    store.setCurrentGroup(null);
+}
+
+// ============================================
+// 그룹 채팅 목록
+// ============================================
+
+/**
+ * 그룹 채팅 목록 렌더링
+ * @param {Object} group - 그룹 정보
+ * @returns {Promise<void>}
+ */
+export async function renderGroupChatList(group) {
+    if (!group || !group.id) {
+        console.error('[ChatList] Invalid group data:', group);
+        return;
+    }
+    
+    const chatsPanel = document.getElementById('chat-lobby-chats');
+    const chatsList = document.getElementById('chat-lobby-chats-list');
+    
+    // 이미 같은 그룹의 채팅 패널이 열려있으면 렌더 스킵
+    if (store.currentGroup?.id === group.id && chatsPanel?.classList.contains('visible')) {
+        return;
+    }
+    
+    // 캐릭터 대신 그룹 설정
+    store.setCurrentCharacter(null);
+    store.setCurrentGroup(group);
+    
+    if (!chatsPanel || !chatsList) {
+        console.error('[ChatList] Chat panel elements not found');
+        return;
+    }
+    
+    // UI 표시
+    chatsPanel.classList.add('visible');
+    updateGroupChatHeader(group);
+    showFolderBar(false);  // 그룹은 폴더 기능 비활성화
+    
+    // 로딩 표시
+    chatsList.innerHTML = '<div class="lobby-loading">채팅 로딩 중...</div>';
+    
+    try {
+        const chats = await api.getGroupChats(group.id);
+        
+        if (!chats || chats.length === 0) {
+            updateChatCount(0);
+            chatsList.innerHTML = `
+                <div class="lobby-empty-state">
+                    <i>💬</i>
+                    <div>그룹 채팅 기록이 없습니다</div>
+                    <div style="font-size: 0.9em; margin-top: 5px;">새 채팅을 시작해보세요!</div>
+                </div>
+            `;
+            return;
+        }
+        
+        renderGroupChats(chatsList, chats, group);
+    } catch (error) {
+        console.error('[ChatList] Failed to load group chats:', error);
+        showToast('그룹 채팅 목록을 불러오지 못했습니다.', 'error');
+        chatsList.innerHTML = `
+            <div class="lobby-empty-state">
+                <i>⚠️</i>
+                <div>그룹 채팅 목록 로딩 실패</div>
+            </div>
+        `;
+    }
+}
+
+/**
+ * 그룹 채팅 헤더 업데이트
+ * @param {Object} group
+ */
+function updateGroupChatHeader(group) {
+    const headerTitle = document.querySelector('#chat-lobby-chats .chat-lobby-chats-header h3');
+    const headerAvatar = document.querySelector('#chat-lobby-chats .chat-lobby-chats-header img');
+    
+    if (headerTitle) {
+        headerTitle.textContent = group.name || '그룹';
+    }
+    
+    if (headerAvatar) {
+        headerAvatar.src = api.getGroupAvatarUrl(group);
+        headerAvatar.alt = group.name || '그룹';
+    }
+}
+
+/**
+ * 그룹 채팅 목록 내부 렌더링
+ * @param {HTMLElement} container
+ * @param {Array} chats
+ * @param {Object} group
+ */
+function renderGroupChats(container, chats, group) {
+    updateChatCount(chats.length);
+    updateHasChats(chats.length);
+    
+    // 날짜순 정렬 (최신순)
+    const sortedChats = chats.sort((a, b) => {
+        const dateA = a.last_mes ? new Date(a.last_mes).getTime() : 0;
+        const dateB = b.last_mes ? new Date(b.last_mes).getTime() : 0;
+        return dateB - dateA;
+    });
+    
+    let html = '';
+    
+    for (const chat of sortedChats) {
+        const fileName = chat.file_name || '';
+        const displayName = fileName.replace('.jsonl', '').split('_').pop() || '채팅';
+        const lastMes = chat.last_mes ? formatDate(chat.last_mes) : '';
+        const mesCount = chat.chat_size || 0;
+        const preview = chat.preview_message || '';
+        
+        html += `
+            <div class="lobby-chat-item" 
+                 data-group-id="${escapeHtml(group.id)}"
+                 data-chat-file="${escapeHtml(fileName)}"
+                 data-preview="${escapeHtml(preview)}">
+                <div class="lobby-chat-info">
+                    <div class="lobby-chat-title">${escapeHtml(displayName)}</div>
+                    <div class="lobby-chat-meta">
+                        <span class="lobby-chat-date">${lastMes}</span>
+                        <span class="lobby-chat-count">${mesCount} messages</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    
+    container.innerHTML = html || `
+        <div class="lobby-empty-state">
+            <i>💬</i>
+            <div>그룹 채팅이 없습니다</div>
+        </div>
+    `;
+    
+    // 그룹 채팅 클릭 이벤트 바인딩
+    bindGroupChatEvents(container, group);
+}
+
+/**
+ * 그룹 채팅 이벤트 바인딩
+ * @param {HTMLElement} container
+ * @param {Object} group
+ */
+function bindGroupChatEvents(container, group) {
+    container.querySelectorAll('.lobby-chat-item').forEach(item => {
+        item.addEventListener('click', async () => {
+            const chatFile = item.dataset.chatFile;
+            if (chatFile) {
+                try {
+                    await api.openGroupChat(group.id, chatFile);
+                    // 로비 닫기
+                    document.getElementById('chat-lobby-overlay')?.click();
+                } catch (error) {
+                    console.error('[ChatList] Failed to open group chat:', error);
+                    showToast('그룹 채팅을 열지 못했습니다.', 'error');
+                }
+            }
+        });
+    });
 }

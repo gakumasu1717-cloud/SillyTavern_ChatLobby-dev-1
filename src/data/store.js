@@ -34,6 +34,7 @@ class Store {
         /** @type {StoreState} */
         this._state = {
             currentCharacter: null,
+            currentGroup: null,  // 현재 선택된 그룹
             batchModeActive: false,
             isProcessingPersona: false,
             isLobbyOpen: false,
@@ -42,6 +43,7 @@ class Store {
             selectedTag: null,
             tagBarExpanded: false,
             onCharacterSelect: null,
+            onGroupSelect: null,  // 그룹 선택 콜백
             chatHandlers: {
                 onOpen: null,
                 onDelete: null
@@ -87,6 +89,14 @@ class Store {
     
     get onCharacterSelect() {
         return this._state.onCharacterSelect;
+    }
+    
+    get onGroupSelect() {
+        return this._state.onGroupSelect;
+    }
+    
+    get currentGroup() {
+        return this._state.currentGroup;
     }
     
     get chatHandlers() {
@@ -138,6 +148,14 @@ class Store {
         this._state.onCharacterSelect = handler;
     }
     
+    setGroupSelectHandler(handler) {
+        this._state.onGroupSelect = handler;
+    }
+    
+    setCurrentGroup(group) {
+        this._state.currentGroup = group;
+    }
+    
     setChatHandlers(handlers) {
         this._state.chatHandlers = {
             onOpen: handlers.onOpen || null,
@@ -155,6 +173,7 @@ class Store {
      */
     reset() {
         this._state.currentCharacter = null;
+        this._state.currentGroup = null;
         this._state.batchModeActive = false;
         this._state.searchTerm = '';
         this._state.selectedTag = null;

@@ -40,6 +40,14 @@ export function setCharacterSelectHandler(handler) {
     store.setCharacterSelectHandler(handler);
 }
 
+/**
+ * 그룹 선택 핸들러 설정
+ * @param {Function} handler - 그룹 선택 시 호출되는 콜백
+ */
+export function setGroupSelectHandler(handler) {
+    store.setGroupSelectHandler(handler);
+}
+
 // ============================================
 // 캐릭터 그리드 렌더링
 // ============================================
@@ -744,5 +752,207 @@ function bindTagEvents(container) {
             // 리렌더
             renderCharacterGrid(store.searchTerm);
         }, { debugName: `tag-${item.dataset.tag}` });
+    });
+}
+
+// ============================================
+// 그룹 그리드 렌더링
+// ============================================
+
+// 현재 뷰 상태 (characters 또는 groups)
+let currentView = 'characters';
+
+/**
+ * 현재 뷰 가져오기
+ * @returns {string}
+ */
+export function getCurrentView() {
+    return currentView;
+}
+
+/**
+ * 뷰 전환
+ * @param {string} view - 'characters' 또는 'groups'
+ */
+export function switchView(view) {
+    currentView = view;
+    
+    // 탭 UI 업데이트
+    document.querySelectorAll('#chat-lobby-view-tabs .view-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.view === view);
+    });
+    
+    // 검색창 placeholder 업데이트
+    const searchInput = document.getElementById('chat-lobby-search-input');
+    if (searchInput) {
+        searchInput.placeholder = view === 'groups' ? '🔍 그룹 검색...' : '🔍 캐릭터 검색...';
+        searchInput.value = '';
+    }
+    
+    // 태그바 숨기기/표시
+    const tagBar = document.getElementById('chat-lobby-tag-bar');
+    if (tagBar) {
+        tagBar.style.display = view === 'groups' ? 'none' : '';
+    }
+    
+    // 그리드 렌더링
+    if (view === 'groups') {
+        renderGroupGrid();
+    } else {
+        renderCharacterGrid('');
+    }
+}
+
+/**
+ * 그룹 그리드 렌더링
+ * @param {string} [searchTerm=''] - 검색어
+ */
+export async function renderGroupGrid(searchTerm = '') {
+    const container = document.getElementById('chat-lobby-characters');
+    if (!container) return;
+    
+    container.innerHTML = '<div class="lobby-loading">그룹 로딩 중...</div>';
+    
+    try {
+        const groups = await api.getGroups();
+        
+        if (!groups || groups.length === 0) {
+            container.innerHTML = `
+                <div class="lobby-empty-state">
+                    <i>👥</i>
+                    <div>그룹이 없습니다</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                        SillyTavern에서 그룹을 먼저 생성해주세요
+                    </div>
+                </div>
+            `;
+            return;
+        }
+        
+        // 검색 필터
+        let filtered = [...groups];
+        if (searchTerm) {
+            const term = searchTerm.toLowerCase();
+            filtered = filtered.filter(group =>
+                (group.name || '').toLowerCase().includes(term)
+            );
+        }
+        
+        // 정렬 (최근 채팅순)
+        filtered.sort((a, b) => {
+            const aTime = a.date_last_chat || 0;
+            const bTime = b.date_last_chat || 0;
+            return bTime - aTime;
+        });
+        
+        if (filtered.length === 0) {
+            container.innerHTML = `
+                <div class="lobby-empty-state">
+                    <i>🔍</i>
+                    <div>검색 결과가 없습니다</div>
+                </div>
+            `;
+            return;
+        }
+        
+        container.innerHTML = filtered.map(group => renderGroupCard(group)).join('');
+        bindGroupEvents(container);
+        
+    } catch (error) {
+        console.error('[GroupGrid] Failed to render:', error);
+        container.innerHTML = `
+            <div class="lobby-empty-state">
+                <i>⚠️</i>
+                <div>그룹 로딩 실패</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                    ${escapeHtml(error.message)}
+                </div>
+            </div>
+        `;
+    }
+}
+
+/**
+ * 그룹 카드 HTML 생성
+ * @param {Object} group - 그룹 객체
+ * @returns {string}
+ */
+function renderGroupCard(group) {
+    const name = group.name || 'Unknown Group';
+    const memberCount = Array.isArray(group.members) ? group.members.length : 0;
+    const chatCount = Array.isArray(group.chats) ? group.chats.length : 0;
+    const avatarUrl = api.getGroupAvatarUrl(group);
+    
+    // 멤버 이름 목록 (최대 3명)
+    const characters = api.getCharacters();
+    const memberNames = (group.members || [])
+        .slice(0, 3)
+        .map(avatar => {
+            const char = characters.find(c => c.avatar === avatar);
+            return char?.name || avatar.replace(/\.[^.]+$/, '');
+        })
+        .join(', ');
+    const moreMembers = memberCount > 3 ? ` 외 ${memberCount - 3}명` : '';
+    
+    return `
+        <div class="lobby-char-card lobby-group-card" data-group-id="${escapeHtml(group.id)}">
+            <div class="char-avatar-wrapper">
+                <img src="${avatarUrl}" alt="${escapeHtml(name)}" loading="lazy" onerror="this.src='/img/five.png'">
+                <div class="group-badge">👥 ${memberCount}</div>
+            </div>
+            <div class="char-info">
+                <div class="char-name">${escapeHtml(name)}</div>
+                <div class="char-meta group-meta">
+                    <span class="group-members" title="${escapeHtml(memberNames + moreMembers)}">
+                        ${escapeHtml(memberNames)}${moreMembers ? `<span class="more">${moreMembers}</span>` : ''}
+                    </span>
+                    <span class="chat-count">💬 ${chatCount}</span>
+                </div>
+            </div>
+        </div>
+    `;
+}
+
+/**
+ * 그룹 이벤트 바인딩
+ * @param {HTMLElement} container - 컨테이너
+ */
+function bindGroupEvents(container) {
+    container.querySelectorAll('.lobby-group-card').forEach(card => {
+        createTouchClickHandler(card, async () => {
+            const groupId = card.dataset.groupId;
+            if (!groupId) return;
+            
+            // 그룹 선택 시 처리
+            const groups = await api.getGroups();
+            const group = groups.find(g => g.id === groupId);
+            
+            if (group) {
+                // 채팅 패널 열기 (그룹용)
+                store.setCurrentGroup(group);
+                
+                // 이벤트 발생
+                if (typeof store.onGroupSelect === 'function') {
+                    store.onGroupSelect(group);
+                }
+            }
+        }, { debugName: `group-${card.dataset.groupId}` });
+    });
+}
+
+/**
+ * 뷰 탭 이벤트 초기화
+ */
+export function initViewTabs() {
+    const tabContainer = document.getElementById('chat-lobby-view-tabs');
+    if (!tabContainer) return;
+    
+    tabContainer.querySelectorAll('.view-tab').forEach(tab => {
+        createTouchClickHandler(tab, () => {
+            const view = tab.dataset.view;
+            if (view && view !== currentView) {
+                switchView(view);
+            }
+        }, { debugName: `view-tab-${tab.dataset.view}` });
     });
 }

@@ -888,6 +888,8 @@ ${message}` : message;
     constructor() {
       this._state = {
         currentCharacter: null,
+        currentGroup: null,
+        // 현재 선택된 그룹
         batchModeActive: false,
         isProcessingPersona: false,
         isLobbyOpen: false,
@@ -897,6 +899,8 @@ ${message}` : message;
         selectedTag: null,
         tagBarExpanded: false,
         onCharacterSelect: null,
+        onGroupSelect: null,
+        // 그룹 선택 콜백
         chatHandlers: {
           onOpen: null,
           onDelete: null
@@ -932,6 +936,12 @@ ${message}` : message;
     }
     get onCharacterSelect() {
       return this._state.onCharacterSelect;
+    }
+    get onGroupSelect() {
+      return this._state.onGroupSelect;
+    }
+    get currentGroup() {
+      return this._state.currentGroup;
     }
     get chatHandlers() {
       return this._state.chatHandlers;
@@ -970,6 +980,12 @@ ${message}` : message;
     setCharacterSelectHandler(handler) {
       this._state.onCharacterSelect = handler;
     }
+    setGroupSelectHandler(handler) {
+      this._state.onGroupSelect = handler;
+    }
+    setCurrentGroup(group) {
+      this._state.currentGroup = group;
+    }
     setChatHandlers(handlers) {
       this._state.chatHandlers = {
         onOpen: handlers.onOpen || null,
@@ -985,6 +1001,7 @@ ${message}` : message;
      */
     reset() {
       this._state.currentCharacter = null;
+      this._state.currentGroup = null;
       this._state.batchModeActive = false;
       this._state.searchTerm = "";
       this._state.selectedTag = null;
@@ -1480,6 +1497,168 @@ ${message}` : message;
       }
       return false;
     }
+    // ============================================
+    // 그룹 채팅 API
+    // ============================================
+    /**
+     * 그룹 목록 가져오기
+     * @returns {Promise<Array>}
+     */
+    async getGroups() {
+      if (cache.isValid("groups")) {
+        return cache.get("groups");
+      }
+      return cache.getOrFetch("groups", async () => {
+        try {
+          const context = this.getContext();
+          if (context?.groups && Array.isArray(context.groups)) {
+            cache.set("groups", context.groups);
+            return context.groups;
+          }
+          const response = await this.fetchWithRetry("/api/groups/all", {
+            method: "POST",
+            headers: this.getRequestHeaders()
+          });
+          if (!response.ok) {
+            console.error("[API] Failed to fetch groups:", response.status);
+            return [];
+          }
+          const groups = await response.json();
+          cache.set("groups", groups);
+          return groups;
+        } catch (error) {
+          console.error("[API] Failed to load groups:", error);
+          return [];
+        }
+      });
+    }
+    /**
+     * 그룹 채팅 목록 가져오기 (과거 채팅들)
+     * @param {string} groupId - 그룹 ID
+     * @returns {Promise<Array>}
+     */
+    async getGroupChats(groupId) {
+      const cacheKey = `groupChats_${groupId}`;
+      if (cache.isValid("groupChats", groupId)) {
+        return cache.get("groupChats", groupId);
+      }
+      try {
+        const groups = await this.getGroups();
+        const group = groups.find((g) => g.id === groupId);
+        if (!group || !Array.isArray(group.chats)) {
+          return [];
+        }
+        const chats = [];
+        for (const chatId of group.chats) {
+          try {
+            const response = await this.fetchWithRetry("/api/chats/group/get", {
+              method: "POST",
+              headers: this.getRequestHeaders(),
+              body: JSON.stringify({ id: chatId })
+            });
+            if (!response.ok) continue;
+            const messages = await response.json();
+            if (!Array.isArray(messages) || messages.length === 0) continue;
+            const hasHeader = messages[0] && Object.hasOwn(messages[0], "chat_metadata");
+            const msgData = hasHeader ? messages.slice(1) : messages;
+            const chatItems = msgData.length;
+            const lastMessage = msgData.length ? msgData[msgData.length - 1] : null;
+            const lastMes = lastMessage?.mes || "[\uBE48 \uCC44\uD305]";
+            const lastDate = lastMessage?.send_date || Date.now();
+            chats.push({
+              file_name: chatId,
+              mes: lastMes,
+              last_mes: lastDate,
+              chat_items: chatItems,
+              isGroupChat: true
+            });
+          } catch (e) {
+            console.warn(`[API] Failed to load group chat ${chatId}:`, e);
+          }
+        }
+        cache.set("groupChats", chats, groupId);
+        return chats;
+      } catch (error) {
+        console.error("[API] Failed to load group chats:", error);
+        return [];
+      }
+    }
+    /**
+     * 그룹 열기
+     * @param {string} groupId - 그룹 ID
+     * @returns {Promise<boolean>}
+     */
+    async openGroup(groupId) {
+      try {
+        const context = this.getContext();
+        if (typeof context?.openGroupById === "function") {
+          await context.openGroupById(groupId);
+          return true;
+        }
+        try {
+          const groupChatsModule = await import("../../../../group-chats.js");
+          if (typeof groupChatsModule.openGroupById === "function") {
+            await groupChatsModule.openGroupById(groupId);
+            return true;
+          }
+        } catch (e) {
+          console.warn("[API] Could not import group-chats module:", e);
+        }
+        const groupElement = document.querySelector(`.group_select[data-grid="${groupId}"]`);
+        if (groupElement) {
+          groupElement.click();
+          return true;
+        }
+        return false;
+      } catch (error) {
+        console.error("[API] Failed to open group:", error);
+        return false;
+      }
+    }
+    /**
+     * 그룹 채팅 열기
+     * @param {string} groupId - 그룹 ID
+     * @param {string} chatId - 채팅 ID
+     * @returns {Promise<boolean>}
+     */
+    async openGroupChat(groupId, chatId) {
+      try {
+        const context = this.getContext();
+        if (typeof context?.openGroupChat === "function") {
+          await context.openGroupChat(groupId, chatId);
+          return true;
+        }
+        try {
+          const groupChatsModule = await import("../../../../group-chats.js");
+          if (typeof groupChatsModule.openGroupChat === "function") {
+            await groupChatsModule.openGroupChat(groupId, chatId);
+            return true;
+          }
+        } catch (e) {
+          console.warn("[API] Could not import group-chats module:", e);
+        }
+        return false;
+      } catch (error) {
+        console.error("[API] Failed to open group chat:", error);
+        return false;
+      }
+    }
+    /**
+     * 그룹 아바타 URL 가져오기
+     * @param {Object} group - 그룹 객체
+     * @returns {string} 아바타 URL
+     */
+    getGroupAvatarUrl(group) {
+      if (!group) return "/img/five.png";
+      if (group.avatar_url && group.avatar_url !== "") {
+        return group.avatar_url;
+      }
+      if (Array.isArray(group.members) && group.members.length > 0) {
+        const firstMember = group.members[0];
+        return `/characters/${encodeURIComponent(firstMember)}`;
+      }
+      return "/img/five.png";
+    }
   };
   var api = new SillyTavernAPI();
 
@@ -1529,6 +1708,12 @@ ${message}` : message;
                         <div id="chat-lobby-persona-list">
                             <div class="lobby-loading">\uB85C\uB529 \uC911...</div>
                         </div>
+                    </div>
+                    
+                    <!-- \uCE90\uB9AD\uD130/\uADF8\uB8F9 \uD0ED -->
+                    <div id="chat-lobby-view-tabs">
+                        <button class="view-tab active" data-view="characters">\u{1F464} \uCE90\uB9AD\uD130</button>
+                        <button class="view-tab" data-view="groups">\u{1F465} \uADF8\uB8F9</button>
                     </div>
                     
                     <!-- \uAC80\uC0C9 + \uC815\uB82C -->
@@ -2293,6 +2478,19 @@ ${message}` : message;
   init_textUtils();
 
   // src/utils/dateUtils.js
+  function formatDate(timestamp) {
+    if (!timestamp) return "";
+    try {
+      const date = new Date(timestamp);
+      if (isNaN(date.getTime())) return "";
+      return date.toLocaleDateString("ko-KR", {
+        month: "short",
+        day: "numeric"
+      });
+    } catch {
+      return "";
+    }
+  }
   function parseDateFromFilename(filename) {
     const m = filename.match(/(\d{4})-(\d{2})-(\d{2})@(\d{2})h(\d{2})m(\d{2})s/);
     if (m) {
@@ -2860,6 +3058,117 @@ ${message}` : message;
     const chatsPanel = document.getElementById("chat-lobby-chats");
     if (chatsPanel) chatsPanel.classList.remove("visible");
     store.setCurrentCharacter(null);
+    store.setCurrentGroup(null);
+  }
+  async function renderGroupChatList(group) {
+    if (!group || !group.id) {
+      console.error("[ChatList] Invalid group data:", group);
+      return;
+    }
+    const chatsPanel = document.getElementById("chat-lobby-chats");
+    const chatsList = document.getElementById("chat-lobby-chats-list");
+    if (store.currentGroup?.id === group.id && chatsPanel?.classList.contains("visible")) {
+      return;
+    }
+    store.setCurrentCharacter(null);
+    store.setCurrentGroup(group);
+    if (!chatsPanel || !chatsList) {
+      console.error("[ChatList] Chat panel elements not found");
+      return;
+    }
+    chatsPanel.classList.add("visible");
+    updateGroupChatHeader(group);
+    showFolderBar(false);
+    chatsList.innerHTML = '<div class="lobby-loading">\uCC44\uD305 \uB85C\uB529 \uC911...</div>';
+    try {
+      const chats = await api.getGroupChats(group.id);
+      if (!chats || chats.length === 0) {
+        updateChatCount(0);
+        chatsList.innerHTML = `
+                <div class="lobby-empty-state">
+                    <i>\u{1F4AC}</i>
+                    <div>\uADF8\uB8F9 \uCC44\uD305 \uAE30\uB85D\uC774 \uC5C6\uC2B5\uB2C8\uB2E4</div>
+                    <div style="font-size: 0.9em; margin-top: 5px;">\uC0C8 \uCC44\uD305\uC744 \uC2DC\uC791\uD574\uBCF4\uC138\uC694!</div>
+                </div>
+            `;
+        return;
+      }
+      renderGroupChats(chatsList, chats, group);
+    } catch (error) {
+      console.error("[ChatList] Failed to load group chats:", error);
+      showToast("\uADF8\uB8F9 \uCC44\uD305 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
+      chatsList.innerHTML = `
+            <div class="lobby-empty-state">
+                <i>\u26A0\uFE0F</i>
+                <div>\uADF8\uB8F9 \uCC44\uD305 \uBAA9\uB85D \uB85C\uB529 \uC2E4\uD328</div>
+            </div>
+        `;
+    }
+  }
+  function updateGroupChatHeader(group) {
+    const headerTitle = document.querySelector("#chat-lobby-chats .chat-lobby-chats-header h3");
+    const headerAvatar = document.querySelector("#chat-lobby-chats .chat-lobby-chats-header img");
+    if (headerTitle) {
+      headerTitle.textContent = group.name || "\uADF8\uB8F9";
+    }
+    if (headerAvatar) {
+      headerAvatar.src = api.getGroupAvatarUrl(group);
+      headerAvatar.alt = group.name || "\uADF8\uB8F9";
+    }
+  }
+  function renderGroupChats(container, chats, group) {
+    updateChatCount(chats.length);
+    updateHasChats(chats.length);
+    const sortedChats = chats.sort((a, b) => {
+      const dateA = a.last_mes ? new Date(a.last_mes).getTime() : 0;
+      const dateB = b.last_mes ? new Date(b.last_mes).getTime() : 0;
+      return dateB - dateA;
+    });
+    let html = "";
+    for (const chat of sortedChats) {
+      const fileName = chat.file_name || "";
+      const displayName = fileName.replace(".jsonl", "").split("_").pop() || "\uCC44\uD305";
+      const lastMes = chat.last_mes ? formatDate(chat.last_mes) : "";
+      const mesCount = chat.chat_size || 0;
+      const preview = chat.preview_message || "";
+      html += `
+            <div class="lobby-chat-item" 
+                 data-group-id="${escapeHtml(group.id)}"
+                 data-chat-file="${escapeHtml(fileName)}"
+                 data-preview="${escapeHtml(preview)}">
+                <div class="lobby-chat-info">
+                    <div class="lobby-chat-title">${escapeHtml(displayName)}</div>
+                    <div class="lobby-chat-meta">
+                        <span class="lobby-chat-date">${lastMes}</span>
+                        <span class="lobby-chat-count">${mesCount} messages</span>
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+    container.innerHTML = html || `
+        <div class="lobby-empty-state">
+            <i>\u{1F4AC}</i>
+            <div>\uADF8\uB8F9 \uCC44\uD305\uC774 \uC5C6\uC2B5\uB2C8\uB2E4</div>
+        </div>
+    `;
+    bindGroupChatEvents(container, group);
+  }
+  function bindGroupChatEvents(container, group) {
+    container.querySelectorAll(".lobby-chat-item").forEach((item) => {
+      item.addEventListener("click", async () => {
+        const chatFile = item.dataset.chatFile;
+        if (chatFile) {
+          try {
+            await api.openGroupChat(group.id, chatFile);
+            document.getElementById("chat-lobby-overlay")?.click();
+          } catch (error) {
+            console.error("[ChatList] Failed to open group chat:", error);
+            showToast("\uADF8\uB8F9 \uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
+          }
+        }
+      });
+    });
   }
 
   // src/ui/characterGrid.js
@@ -2872,6 +3181,9 @@ ${message}` : message;
   }
   function setCharacterSelectHandler(handler) {
     store.setCharacterSelectHandler(handler);
+  }
+  function setGroupSelectHandler(handler) {
+    store.setGroupSelectHandler(handler);
   }
   async function renderCharacterGrid(searchTerm = "", sortOverride = null) {
     if (isRendering) {
@@ -3309,6 +3621,138 @@ ${message}` : message;
         }
         renderCharacterGrid(store.searchTerm);
       }, { debugName: `tag-${item.dataset.tag}` });
+    });
+  }
+  var currentView = "characters";
+  function switchView(view) {
+    currentView = view;
+    document.querySelectorAll("#chat-lobby-view-tabs .view-tab").forEach((tab) => {
+      tab.classList.toggle("active", tab.dataset.view === view);
+    });
+    const searchInput = document.getElementById("chat-lobby-search-input");
+    if (searchInput) {
+      searchInput.placeholder = view === "groups" ? "\u{1F50D} \uADF8\uB8F9 \uAC80\uC0C9..." : "\u{1F50D} \uCE90\uB9AD\uD130 \uAC80\uC0C9...";
+      searchInput.value = "";
+    }
+    const tagBar = document.getElementById("chat-lobby-tag-bar");
+    if (tagBar) {
+      tagBar.style.display = view === "groups" ? "none" : "";
+    }
+    if (view === "groups") {
+      renderGroupGrid();
+    } else {
+      renderCharacterGrid("");
+    }
+  }
+  async function renderGroupGrid(searchTerm = "") {
+    const container = document.getElementById("chat-lobby-characters");
+    if (!container) return;
+    container.innerHTML = '<div class="lobby-loading">\uADF8\uB8F9 \uB85C\uB529 \uC911...</div>';
+    try {
+      const groups = await api.getGroups();
+      if (!groups || groups.length === 0) {
+        container.innerHTML = `
+                <div class="lobby-empty-state">
+                    <i>\u{1F465}</i>
+                    <div>\uADF8\uB8F9\uC774 \uC5C6\uC2B5\uB2C8\uB2E4</div>
+                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                        SillyTavern\uC5D0\uC11C \uADF8\uB8F9\uC744 \uBA3C\uC800 \uC0DD\uC131\uD574\uC8FC\uC138\uC694
+                    </div>
+                </div>
+            `;
+        return;
+      }
+      let filtered = [...groups];
+      if (searchTerm) {
+        const term = searchTerm.toLowerCase();
+        filtered = filtered.filter(
+          (group) => (group.name || "").toLowerCase().includes(term)
+        );
+      }
+      filtered.sort((a, b) => {
+        const aTime = a.date_last_chat || 0;
+        const bTime = b.date_last_chat || 0;
+        return bTime - aTime;
+      });
+      if (filtered.length === 0) {
+        container.innerHTML = `
+                <div class="lobby-empty-state">
+                    <i>\u{1F50D}</i>
+                    <div>\uAC80\uC0C9 \uACB0\uACFC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4</div>
+                </div>
+            `;
+        return;
+      }
+      container.innerHTML = filtered.map((group) => renderGroupCard(group)).join("");
+      bindGroupEvents(container);
+    } catch (error) {
+      console.error("[GroupGrid] Failed to render:", error);
+      container.innerHTML = `
+            <div class="lobby-empty-state">
+                <i>\u26A0\uFE0F</i>
+                <div>\uADF8\uB8F9 \uB85C\uB529 \uC2E4\uD328</div>
+                <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                    ${escapeHtml(error.message)}
+                </div>
+            </div>
+        `;
+    }
+  }
+  function renderGroupCard(group) {
+    const name = group.name || "Unknown Group";
+    const memberCount = Array.isArray(group.members) ? group.members.length : 0;
+    const chatCount = Array.isArray(group.chats) ? group.chats.length : 0;
+    const avatarUrl = api.getGroupAvatarUrl(group);
+    const characters = api.getCharacters();
+    const memberNames = (group.members || []).slice(0, 3).map((avatar) => {
+      const char = characters.find((c) => c.avatar === avatar);
+      return char?.name || avatar.replace(/\.[^.]+$/, "");
+    }).join(", ");
+    const moreMembers = memberCount > 3 ? ` \uC678 ${memberCount - 3}\uBA85` : "";
+    return `
+        <div class="lobby-char-card lobby-group-card" data-group-id="${escapeHtml(group.id)}">
+            <div class="char-avatar-wrapper">
+                <img src="${avatarUrl}" alt="${escapeHtml(name)}" loading="lazy" onerror="this.src='/img/five.png'">
+                <div class="group-badge">\u{1F465} ${memberCount}</div>
+            </div>
+            <div class="char-info">
+                <div class="char-name">${escapeHtml(name)}</div>
+                <div class="char-meta group-meta">
+                    <span class="group-members" title="${escapeHtml(memberNames + moreMembers)}">
+                        ${escapeHtml(memberNames)}${moreMembers ? `<span class="more">${moreMembers}</span>` : ""}
+                    </span>
+                    <span class="chat-count">\u{1F4AC} ${chatCount}</span>
+                </div>
+            </div>
+        </div>
+    `;
+  }
+  function bindGroupEvents(container) {
+    container.querySelectorAll(".lobby-group-card").forEach((card) => {
+      createTouchClickHandler(card, async () => {
+        const groupId = card.dataset.groupId;
+        if (!groupId) return;
+        const groups = await api.getGroups();
+        const group = groups.find((g) => g.id === groupId);
+        if (group) {
+          store.setCurrentGroup(group);
+          if (typeof store.onGroupSelect === "function") {
+            store.onGroupSelect(group);
+          }
+        }
+      }, { debugName: `group-${card.dataset.groupId}` });
+    });
+  }
+  function initViewTabs() {
+    const tabContainer = document.getElementById("chat-lobby-view-tabs");
+    if (!tabContainer) return;
+    tabContainer.querySelectorAll(".view-tab").forEach((tab) => {
+      createTouchClickHandler(tab, () => {
+        const view = tab.dataset.view;
+        if (view && view !== currentView) {
+          switchView(view);
+        }
+      }, { debugName: `view-tab-${tab.dataset.view}` });
     });
   }
 
@@ -5167,6 +5611,9 @@ ${message}` : message;
       setCharacterSelectHandler((character) => {
         renderChatList(character);
       });
+      setGroupSelectHandler((group) => {
+        renderGroupChatList(group);
+      });
       setChatHandlers({
         onOpen: openChat,
         onDelete: deleteChat
@@ -5243,6 +5690,7 @@ ${message}` : message;
           toggleBatchMode();
         }
         closeChatPanel();
+        initViewTabs();
         const characters = api.getCharacters();
         await Promise.all([
           renderPersonaBar(),

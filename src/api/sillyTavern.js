@@ -585,6 +585,211 @@ class SillyTavernAPI {
         // 방법 3: jQuery로 채팅 목록에서 직접 선택
         return false;
     }
+    
+    // ============================================
+    // 그룹 채팅 API
+    // ============================================
+    
+    /**
+     * 그룹 목록 가져오기
+     * @returns {Promise<Array>}
+     */
+    async getGroups() {
+        // 캐시 우선
+        if (cache.isValid('groups')) {
+            return cache.get('groups');
+        }
+        
+        return cache.getOrFetch('groups', async () => {
+            try {
+                // SillyTavern context에서 groups 가져오기
+                const context = this.getContext();
+                if (context?.groups && Array.isArray(context.groups)) {
+                    cache.set('groups', context.groups);
+                    return context.groups;
+                }
+                
+                // Fallback: API 직접 호출
+                const response = await this.fetchWithRetry('/api/groups/all', {
+                    method: 'POST',
+                    headers: this.getRequestHeaders(),
+                });
+                
+                if (!response.ok) {
+                    console.error('[API] Failed to fetch groups:', response.status);
+                    return [];
+                }
+                
+                const groups = await response.json();
+                cache.set('groups', groups);
+                return groups;
+            } catch (error) {
+                console.error('[API] Failed to load groups:', error);
+                return [];
+            }
+        });
+    }
+    
+    /**
+     * 그룹 채팅 목록 가져오기 (과거 채팅들)
+     * @param {string} groupId - 그룹 ID
+     * @returns {Promise<Array>}
+     */
+    async getGroupChats(groupId) {
+        const cacheKey = `groupChats_${groupId}`;
+        
+        if (cache.isValid('groupChats', groupId)) {
+            return cache.get('groupChats', groupId);
+        }
+        
+        try {
+            const groups = await this.getGroups();
+            const group = groups.find(g => g.id === groupId);
+            
+            if (!group || !Array.isArray(group.chats)) {
+                return [];
+            }
+            
+            const chats = [];
+            
+            for (const chatId of group.chats) {
+                try {
+                    // 각 채팅의 메시지 로드
+                    const response = await this.fetchWithRetry('/api/chats/group/get', {
+                        method: 'POST',
+                        headers: this.getRequestHeaders(),
+                        body: JSON.stringify({ id: chatId }),
+                    });
+                    
+                    if (!response.ok) continue;
+                    
+                    const messages = await response.json();
+                    if (!Array.isArray(messages) || messages.length === 0) continue;
+                    
+                    // 헤더 제거
+                    const hasHeader = messages[0] && Object.hasOwn(messages[0], 'chat_metadata');
+                    const msgData = hasHeader ? messages.slice(1) : messages;
+                    
+                    const chatItems = msgData.length;
+                    const lastMessage = msgData.length ? msgData[msgData.length - 1] : null;
+                    const lastMes = lastMessage?.mes || '[빈 채팅]';
+                    const lastDate = lastMessage?.send_date || Date.now();
+                    
+                    chats.push({
+                        file_name: chatId,
+                        mes: lastMes,
+                        last_mes: lastDate,
+                        chat_items: chatItems,
+                        isGroupChat: true,
+                    });
+                } catch (e) {
+                    console.warn(`[API] Failed to load group chat ${chatId}:`, e);
+                }
+            }
+            
+            cache.set('groupChats', chats, groupId);
+            return chats;
+        } catch (error) {
+            console.error('[API] Failed to load group chats:', error);
+            return [];
+        }
+    }
+    
+    /**
+     * 그룹 열기
+     * @param {string} groupId - 그룹 ID
+     * @returns {Promise<boolean>}
+     */
+    async openGroup(groupId) {
+        try {
+            const context = this.getContext();
+            
+            // SillyTavern의 openGroupById 함수 사용
+            if (typeof context?.openGroupById === 'function') {
+                await context.openGroupById(groupId);
+                return true;
+            }
+            
+            // Fallback: 직접 import 시도
+            try {
+                const groupChatsModule = await import('../../../../group-chats.js');
+                if (typeof groupChatsModule.openGroupById === 'function') {
+                    await groupChatsModule.openGroupById(groupId);
+                    return true;
+                }
+            } catch (e) {
+                console.warn('[API] Could not import group-chats module:', e);
+            }
+            
+            // Fallback: jQuery 클릭
+            const groupElement = document.querySelector(`.group_select[data-grid="${groupId}"]`);
+            if (groupElement) {
+                groupElement.click();
+                return true;
+            }
+            
+            return false;
+        } catch (error) {
+            console.error('[API] Failed to open group:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * 그룹 채팅 열기
+     * @param {string} groupId - 그룹 ID
+     * @param {string} chatId - 채팅 ID
+     * @returns {Promise<boolean>}
+     */
+    async openGroupChat(groupId, chatId) {
+        try {
+            const context = this.getContext();
+            
+            // SillyTavern의 openGroupChat 함수 사용
+            if (typeof context?.openGroupChat === 'function') {
+                await context.openGroupChat(groupId, chatId);
+                return true;
+            }
+            
+            // Fallback: 직접 import 시도
+            try {
+                const groupChatsModule = await import('../../../../group-chats.js');
+                if (typeof groupChatsModule.openGroupChat === 'function') {
+                    await groupChatsModule.openGroupChat(groupId, chatId);
+                    return true;
+                }
+            } catch (e) {
+                console.warn('[API] Could not import group-chats module:', e);
+            }
+            
+            return false;
+        } catch (error) {
+            console.error('[API] Failed to open group chat:', error);
+            return false;
+        }
+    }
+    
+    /**
+     * 그룹 아바타 URL 가져오기
+     * @param {Object} group - 그룹 객체
+     * @returns {string} 아바타 URL
+     */
+    getGroupAvatarUrl(group) {
+        if (!group) return '/img/five.png';
+        
+        // 커스텀 아바타가 있으면 사용
+        if (group.avatar_url && group.avatar_url !== '') {
+            return group.avatar_url;
+        }
+        
+        // 멤버 아바타 콜라주용 첫 번째 멤버
+        if (Array.isArray(group.members) && group.members.length > 0) {
+            const firstMember = group.members[0];
+            return `/characters/${encodeURIComponent(firstMember)}`;
+        }
+        
+        return '/img/five.png';
+    }
 }
 
 // 싱글톤 인스턴스
