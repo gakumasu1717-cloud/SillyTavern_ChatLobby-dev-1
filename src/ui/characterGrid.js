@@ -599,13 +599,16 @@ async function sortCharactersAndGroups(items, sortOption) {
         if (a.type === 'character') {
             aDate = lastChatCache.getForSort(a.data);
         } else {
-            aDate = a.data.last_mes ? new Date(a.data.last_mes).getTime() : 0;
+            // last_mes가 숫자면 그대로, 문자열이면 파싱
+            const aLastMes = a.data.last_mes;
+            aDate = typeof aLastMes === 'number' ? aLastMes : (aLastMes ? new Date(aLastMes).getTime() : 0);
         }
         
         if (b.type === 'character') {
             bDate = lastChatCache.getForSort(b.data);
         } else {
-            bDate = b.data.last_mes ? new Date(b.data.last_mes).getTime() : 0;
+            const bLastMes = b.data.last_mes;
+            bDate = typeof bLastMes === 'number' ? bLastMes : (bLastMes ? new Date(bLastMes).getTime() : 0);
         }
         
         // 디버그: 정렬 비교 출력 (첫 몇개만)

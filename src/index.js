@@ -1367,9 +1367,13 @@ import { openDrawerSafely } from './utils/drawerHelper.js';
         closeLobby();
         
         // 그룹 선택 (UI 클릭으로)
-        const groupItem = document.querySelector(`.group_select[grid="${group.id}"]`);
+        const groupItem = document.querySelector(`.group_select[data-grid="${group.id}"]`);
         if (groupItem) {
-            groupItem.click();
+            if (window.$) {
+                window.$(groupItem).trigger('click');
+            } else {
+                groupItem.click();
+            }
         } else {
             // openGroupChat API 사용
             await api.openGroupChat(group.id);

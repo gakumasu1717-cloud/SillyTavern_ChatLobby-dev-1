@@ -644,44 +644,52 @@ class SillyTavernAPI {
                 return [];
             }
             
-            const chats = [];
+            // 병렬 처리로 성능 개선 (최대 5개씩 배치)
+            const BATCH_SIZE = 5;
+            const allChats = [];
             
-            for (const chatId of group.chats) {
-                try {
-                    // 각 채팅의 메시지 로드
-                    const response = await this.fetchWithRetry('/api/chats/group/get', {
-                        method: 'POST',
-                        headers: this.getRequestHeaders(),
-                        body: JSON.stringify({ id: chatId }),
-                    });
-                    
-                    if (!response.ok) continue;
-                    
-                    const messages = await response.json();
-                    if (!Array.isArray(messages) || messages.length === 0) continue;
-                    
-                    // 헤더 제거
-                    const hasHeader = messages[0] && Object.hasOwn(messages[0], 'chat_metadata');
-                    const msgData = hasHeader ? messages.slice(1) : messages;
-                    
-                    const chatItems = msgData.length;
-                    const lastMessage = msgData.length ? msgData[msgData.length - 1] : null;
-                    const lastMes = lastMessage?.mes || '[빈 채팅]';
-                    const lastDate = lastMessage?.send_date || Date.now();
-                    
-                    chats.push({
-                        file_name: chatId,
-                        mes: lastMes,
-                        last_mes: lastDate,
-                        chat_items: chatItems,
-                        isGroupChat: true,
-                    });
-                } catch (e) {
-                    console.warn(`[API] Failed to load group chat ${chatId}:`, e);
-                }
+            for (let i = 0; i < group.chats.length; i += BATCH_SIZE) {
+                const batch = group.chats.slice(i, i + BATCH_SIZE);
+                const batchResults = await Promise.all(
+                    batch.map(async (chatId) => {
+                        try {
+                            const response = await this.fetchWithRetry('/api/chats/group/get', {
+                                method: 'POST',
+                                headers: this.getRequestHeaders(),
+                                body: JSON.stringify({ id: chatId }),
+                            });
+                            
+                            if (!response.ok) return null;
+                            
+                            const messages = await response.json();
+                            if (!Array.isArray(messages) || messages.length === 0) return null;
+                            
+                            // 헤더 제거
+                            const hasHeader = messages[0] && Object.hasOwn(messages[0], 'chat_metadata');
+                            const msgData = hasHeader ? messages.slice(1) : messages;
+                            
+                            const chatItems = msgData.length;
+                            const lastMessage = msgData.length ? msgData[msgData.length - 1] : null;
+                            const lastMes = lastMessage?.mes || '[빈 채팅]';
+                            const lastDate = lastMessage?.send_date || Date.now();
+                            
+                            return {
+                                file_name: chatId,
+                                mes: lastMes,
+                                last_mes: lastDate,
+                                chat_items: chatItems,
+                                isGroupChat: true,
+                            };
+                        } catch (e) {
+                            console.warn(`[API] Failed to load group chat ${chatId}:`, e);
+                            return null;
+                        }
+                    })
+                );
+                allChats.push(...batchResults.filter(Boolean));
             }
             
-            return chats;
+            return allChats;
         } catch (error) {
             console.error('[API] Failed to load group chats:', error);
             return [];

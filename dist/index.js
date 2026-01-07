@@ -1544,35 +1544,43 @@ ${message}` : message;
         if (!group || !Array.isArray(group.chats)) {
           return [];
         }
-        const chats = [];
-        for (const chatId of group.chats) {
-          try {
-            const response = await this.fetchWithRetry("/api/chats/group/get", {
-              method: "POST",
-              headers: this.getRequestHeaders(),
-              body: JSON.stringify({ id: chatId })
-            });
-            if (!response.ok) continue;
-            const messages = await response.json();
-            if (!Array.isArray(messages) || messages.length === 0) continue;
-            const hasHeader = messages[0] && Object.hasOwn(messages[0], "chat_metadata");
-            const msgData = hasHeader ? messages.slice(1) : messages;
-            const chatItems = msgData.length;
-            const lastMessage = msgData.length ? msgData[msgData.length - 1] : null;
-            const lastMes = lastMessage?.mes || "[\uBE48 \uCC44\uD305]";
-            const lastDate = lastMessage?.send_date || Date.now();
-            chats.push({
-              file_name: chatId,
-              mes: lastMes,
-              last_mes: lastDate,
-              chat_items: chatItems,
-              isGroupChat: true
-            });
-          } catch (e) {
-            console.warn(`[API] Failed to load group chat ${chatId}:`, e);
-          }
+        const BATCH_SIZE = 5;
+        const allChats = [];
+        for (let i = 0; i < group.chats.length; i += BATCH_SIZE) {
+          const batch = group.chats.slice(i, i + BATCH_SIZE);
+          const batchResults = await Promise.all(
+            batch.map(async (chatId) => {
+              try {
+                const response = await this.fetchWithRetry("/api/chats/group/get", {
+                  method: "POST",
+                  headers: this.getRequestHeaders(),
+                  body: JSON.stringify({ id: chatId })
+                });
+                if (!response.ok) return null;
+                const messages = await response.json();
+                if (!Array.isArray(messages) || messages.length === 0) return null;
+                const hasHeader = messages[0] && Object.hasOwn(messages[0], "chat_metadata");
+                const msgData = hasHeader ? messages.slice(1) : messages;
+                const chatItems = msgData.length;
+                const lastMessage = msgData.length ? msgData[msgData.length - 1] : null;
+                const lastMes = lastMessage?.mes || "[\uBE48 \uCC44\uD305]";
+                const lastDate = lastMessage?.send_date || Date.now();
+                return {
+                  file_name: chatId,
+                  mes: lastMes,
+                  last_mes: lastDate,
+                  chat_items: chatItems,
+                  isGroupChat: true
+                };
+              } catch (e) {
+                console.warn(`[API] Failed to load group chat ${chatId}:`, e);
+                return null;
+              }
+            })
+          );
+          allChats.push(...batchResults.filter(Boolean));
         }
-        return chats;
+        return allChats;
       } catch (error) {
         console.error("[API] Failed to load group chats:", error);
         return [];
@@ -3832,12 +3840,14 @@ ${message}` : message;
       if (a.type === "character") {
         aDate = lastChatCache.getForSort(a.data);
       } else {
-        aDate = a.data.last_mes ? new Date(a.data.last_mes).getTime() : 0;
+        const aLastMes = a.data.last_mes;
+        aDate = typeof aLastMes === "number" ? aLastMes : aLastMes ? new Date(aLastMes).getTime() : 0;
       }
       if (b.type === "character") {
         bDate = lastChatCache.getForSort(b.data);
       } else {
-        bDate = b.data.last_mes ? new Date(b.data.last_mes).getTime() : 0;
+        const bLastMes = b.data.last_mes;
+        bDate = typeof bLastMes === "number" ? bLastMes : bLastMes ? new Date(bLastMes).getTime() : 0;
       }
       if (Math.random() < 0.05) {
         console.log("[Sort]", a.type, a.data.name, aDate, "vs", b.type, b.data.name, bDate);
@@ -6637,9 +6647,13 @@ ${message}` : message;
         return;
       }
       closeLobby();
-      const groupItem = document.querySelector(`.group_select[grid="${group.id}"]`);
+      const groupItem = document.querySelector(`.group_select[data-grid="${group.id}"]`);
       if (groupItem) {
-        groupItem.click();
+        if (window.$) {
+          window.$(groupItem).trigger("click");
+        } else {
+          groupItem.click();
+        }
       } else {
         await api.openGroupChat(group.id);
       }
