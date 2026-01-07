@@ -910,12 +910,10 @@ class SillyTavernAPI {
             const fileName = chatFileName.replace('.jsonl', '');
             console.log('[API] deleteGroupChat:', { groupId, fileName });
             
-            // SillyTavern API 호출
-            const response = await fetch('/api/chats/group/delete', {
+            // SillyTavern API 호출 (인증 헤더 포함)
+            const response = await this.fetchWithRetry('/api/chats/group/delete', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
+                headers: this.getRequestHeaders(),
                 body: JSON.stringify({
                     id: groupId,
                     chat_id: fileName

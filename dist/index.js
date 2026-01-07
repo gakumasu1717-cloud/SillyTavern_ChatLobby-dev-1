@@ -1751,11 +1751,9 @@ ${message}` : message;
       try {
         const fileName = chatFileName.replace(".jsonl", "");
         console.log("[API] deleteGroupChat:", { groupId, fileName });
-        const response = await fetch("/api/chats/group/delete", {
+        const response = await this.fetchWithRetry("/api/chats/group/delete", {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json"
-          },
+          headers: this.getRequestHeaders(),
           body: JSON.stringify({
             id: groupId,
             chat_id: fileName
