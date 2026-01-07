@@ -352,34 +352,38 @@ async function startNewGroupChat(btn) {
         return;
     }
     
+    console.log('[ChatHandlers] Starting new group chat:', { groupId, groupName });
+    
     try {
-        // 로비 닫기 (상태 유지)
-        closeLobbyKeepState();
+        // 1. 그룹 선택 (UI 클릭 방식 - 정확한 선택자 사용)
+        const groupCard = document.querySelector(`.group_select[data-grid="${groupId}"]`);
         
-        const context = api.getContext();
-        
-        // 1. 그룹 선택
-        if (typeof context?.selectGroupById === 'function') {
-            await context.selectGroupById(groupId);
-        } else if (typeof context?.openGroupById === 'function') {
-            await context.openGroupById(groupId, false);
-        } else {
-            // Fallback: UI 클릭
-            const groupCard = document.querySelector(`.group_select_container[grid="${groupId}"]`);
-            if (groupCard) {
-                groupCard.click();
-                await new Promise(resolve => setTimeout(resolve, 500));
-            }
+        if (!groupCard) {
+            console.error('[ChatHandlers] Group card not found:', groupId);
+            showToast('그룹을 찾을 수 없습니다.', 'error');
+            return;
         }
         
-        // 그룹 선택 완료 대기
-        await new Promise(resolve => setTimeout(resolve, 300));
+        console.log('[ChatHandlers] Found group card, clicking...');
+        if (window.$) {
+            window.$(groupCard).trigger('click');
+        } else {
+            groupCard.click();
+        }
         
-        // 2. 새 채팅 시작 버튼 클릭
+        // 2. 그룹 선택 완료 대기
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // 3. 로비 닫기
+        closeLobbyKeepState();
+        
+        // 4. 새 채팅 버튼 클릭
         const newChatBtn = await waitForElement('#option_start_new_chat', 1000);
         if (newChatBtn) {
+            console.log('[ChatHandlers] Clicking new chat button');
             newChatBtn.click();
         } else {
+            console.error('[ChatHandlers] New chat button not found');
             showToast('새 채팅 버튼을 찾을 수 없습니다.', 'error');
         }
         

@@ -4207,25 +4207,28 @@ ${message}` : message;
       showToast("\uADF8\uB8F9\uC774 \uC120\uD0DD\uB418\uC9C0 \uC54A\uC558\uC2B5\uB2C8\uB2E4.", "error");
       return;
     }
+    console.log("[ChatHandlers] Starting new group chat:", { groupId, groupName });
     try {
-      closeLobbyKeepState();
-      const context = api.getContext();
-      if (typeof context?.selectGroupById === "function") {
-        await context.selectGroupById(groupId);
-      } else if (typeof context?.openGroupById === "function") {
-        await context.openGroupById(groupId, false);
-      } else {
-        const groupCard = document.querySelector(`.group_select_container[grid="${groupId}"]`);
-        if (groupCard) {
-          groupCard.click();
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
+      const groupCard = document.querySelector(`.group_select[data-grid="${groupId}"]`);
+      if (!groupCard) {
+        console.error("[ChatHandlers] Group card not found:", groupId);
+        showToast("\uADF8\uB8F9\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
+        return;
       }
-      await new Promise((resolve) => setTimeout(resolve, 300));
+      console.log("[ChatHandlers] Found group card, clicking...");
+      if (window.$) {
+        window.$(groupCard).trigger("click");
+      } else {
+        groupCard.click();
+      }
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      closeLobbyKeepState();
       const newChatBtn = await waitForElement("#option_start_new_chat", 1e3);
       if (newChatBtn) {
+        console.log("[ChatHandlers] Clicking new chat button");
         newChatBtn.click();
       } else {
+        console.error("[ChatHandlers] New chat button not found");
         showToast("\uC0C8 \uCC44\uD305 \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
       }
     } catch (error) {
