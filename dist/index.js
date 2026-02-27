@@ -3061,6 +3061,8 @@ ${message}` : message;
   }
 
   // src/ui/chatList.js
+  var lastRenderedAvatar = null;
+  var lastRenderedGroupId = null;
   var tooltipElement = null;
   var tooltipTimeout = null;
   var currentTooltipTarget = null;
@@ -3235,6 +3237,20 @@ ${message}` : message;
       console.debug("[ChatList] Skipping - same character already visible with valid cache");
       return;
     }
+    if (lastRenderedAvatar === character.avatar && cache.isValid("chats", character.avatar) && chatsList?.children.length > 0 && !chatsList.querySelector(".lobby-loading")) {
+      console.debug("[ChatList] DOM reuse \u2014 same character, cache valid, skipping rebuild");
+      store.setCurrentCharacter(character);
+      chatsPanel.classList.add("visible");
+      updateChatHeader(character);
+      showFolderBar(true);
+      const savedSortOption2 = storage.getSortOption();
+      const branchRefreshBtn2 = document.getElementById("chat-lobby-branch-refresh");
+      if (branchRefreshBtn2) {
+        branchRefreshBtn2.style.display = savedSortOption2 === "branch" ? "flex" : "none";
+      }
+      updatePersonaQuickButton(character.avatar);
+      return;
+    }
     store.setCurrentCharacter(character);
     if (!chatsPanel || !chatsList) {
       console.error("[ChatList] Chat panel elements not found");
@@ -3253,6 +3269,8 @@ ${message}` : message;
     const cachedChats = cache.get("chats", character.avatar);
     if (cachedChats && cachedChats.length > 0 && cache.isValid("chats", character.avatar)) {
       renderChats(chatsList, cachedChats, character.avatar);
+      lastRenderedAvatar = character.avatar;
+      lastRenderedGroupId = null;
       return;
     }
     chatsList.innerHTML = '<div class="lobby-loading">\uCC44\uD305 \uB85C\uB529 \uC911...</div>';
@@ -3275,9 +3293,12 @@ ${message}` : message;
         return;
       }
       renderChats(chatsList, chats, character.avatar);
+      lastRenderedAvatar = character.avatar;
+      lastRenderedGroupId = null;
     } catch (error) {
       console.error("[ChatList] Failed to load chats:", error);
       showToast("\uCC44\uD305 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
+      lastRenderedAvatar = null;
       chatsList.innerHTML = `
             <div class="lobby-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;color:var(--text-muted,#888);padding:40px;">
                 <i>\u26A0\uFE0F</i>
@@ -4061,6 +4082,7 @@ ${message}` : message;
     }
     store.setCurrentCharacter(null);
     store.setCurrentGroup(group);
+    lastRenderedAvatar = null;
     if (!chatsPanel || !chatsList) {
       console.error("[ChatList] Chat panel elements not found");
       return;
@@ -4325,8 +4347,10 @@ ${message}` : message;
     const img = btn ? btn.querySelector(".persona-quick-avatar") : null;
     console.debug("[ChatList] Button found:", !!btn, "Image found:", !!img);
     if (!btn || !img) return;
-    const lastPersona = window._chatLobbyLastChatCache ? window._chatLobbyLastChatCache.getPersona(charAvatar) : null;
+    const lastPersona = lastChatCache.getPersona(charAvatar);
     if (lastPersona) {
+      delete img.dataset.fallbackApplied;
+      img.style.display = "";
       img.src = "/User Avatars/" + encodeURIComponent(lastPersona);
       img.alt = lastPersona.replace(/\.[^/.]+$/, "");
       btn.dataset.persona = lastPersona;
@@ -6238,7 +6262,7 @@ ${message}` : message;
                                 </select>
                             </div>
                             <div class="filter-group-buttons">
-                                <button id="chat-lobby-persona-quick" class="icon-btn persona-quick-btn" data-action="switch-persona" title="\uD038 \uD398\uB974\uC18C\uB098" style="display:none;"><img class="persona-quick-avatar" src="" alt="persona" /></button>
+                                <button id="chat-lobby-persona-quick" class="icon-btn persona-quick-btn" data-action="switch-persona" title="\uD035 \uD398\uB974\uC18C\uB098" style="display:none;"><img class="persona-quick-avatar" src="" alt="persona" data-fallback="persona" /></button>
                                 <button id="chat-lobby-branch-refresh" class="icon-btn" data-action="refresh-branches" title="\uBD84\uAE30 \uBD84\uC11D \uC0C8\uB85C\uACE0\uCE68" style="display:none;"><span class="icon">\u{1F50D}</span></button>
                                 <button id="chat-lobby-batch-mode" class="icon-btn" data-action="toggle-batch" title="\uBC30\uCE58 \uC120\uD0DD \uBAA8\uB4DC"><span class="icon">\u2611\uFE0F</span></button>
                                 <button id="chat-lobby-folder-manage" class="icon-btn" data-action="open-folder-modal" title="\uD3F4\uB354 \uAD00\uB9AC"><span class="icon">\u{1F4C1}</span></button>
@@ -7147,6 +7171,13 @@ ${message}` : message;
   var renderDebounceTimer = null;
   var isSelectingCharacter = false;
   var hasGroups = false;
+  var delegatedGridContainer = null;
+  var delegatedTagContainer = null;
+  var SCROLL_THRESHOLD = 10;
+  var DELEGATION_COOLDOWN = 300;
+  var lastDelegatedClickTime = 0;
+  var gridTouch = { startX: 0, startY: 0, isScrolling: false, handled: false };
+  var tagTouch = { startX: 0, startY: 0, isScrolling: false, handled: false };
   function resetCharacterSelectLock() {
     isSelectingCharacter = false;
   }
@@ -7258,10 +7289,8 @@ ${message}` : message;
       }
     }).join("");
     container.innerHTML = html;
-    bindCharacterEvents(container);
-    if (hasGroups) {
-      bindGroupEvents(container);
-    }
+    setupGridDelegation(container);
+    restoreSelectedState(container);
     loadChatCountsAsync(filtered, sortOption);
   }
   function renderCharacterCard(char, index, sortOption = "recent") {
@@ -7324,6 +7353,13 @@ ${message}` : message;
   }
   async function loadChatCountsAsync(characters, sortOption = "recent") {
     const BATCH_SIZE = 5;
+    const charContainer = document.getElementById("chat-lobby-characters");
+    const cardMap = /* @__PURE__ */ new Map();
+    if (charContainer) {
+      charContainer.querySelectorAll(".lobby-char-card[data-char-avatar]").forEach((card) => {
+        cardMap.set(card.dataset.charAvatar, card);
+      });
+    }
     for (let i = 0; i < characters.length; i += BATCH_SIZE) {
       const batch = characters.slice(i, i + BATCH_SIZE);
       await Promise.allSettled(batch.map(async (char) => {
@@ -7338,7 +7374,7 @@ ${message}` : message;
           }, 0);
           cache.set("chatCounts", count, char.avatar);
           cache.set("messageCounts", messageCount, char.avatar);
-          const card = document.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(char.avatar)}"]`);
+          const card = cardMap.get(char.avatar);
           if (chatArray.length > 0) {
             await lastChatCache.refreshForCharacter(char.avatar, chatArray);
             if (sortOption === "recent" && card) {
@@ -7454,6 +7490,22 @@ ${message}` : message;
   function isFavoriteChar(char) {
     return storage.isCharacterFavorite(char.avatar);
   }
+  function restoreSelectedState(container) {
+    const currentChar = store.currentCharacter;
+    if (currentChar?.avatar) {
+      const selectedCard = container.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(currentChar.avatar)}"]`);
+      if (selectedCard) {
+        selectedCard.classList.add("selected");
+      }
+    }
+    const currentGroup = store.currentGroup;
+    if (currentGroup?.id) {
+      const selectedCard = container.querySelector(`.lobby-group-card[data-group-id="${CSS.escape(currentGroup.id)}"]`);
+      if (selectedCard) {
+        selectedCard.classList.add("selected");
+      }
+    }
+  }
   async function sortCharactersAndGroups(items, sortOption) {
     if (sortOption === "chats") {
       const BATCH_SIZE = 5;
@@ -7523,76 +7575,219 @@ ${message}` : message;
     });
     return sorted;
   }
-  function bindCharacterEvents(container) {
-    const cards = container.querySelectorAll(".lobby-char-card:not(.lobby-group-card)");
-    console.debug("[CharacterGrid] bindCharacterEvents: found", cards.length, "cards");
-    cards.forEach((card, index) => {
-      const charName = card.dataset.charName || "Unknown";
-      const charAvatar = card.dataset.charAvatar;
-      const charIndex = card.dataset.charIndex;
-      const favBtn = card.querySelector(".char-fav-btn");
-      if (favBtn) {
-        createTouchClickHandler(favBtn, (e) => {
-          e.stopPropagation();
-          const newFavState = storage.toggleCharacterFavorite(charAvatar);
-          favBtn.textContent = newFavState ? "\u2605" : "\u2606";
-          card.dataset.isFav = newFavState.toString();
-          card.classList.toggle("is-char-fav", newFavState);
-          showToast(newFavState ? "\uC990\uACA8\uCC3E\uAE30\uC5D0 \uCD94\uAC00\uB428" : "\uC990\uACA8\uCC3E\uAE30\uC5D0\uC11C \uC81C\uAC70\uB428", "success");
-        }, { preventDefault: true, stopPropagation: true, debugName: `char-fav-${index}` });
+  function setupGridDelegation(container) {
+    if (delegatedGridContainer === container) return;
+    delegatedGridContainer = container;
+    container.addEventListener("touchstart", (e) => {
+      gridTouch.handled = false;
+      gridTouch.isScrolling = false;
+      gridTouch.startX = e.touches[0].clientX;
+      gridTouch.startY = e.touches[0].clientY;
+    }, { passive: true });
+    container.addEventListener("touchmove", (e) => {
+      const dx = Math.abs(e.touches[0].clientX - gridTouch.startX);
+      const dy = Math.abs(e.touches[0].clientY - gridTouch.startY);
+      if (dx > SCROLL_THRESHOLD || dy > SCROLL_THRESHOLD) {
+        gridTouch.isScrolling = true;
       }
-      createTouchClickHandler(card, async () => {
-        if (store.isLobbyLocked) {
-          return;
-        }
-        if (isSelectingCharacter || isRendering) {
-          return;
-        }
-        isSelectingCharacter = true;
-        const selectSafetyTimer = setTimeout(() => {
-          if (isSelectingCharacter) {
-            console.warn("[CharacterGrid] isSelectingCharacter safety reset");
-            isSelectingCharacter = false;
-            store.setLobbyLocked(false);
-          }
-        }, 1e4);
-        store.setLobbyLocked(true);
-        try {
-          const chatsPanel = document.getElementById("chat-lobby-chats");
-          const isPanelVisible = chatsPanel?.classList.contains("visible");
-          const isSameCharacter = store.currentCharacter?.avatar === charAvatar;
-          if (isPanelVisible && isSameCharacter) {
-            card.classList.remove("selected");
-            closeChatPanel();
-            return;
-          }
-          container.querySelectorAll(".lobby-char-card.selected").forEach((el) => {
-            el.classList.remove("selected");
-          });
-          card.classList.add("selected");
-          const characterData = {
-            index: card.dataset.charIndex,
-            avatar: card.dataset.charAvatar,
-            name: charName,
-            avatarSrc: card.querySelector(".lobby-char-avatar")?.src || ""
-          };
-          const handler = store.onCharacterSelect;
-          if (handler && typeof handler === "function") {
-            await handler(characterData);
-          } else {
-            console.error("[CharacterGrid] onCharacterSelect handler not available!");
-          }
-        } catch (error) {
-          console.error("[CharacterGrid] Handler error:", error);
-        } finally {
-          clearTimeout(selectSafetyTimer);
-          store.setLobbyLocked(false);
-          setTimeout(() => {
-            isSelectingCharacter = false;
-          }, 300);
-        }
-      }, { preventDefault: true, stopPropagation: true, debugName: `char-${index}-${charName}` });
+    }, { passive: true });
+    container.addEventListener("touchend", (e) => {
+      if (!gridTouch.isScrolling) {
+        gridTouch.handled = true;
+        dispatchGridAction(e, container);
+      }
+      gridTouch.isScrolling = false;
     });
+    container.addEventListener("click", (e) => {
+      if (!gridTouch.handled) {
+        dispatchGridAction(e, container);
+      }
+      gridTouch.handled = false;
+    });
+  }
+  function setupTagDelegation(container) {
+    if (delegatedTagContainer === container) return;
+    delegatedTagContainer = container;
+    container.addEventListener("touchstart", (e) => {
+      tagTouch.handled = false;
+      tagTouch.isScrolling = false;
+      tagTouch.startX = e.touches[0].clientX;
+      tagTouch.startY = e.touches[0].clientY;
+    }, { passive: true });
+    container.addEventListener("touchmove", (e) => {
+      const dx = Math.abs(e.touches[0].clientX - tagTouch.startX);
+      const dy = Math.abs(e.touches[0].clientY - tagTouch.startY);
+      if (dx > SCROLL_THRESHOLD || dy > SCROLL_THRESHOLD) {
+        tagTouch.isScrolling = true;
+      }
+    }, { passive: true });
+    container.addEventListener("touchend", (e) => {
+      if (!tagTouch.isScrolling) {
+        tagTouch.handled = true;
+        handleTagClick(e);
+      }
+      tagTouch.isScrolling = false;
+    });
+    container.addEventListener("click", (e) => {
+      if (!tagTouch.handled) {
+        handleTagClick(e);
+      }
+      tagTouch.handled = false;
+    });
+  }
+  function dispatchGridAction(e, container) {
+    const now = Date.now();
+    if (now - lastDelegatedClickTime < DELEGATION_COOLDOWN) return;
+    lastDelegatedClickTime = now;
+    const target = e.target;
+    const charFavBtn = target.closest(".char-fav-btn:not(.group-fav-btn)");
+    if (charFavBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleCharFavToggle(charFavBtn);
+      return;
+    }
+    const groupFavBtn = target.closest(".group-fav-btn");
+    if (groupFavBtn) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleGroupFavToggle(groupFavBtn);
+      return;
+    }
+    const groupCard = target.closest(".lobby-group-card");
+    if (groupCard) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleGroupCardClick(groupCard, container);
+      return;
+    }
+    const charCard = target.closest(".lobby-char-card");
+    if (charCard) {
+      e.preventDefault();
+      e.stopPropagation();
+      handleCharCardClick(charCard, container);
+      return;
+    }
+  }
+  function handleCharFavToggle(favBtn) {
+    const charAvatar = favBtn.dataset.charAvatar;
+    if (!charAvatar) return;
+    const card = favBtn.closest(".lobby-char-card");
+    const newFavState = storage.toggleCharacterFavorite(charAvatar);
+    favBtn.textContent = newFavState ? "\u2605" : "\u2606";
+    if (card) {
+      card.dataset.isFav = newFavState.toString();
+      card.classList.toggle("is-char-fav", newFavState);
+    }
+    showToast(newFavState ? "\uC990\uACA8\uCC3E\uAE30\uC5D0 \uCD94\uAC00\uB428" : "\uC990\uACA8\uCC3E\uAE30\uC5D0\uC11C \uC81C\uAC70\uB428", "success");
+  }
+  function handleGroupFavToggle(favBtn) {
+    const groupId = favBtn.dataset.groupId;
+    if (!groupId) return;
+    const card = favBtn.closest(".lobby-group-card");
+    const newFavState = storage.toggleGroupFavorite(groupId);
+    favBtn.textContent = newFavState ? "\u2605" : "\u2606";
+    if (card) {
+      card.dataset.isFav = newFavState.toString();
+      card.classList.toggle("is-char-fav", newFavState);
+    }
+    showToast(newFavState ? "\uC990\uACA8\uCC3E\uAE30\uC5D0 \uCD94\uAC00\uB428" : "\uC990\uACA8\uCC3E\uAE30\uC5D0\uC11C \uC81C\uAC70\uB428", "success");
+  }
+  async function handleCharCardClick(card, container) {
+    if (store.isLobbyLocked) return;
+    if (isSelectingCharacter || isRendering) return;
+    isSelectingCharacter = true;
+    const selectSafetyTimer = setTimeout(() => {
+      if (isSelectingCharacter) {
+        console.warn("[CharacterGrid] isSelectingCharacter safety reset");
+        isSelectingCharacter = false;
+        store.setLobbyLocked(false);
+      }
+    }, 1e4);
+    store.setLobbyLocked(true);
+    const charAvatar = card.dataset.charAvatar;
+    const charName = card.dataset.charName || "Unknown";
+    try {
+      const chatsPanel = document.getElementById("chat-lobby-chats");
+      const isPanelVisible = chatsPanel?.classList.contains("visible");
+      const isSameCharacter = store.currentCharacter?.avatar === charAvatar;
+      if (isPanelVisible && isSameCharacter) {
+        card.classList.remove("selected");
+        closeChatPanel();
+        return;
+      }
+      container.querySelectorAll(".lobby-char-card.selected").forEach((el) => {
+        el.classList.remove("selected");
+      });
+      card.classList.add("selected");
+      const characterData = {
+        index: card.dataset.charIndex,
+        avatar: charAvatar,
+        name: charName,
+        avatarSrc: card.querySelector(".lobby-char-avatar")?.src || ""
+      };
+      const handler = store.onCharacterSelect;
+      if (handler && typeof handler === "function") {
+        await handler(characterData);
+      } else {
+        console.error("[CharacterGrid] onCharacterSelect handler not available!");
+      }
+    } catch (error) {
+      console.error("[CharacterGrid] Handler error:", error);
+    } finally {
+      clearTimeout(selectSafetyTimer);
+      store.setLobbyLocked(false);
+      setTimeout(() => {
+        isSelectingCharacter = false;
+      }, 300);
+    }
+  }
+  async function handleGroupCardClick(card, container) {
+    const groupId = card.dataset.groupId;
+    if (!groupId) return;
+    store.setLobbyLocked(true);
+    try {
+      const chatsPanel = document.getElementById("chat-lobby-chats");
+      const isPanelVisible = chatsPanel?.classList.contains("visible");
+      const isSameGroup = store.currentGroup?.id === groupId;
+      if (isPanelVisible && isSameGroup) {
+        card.classList.remove("selected");
+        closeChatPanel();
+        return;
+      }
+      if (!isSameGroup) {
+        store.setCurrentGroup(null);
+        store.setCurrentCharacter(null);
+      }
+      container.querySelectorAll(".lobby-char-card.selected, .lobby-group-card.selected").forEach((el) => {
+        el.classList.remove("selected");
+      });
+      card.classList.add("selected");
+      const groups = await api.getGroups();
+      const group = groups.find((g) => g.id === groupId);
+      if (group) {
+        const handler = store.onGroupSelect;
+        if (handler && typeof handler === "function") {
+          await handler(group);
+        }
+      }
+    } catch (error) {
+      console.error("[CharacterGrid] Group handler error:", error);
+    } finally {
+      store.setLobbyLocked(false);
+    }
+  }
+  function handleTagClick(e) {
+    const tagItem = e.target.closest(".lobby-tag-item");
+    if (!tagItem) return;
+    e.preventDefault();
+    const tag = tagItem.dataset.tag;
+    if (store.selectedTag === tag) {
+      store.setSelectedTag(null);
+    } else {
+      store.setSelectedTag(tag);
+    }
+    renderCharacterGrid(store.searchTerm);
   }
   var handleSearch = debounce((searchTerm) => {
     renderCharacterGrid(searchTerm);
@@ -7641,20 +7836,7 @@ ${message}` : message;
       const isActive = selectedTag === tag;
       return `<span class="lobby-tag-item ${isActive ? "active" : ""}" data-tag="${escapeHtml(tag)}">#${escapeHtml(tag)}<span class="lobby-tag-count">(${count})</span></span>`;
     }).join("");
-    bindTagEvents(container);
-  }
-  function bindTagEvents(container) {
-    container.querySelectorAll(".lobby-tag-item").forEach((item) => {
-      createTouchClickHandler(item, () => {
-        const tag = item.dataset.tag;
-        if (store.selectedTag === tag) {
-          store.setSelectedTag(null);
-        } else {
-          store.setSelectedTag(tag);
-        }
-        renderCharacterGrid(store.searchTerm);
-      }, { debugName: `tag-${item.dataset.tag}` });
-    });
+    setupTagDelegation(container);
   }
   function renderGroupCard(group, sortOption = "recent") {
     const name = group.name || "Unknown Group";
@@ -7732,59 +7914,6 @@ ${message}` : message;
       const avatarUrl = `/characters/${encodeURIComponent(avatar)}`;
       return `<img src="${avatarUrl}" alt="member" draggable="false" data-fallback="avatar">`;
     }).join("")}</div>`;
-  }
-  function bindGroupEvents(container) {
-    container.querySelectorAll(".lobby-group-card").forEach((card, index) => {
-      const groupId = card.dataset.groupId;
-      const groupName = card.querySelector(".char-name-text")?.textContent || "Group";
-      const favBtn = card.querySelector(".group-fav-btn");
-      if (favBtn) {
-        createTouchClickHandler(favBtn, (e) => {
-          e.stopPropagation();
-          const newFavState = storage.toggleGroupFavorite(groupId);
-          favBtn.textContent = newFavState ? "\u2605" : "\u2606";
-          card.dataset.isFav = newFavState.toString();
-          card.classList.toggle("is-char-fav", newFavState);
-          showToast(newFavState ? "\uC990\uACA8\uCC3E\uAE30\uC5D0 \uCD94\uAC00\uB428" : "\uC990\uACA8\uCC3E\uAE30\uC5D0\uC11C \uC81C\uAC70\uB428", "success");
-        }, { preventDefault: true, stopPropagation: true, debugName: `group-fav-${index}` });
-      }
-      createTouchClickHandler(card, async () => {
-        if (!groupId) return;
-        store.setLobbyLocked(true);
-        try {
-          const chatsPanel = document.getElementById("chat-lobby-chats");
-          const isPanelVisible = chatsPanel?.classList.contains("visible");
-          const isSameGroup = store.currentGroup?.id === groupId;
-          console.debug("[CharacterGrid] Group click:", { groupId, isSameGroup, isPanelVisible });
-          if (isPanelVisible && isSameGroup) {
-            console.debug("[CharacterGrid] Same group, toggling off");
-            card.classList.remove("selected");
-            closeChatPanel();
-            return;
-          }
-          if (!isSameGroup) {
-            store.setCurrentGroup(null);
-            store.setCurrentCharacter(null);
-          }
-          container.querySelectorAll(".lobby-char-card.selected, .lobby-group-card.selected").forEach((el) => {
-            el.classList.remove("selected");
-          });
-          card.classList.add("selected");
-          const groups = await api.getGroups();
-          const group = groups.find((g) => g.id === groupId);
-          if (group) {
-            const handler = store.onGroupSelect;
-            if (handler && typeof handler === "function") {
-              await handler(group);
-            }
-          }
-        } catch (error) {
-          console.error("[CharacterGrid] Group handler error:", error);
-        } finally {
-          store.setLobbyLocked(false);
-        }
-      }, { preventDefault: true, stopPropagation: true, debugName: `group-${groupId}` });
-    });
   }
 
   // src/handlers/folderHandlers.js

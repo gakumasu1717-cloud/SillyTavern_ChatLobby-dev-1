@@ -21,6 +21,12 @@ import {
 import { getAllBranches, getAllFingerprints } from '../data/branchCache.js';
 
 // ============================================
+// DOM 재사용 (채팅 패널 재오픈 최적화)
+// ============================================
+let lastRenderedAvatar = null;   // 마지막으로 렌더링한 캐릭터 avatar
+let lastRenderedGroupId = null;  // 마지막으로 렌더링한 그룹 ID
+
+// ============================================
 // 툴팁 관련 변수
 // ============================================
 
@@ -318,6 +324,26 @@ export async function renderChatList(character) {
         return;
     }
     
+    // 🔥 DOM 재사용: 패널 닫았다가 같은 캐릭터 재오픈 시 DOM 재빌드 스킵
+    // closeChatPanel()이 currentCharacter를 null로 리셋하지만 DOM과 캐시는 남아있음
+    if (lastRenderedAvatar === character.avatar
+        && cache.isValid('chats', character.avatar)
+        && chatsList?.children.length > 0
+        && !chatsList.querySelector('.lobby-loading')) {
+        console.debug('[ChatList] DOM reuse — same character, cache valid, skipping rebuild');
+        store.setCurrentCharacter(character);
+        chatsPanel.classList.add('visible');
+        updateChatHeader(character);
+        showFolderBar(true);
+        const savedSortOption = storage.getSortOption();
+        const branchRefreshBtn = document.getElementById('chat-lobby-branch-refresh');
+        if (branchRefreshBtn) {
+            branchRefreshBtn.style.display = savedSortOption === 'branch' ? 'flex' : 'none';
+        }
+        updatePersonaQuickButton(character.avatar);
+        return;
+    }
+    
     store.setCurrentCharacter(character);
     
     if (!chatsPanel || !chatsList) {
@@ -346,6 +372,8 @@ export async function renderChatList(character) {
     
     if (cachedChats && cachedChats.length > 0 && cache.isValid('chats', character.avatar)) {
         renderChats(chatsList, cachedChats, character.avatar);
+        lastRenderedAvatar = character.avatar;
+        lastRenderedGroupId = null;
         return; // 캐시 유효하면 API 호출 안 함
     }
     
@@ -378,9 +406,12 @@ export async function renderChatList(character) {
         }
         
         renderChats(chatsList, chats, character.avatar);
+        lastRenderedAvatar = character.avatar;
+        lastRenderedGroupId = null;
     } catch (error) {
         console.error('[ChatList] Failed to load chats:', error);
         showToast('채팅 목록을 불러오지 못했습니다.', 'error');
+        lastRenderedAvatar = null;
         chatsList.innerHTML = `
             <div class="lobby-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;color:var(--text-muted,#888);padding:40px;">
                 <i>⚠️</i>
@@ -1624,6 +1655,7 @@ export async function renderGroupChatList(group) {
     // 캐릭터 대신 그룹 설정
     store.setCurrentCharacter(null);
     store.setCurrentGroup(group);
+    lastRenderedAvatar = null;  // 그룹 전환 시 캐릭터 DOM 재사용 무효화
     
     if (!chatsPanel || !chatsList) {
         console.error('[ChatList] Chat panel elements not found');
@@ -2005,10 +2037,14 @@ export function updatePersonaQuickButton(charAvatar) {
     console.debug('[ChatList] Button found:', !!btn, 'Image found:', !!img);
     if (!btn || !img) return;
     
-    // lastChatCache에서 마지막 페르소나 가져오기 (동적 import 방지를 위해 전역에서 가져옴)
-    const lastPersona = window._chatLobbyLastChatCache ? window._chatLobbyLastChatCache.getPersona(charAvatar) : null;
+    // lastChatCache에서 마지막 페르소나 가져오기 (직접 import 사용)
+    const lastPersona = lastChatCache.getPersona(charAvatar);
     
     if (lastPersona) {
+        // 🔥 전역 이미지 에러 핸들러가 src=""일 때 display:none + fallbackApplied를
+        // 설정했을 수 있으므로, 유효한 src 설정 전에 반드시 리셋해야 함
+        delete img.dataset.fallbackApplied;
+        img.style.display = '';
         img.src = '/User Avatars/' + encodeURIComponent(lastPersona);
         img.alt = lastPersona.replace(/\.[^/.]+$/, '');
         btn.dataset.persona = lastPersona;

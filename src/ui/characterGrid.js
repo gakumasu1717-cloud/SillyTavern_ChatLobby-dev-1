@@ -9,7 +9,7 @@ import { store } from '../data/store.js';
 import { lastChatCache } from '../data/lastChatCache.js';
 import { saveSnapshot, getLocalDateString, loadSnapshots } from '../data/calendarStorage.js';
 import { escapeHtml } from '../utils/textUtils.js';
-import { createTouchClickHandler, debounce } from '../utils/eventHelpers.js';
+import { debounce } from '../utils/eventHelpers.js';
 import { showToast } from './notifications.js';
 import { closeChatPanel } from './chatList.js';
 import { CONFIG } from '../config.js';
@@ -24,6 +24,20 @@ let isSelectingCharacter = false;
 
 // 그룹 포함 여부 (이벤트 바인딩 시 필요)
 let hasGroups = false;
+
+// ============================================
+// 이벤트 위임 (Event Delegation)
+// O(N) 개별 리스너 → O(1) 컨테이너 리스너
+// ============================================
+let delegatedGridContainer = null;
+let delegatedTagContainer = null;
+const SCROLL_THRESHOLD = 10;
+const DELEGATION_COOLDOWN = 300;
+let lastDelegatedClickTime = 0;
+
+// 단일 터치 상태 (한 번에 하나의 터치만 처리)
+const gridTouch = { startX: 0, startY: 0, isScrolling: false, handled: false };
+const tagTouch = { startX: 0, startY: 0, isScrolling: false, handled: false };
 
 /**
  * 캐릭터 선택 플래그 리셋 (로비 열 때 호출)
@@ -220,11 +234,11 @@ async function renderCharacterList(container, characters, searchTerm, sortOverri
     
     container.innerHTML = html;
     
-    // 이벤트 바인딩
-    bindCharacterEvents(container);
-    if (hasGroups) {
-        bindGroupEvents(container);
-    }
+    // 이벤트 위임 설정 (최초 1회만 리스너 등록, 이후 no-op)
+    setupGridDelegation(container);
+    
+    // 선택 상태 복원
+    restoreSelectedState(container);
     
     // 백그라운드에서 채팅 수 로딩 후 UI 업데이트
     loadChatCountsAsync(filtered, sortOption);
@@ -322,6 +336,15 @@ function renderCharacterCard(char, index, sortOption = 'recent') {
 async function loadChatCountsAsync(characters, sortOption = 'recent') {
     const BATCH_SIZE = 5;
     
+    // 카드 요소 미리 매핑 — O(N) querySelector 반복 → O(1) Map 조회
+    const charContainer = document.getElementById('chat-lobby-characters');
+    const cardMap = new Map();
+    if (charContainer) {
+        charContainer.querySelectorAll('.lobby-char-card[data-char-avatar]').forEach(card => {
+            cardMap.set(card.dataset.charAvatar, card);
+        });
+    }
+    
     for (let i = 0; i < characters.length; i += BATCH_SIZE) {
         const batch = characters.slice(i, i + BATCH_SIZE);
         
@@ -344,8 +367,8 @@ async function loadChatCountsAsync(characters, sortOption = 'recent') {
                 cache.set('chatCounts', count, char.avatar);
                 cache.set('messageCounts', messageCount, char.avatar);
                 
-                // DOM 업데이트 (CSS.escape로 특수문자 처리)
-                const card = document.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(char.avatar)}"]`);
+                // DOM 업데이트 (Map O(1) 조회)
+                const card = cardMap.get(char.avatar);
                 
                 // ★ lastChatCache에도 마지막 채팅 시간 갱신 (재접속 정렬 정확도 향상)
                 if (chatArray.length > 0) {
@@ -714,115 +737,298 @@ async function sortCharacters(characters, sortOption) {
     return sorted;
 }
 
+// ============================================
+// 이벤트 위임 설정
+// ============================================
+
 /**
- * 캐릭터 카드 이벤트 바인딩
+ * 캐릭터/그룹 그리드 컨테이너에 이벤트 위임 설정
+ * N개 카드 × 4개 리스너 → 컨테이너 1개 × 4개 리스너
+ * innerHTML 교체 후에도 자동으로 동작
  * @param {HTMLElement} container
  */
-function bindCharacterEvents(container) {
-    // 그룹 카드는 제외 (.lobby-group-card는 별도로 바인딩)
-    const cards = container.querySelectorAll('.lobby-char-card:not(.lobby-group-card)');
-    console.debug('[CharacterGrid] bindCharacterEvents: found', cards.length, 'cards');
+function setupGridDelegation(container) {
+    if (delegatedGridContainer === container) return;
+    delegatedGridContainer = container;
     
-    cards.forEach((card, index) => {
-        // data-char-name 사용 (시간 span 포함 방지)
-        const charName = card.dataset.charName || 'Unknown';
-        const charAvatar = card.dataset.charAvatar;
-        const charIndex = card.dataset.charIndex;
-        const favBtn = card.querySelector('.char-fav-btn');
+    container.addEventListener('touchstart', (e) => {
+        gridTouch.handled = false;
+        gridTouch.isScrolling = false;
+        gridTouch.startX = e.touches[0].clientX;
+        gridTouch.startY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    container.addEventListener('touchmove', (e) => {
+        const dx = Math.abs(e.touches[0].clientX - gridTouch.startX);
+        const dy = Math.abs(e.touches[0].clientY - gridTouch.startY);
+        if (dx > SCROLL_THRESHOLD || dy > SCROLL_THRESHOLD) {
+            gridTouch.isScrolling = true;
+        }
+    }, { passive: true });
+    
+    container.addEventListener('touchend', (e) => {
+        if (!gridTouch.isScrolling) {
+            gridTouch.handled = true;
+            dispatchGridAction(e, container);
+        }
+        gridTouch.isScrolling = false;
+    });
+    
+    container.addEventListener('click', (e) => {
+        if (!gridTouch.handled) {
+            dispatchGridAction(e, container);
+        }
+        gridTouch.handled = false;
+    });
+}
+
+/**
+ * 태그 컨테이너에 이벤트 위임 설정
+ * @param {HTMLElement} container
+ */
+function setupTagDelegation(container) {
+    if (delegatedTagContainer === container) return;
+    delegatedTagContainer = container;
+    
+    container.addEventListener('touchstart', (e) => {
+        tagTouch.handled = false;
+        tagTouch.isScrolling = false;
+        tagTouch.startX = e.touches[0].clientX;
+        tagTouch.startY = e.touches[0].clientY;
+    }, { passive: true });
+    
+    container.addEventListener('touchmove', (e) => {
+        const dx = Math.abs(e.touches[0].clientX - tagTouch.startX);
+        const dy = Math.abs(e.touches[0].clientY - tagTouch.startY);
+        if (dx > SCROLL_THRESHOLD || dy > SCROLL_THRESHOLD) {
+            tagTouch.isScrolling = true;
+        }
+    }, { passive: true });
+    
+    container.addEventListener('touchend', (e) => {
+        if (!tagTouch.isScrolling) {
+            tagTouch.handled = true;
+            handleTagClick(e);
+        }
+        tagTouch.isScrolling = false;
+    });
+    
+    container.addEventListener('click', (e) => {
+        if (!tagTouch.handled) {
+            handleTagClick(e);
+        }
+        tagTouch.handled = false;
+    });
+}
+
+// ============================================
+// 위임 이벤트 핸들러
+// ============================================
+
+/**
+ * 그리드 클릭/터치 이벤트 분기
+ * closest()로 클릭 대상을 판별하여 적절한 핸들러 호출
+ */
+function dispatchGridAction(e, container) {
+    const now = Date.now();
+    if (now - lastDelegatedClickTime < DELEGATION_COOLDOWN) return;
+    lastDelegatedClickTime = now;
+    
+    const target = e.target;
+    
+    // 1) 캐릭터 즐겨찾기 버튼 (그룹 제외)
+    const charFavBtn = target.closest('.char-fav-btn:not(.group-fav-btn)');
+    if (charFavBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCharFavToggle(charFavBtn);
+        return;
+    }
+    
+    // 2) 그룹 즐겨찾기 버튼
+    const groupFavBtn = target.closest('.group-fav-btn');
+    if (groupFavBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleGroupFavToggle(groupFavBtn);
+        return;
+    }
+    
+    // 3) 그룹 카드 (lobby-group-card는 lobby-char-card의 서브클래스이므로 먼저 체크)
+    const groupCard = target.closest('.lobby-group-card');
+    if (groupCard) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleGroupCardClick(groupCard, container);
+        return;
+    }
+    
+    // 4) 캐릭터 카드
+    const charCard = target.closest('.lobby-char-card');
+    if (charCard) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCharCardClick(charCard, container);
+        return;
+    }
+}
+
+/** 캐릭터 즐겨찾기 토글 */
+function handleCharFavToggle(favBtn) {
+    const charAvatar = favBtn.dataset.charAvatar;
+    if (!charAvatar) return;
+    
+    const card = favBtn.closest('.lobby-char-card');
+    const newFavState = storage.toggleCharacterFavorite(charAvatar);
+    favBtn.textContent = newFavState ? '★' : '☆';
+    if (card) {
+        card.dataset.isFav = newFavState.toString();
+        card.classList.toggle('is-char-fav', newFavState);
+    }
+    showToast(newFavState ? '즐겨찾기에 추가됨' : '즐겨찾기에서 제거됨', 'success');
+}
+
+/** 그룹 즐겨찾기 토글 */
+function handleGroupFavToggle(favBtn) {
+    const groupId = favBtn.dataset.groupId;
+    if (!groupId) return;
+    
+    const card = favBtn.closest('.lobby-group-card');
+    const newFavState = storage.toggleGroupFavorite(groupId);
+    favBtn.textContent = newFavState ? '★' : '☆';
+    if (card) {
+        card.dataset.isFav = newFavState.toString();
+        card.classList.toggle('is-char-fav', newFavState);
+    }
+    showToast(newFavState ? '즐겨찾기에 추가됨' : '즐겨찾기에서 제거됨', 'success');
+}
+
+/** 캐릭터 카드 클릭 — 채팅 패널 열기/닫기 */
+async function handleCharCardClick(card, container) {
+    if (store.isLobbyLocked) return;
+    if (isSelectingCharacter || isRendering) return;
+    
+    isSelectingCharacter = true;
+    
+    // safety timeout — 어떤 이유로든 플래그가 해제되지 않을 때 복구
+    const selectSafetyTimer = setTimeout(() => {
+        if (isSelectingCharacter) {
+            console.warn('[CharacterGrid] isSelectingCharacter safety reset');
+            isSelectingCharacter = false;
+            store.setLobbyLocked(false);
+        }
+    }, 10000);
+    
+    store.setLobbyLocked(true);
+    
+    const charAvatar = card.dataset.charAvatar;
+    const charName = card.dataset.charName || 'Unknown';
+    
+    try {
+        // 채팅 패널이 열려있고 같은 캐릭터면 닫기
+        const chatsPanel = document.getElementById('chat-lobby-chats');
+        const isPanelVisible = chatsPanel?.classList.contains('visible');
+        const isSameCharacter = store.currentCharacter?.avatar === charAvatar;
         
-        // 즐겨찾기 버튼 이벤트 - 로컬 스토리지만 사용 (API 호출 없음)
-        if (favBtn) {
-            createTouchClickHandler(favBtn, (e) => {
-                e.stopPropagation();
-                
-                // 로컬 스토리지에 토글
-                const newFavState = storage.toggleCharacterFavorite(charAvatar);
-                
-                // UI 업데이트
-                favBtn.textContent = newFavState ? '★' : '☆';
-                card.dataset.isFav = newFavState.toString();
-                card.classList.toggle('is-char-fav', newFavState);
-                
-                showToast(newFavState ? '즐겨찾기에 추가됨' : '즐겨찾기에서 제거됨', 'success');
-                
-            }, { preventDefault: true, stopPropagation: true, debugName: `char-fav-${index}` });
+        if (isPanelVisible && isSameCharacter) {
+            card.classList.remove('selected');
+            closeChatPanel();
+            return;
         }
         
-        // 캐릭터 카드 클릭 (선택) - 중복 클릭 방지 (전역 플래그)
-        createTouchClickHandler(card, async () => {
-            // 로비 락 상태면 클릭 차단
-            if (store.isLobbyLocked) {
-                return;
+        // 기존 선택 해제
+        container.querySelectorAll('.lobby-char-card.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+        
+        // 새로 선택
+        card.classList.add('selected');
+        
+        // 캐릭터 정보 구성
+        const characterData = {
+            index: card.dataset.charIndex,
+            avatar: charAvatar,
+            name: charName,
+            avatarSrc: card.querySelector('.lobby-char-avatar')?.src || ''
+        };
+        
+        // 콜백 호출
+        const handler = store.onCharacterSelect;
+        if (handler && typeof handler === 'function') {
+            await handler(characterData);
+        } else {
+            console.error('[CharacterGrid] onCharacterSelect handler not available!');
+        }
+    } catch (error) {
+        console.error('[CharacterGrid] Handler error:', error);
+    } finally {
+        clearTimeout(selectSafetyTimer);
+        store.setLobbyLocked(false);
+        setTimeout(() => { isSelectingCharacter = false; }, 300);
+    }
+}
+
+/** 그룹 카드 클릭 — 그룹 채팅 패널 열기/닫기 */
+async function handleGroupCardClick(card, container) {
+    const groupId = card.dataset.groupId;
+    if (!groupId) return;
+    
+    store.setLobbyLocked(true);
+    
+    try {
+        const chatsPanel = document.getElementById('chat-lobby-chats');
+        const isPanelVisible = chatsPanel?.classList.contains('visible');
+        const isSameGroup = store.currentGroup?.id === groupId;
+        
+        if (isPanelVisible && isSameGroup) {
+            card.classList.remove('selected');
+            closeChatPanel();
+            return;
+        }
+        
+        if (!isSameGroup) {
+            store.setCurrentGroup(null);
+            store.setCurrentCharacter(null);
+        }
+        
+        // 기존 선택 해제 (캐릭터 + 그룹 모두)
+        container.querySelectorAll('.lobby-char-card.selected, .lobby-group-card.selected').forEach(el => {
+            el.classList.remove('selected');
+        });
+        
+        card.classList.add('selected');
+        
+        const groups = await api.getGroups();
+        const group = groups.find(g => g.id === groupId);
+        
+        if (group) {
+            const handler = store.onGroupSelect;
+            if (handler && typeof handler === 'function') {
+                await handler(group);
             }
-            
-            // 이미 처리 중이거나 렌더링 중이면 무시
-            if (isSelectingCharacter || isRendering) {
-                return;
-            }
-            isSelectingCharacter = true;
-            
-            // 🔥 FIX: safety timeout — 어떤 이유로든 플래그가 해제되지 않을 때 복구
-            const selectSafetyTimer = setTimeout(() => {
-                if (isSelectingCharacter) {
-                    console.warn('[CharacterGrid] isSelectingCharacter safety reset');
-                    isSelectingCharacter = false;
-                    store.setLobbyLocked(false);
-                }
-            }, 10000);
-            
-            // 채팅 로딩 완료까지 UI 락 설정
-            store.setLobbyLocked(true);
-            
-            try {
-                // 채팅 패널이 열려있고 같은 캐릭터면 닫기
-                const chatsPanel = document.getElementById('chat-lobby-chats');
-                const isPanelVisible = chatsPanel?.classList.contains('visible');
-                const isSameCharacter = store.currentCharacter?.avatar === charAvatar;
-                
-                if (isPanelVisible && isSameCharacter) {
-                    card.classList.remove('selected');
-                    closeChatPanel();
-                    return;
-                }
-                
-                // 기존 선택 해제
-                container.querySelectorAll('.lobby-char-card.selected').forEach(el => {
-                    el.classList.remove('selected');
-                });
-                
-                // 새로 선택
-                card.classList.add('selected');
-                
-                // 캐릭터 정보 구성
-                const characterData = {
-                    index: card.dataset.charIndex,
-                    avatar: card.dataset.charAvatar,
-                    name: charName,
-                    avatarSrc: card.querySelector('.lobby-char-avatar')?.src || ''
-                };
-                
-                // 콜백 호출
-                const handler = store.onCharacterSelect;
-                if (handler && typeof handler === 'function') {
-                    await handler(characterData);
-                } else {
-                    console.error('[CharacterGrid] onCharacterSelect handler not available!');
-                }
-            } catch (error) {
-                console.error('[CharacterGrid] Handler error:', error);
-            } finally {
-                // safety timer 정리
-                clearTimeout(selectSafetyTimer);
-                // 채팅 로딩 완료 → 락 해제
-                store.setLobbyLocked(false);
-                
-                // 처리 완료 후 플래그 해제 (약간의 딜레이로 빠른 재클릭 방지)
-                setTimeout(() => {
-                    isSelectingCharacter = false;
-                }, 300);
-            }
-        }, { preventDefault: true, stopPropagation: true, debugName: `char-${index}-${charName}` });
-    });
+        }
+    } catch (error) {
+        console.error('[CharacterGrid] Group handler error:', error);
+    } finally {
+        store.setLobbyLocked(false);
+    }
+}
+
+/** 태그 클릭 — 필터 토글 */
+function handleTagClick(e) {
+    const tagItem = e.target.closest('.lobby-tag-item');
+    if (!tagItem) return;
+    
+    e.preventDefault();
+    
+    const tag = tagItem.dataset.tag;
+    if (store.selectedTag === tag) {
+        store.setSelectedTag(null);
+    } else {
+        store.setSelectedTag(tag);
+    }
+    
+    renderCharacterGrid(store.searchTerm);
 }
 
 // ============================================
@@ -923,32 +1129,11 @@ function renderTagBar(characters) {
         return `<span class="lobby-tag-item ${isActive ? 'active' : ''}" data-tag="${escapeHtml(tag)}">#${escapeHtml(tag)}<span class="lobby-tag-count">(${count})</span></span>`;
     }).join('');
     
-    // 이벤트 바인딩
-    bindTagEvents(container);
+    // 이벤트 위임 설정 (최초 1회만 리스너 등록)
+    setupTagDelegation(container);
 }
 
-/**
- * 태그 이벤트 바인딩
- * @param {HTMLElement} container - 태그 목록 컨테이너
- */
-function bindTagEvents(container) {
-    // 태그 클릭
-    container.querySelectorAll('.lobby-tag-item').forEach(item => {
-        createTouchClickHandler(item, () => {
-            const tag = item.dataset.tag;
-            
-            // 같은 태그 클릭 시 필터 해제
-            if (store.selectedTag === tag) {
-                store.setSelectedTag(null);
-            } else {
-                store.setSelectedTag(tag);
-            }
-            
-            // 리렌더
-            renderCharacterGrid(store.searchTerm);
-        }, { debugName: `tag-${item.dataset.tag}` });
-    });
-}
+// bindTagEvents 제거됨 — setupTagDelegation()으로 대체
 
 // ============================================
 // 그룹 카드 렌더링
@@ -1066,85 +1251,4 @@ function renderMemberAvatarGrid(members, totalCount) {
     }).join('')}</div>`;
 }
 
-/**
- * 그룹 이벤트 바인딩 - 캐릭터와 동일한 방식
- * @param {HTMLElement} container - 컨테이너
- */
-function bindGroupEvents(container) {
-    container.querySelectorAll('.lobby-group-card').forEach((card, index) => {
-        const groupId = card.dataset.groupId;
-        const groupName = card.querySelector('.char-name-text')?.textContent || 'Group';
-        const favBtn = card.querySelector('.group-fav-btn');
-        
-        // 즐겨찾기 버튼 이벤트
-        if (favBtn) {
-            createTouchClickHandler(favBtn, (e) => {
-                e.stopPropagation();
-                
-                // 로컬 스토리지에 토글
-                const newFavState = storage.toggleGroupFavorite(groupId);
-                
-                // UI 업데이트
-                favBtn.textContent = newFavState ? '★' : '☆';
-                card.dataset.isFav = newFavState.toString();
-                card.classList.toggle('is-char-fav', newFavState);
-                
-                showToast(newFavState ? '즐겨찾기에 추가됨' : '즐겨찾기에서 제거됨', 'success');
-                
-            }, { preventDefault: true, stopPropagation: true, debugName: `group-fav-${index}` });
-        }
-        
-        createTouchClickHandler(card, async () => {
-            if (!groupId) return;
-            
-            // 락 걸기
-            store.setLobbyLocked(true);
-            
-            try {
-                // 채팅 패널이 열려있고 같은 그룹이면 닫기 (토글)
-                const chatsPanel = document.getElementById('chat-lobby-chats');
-                const isPanelVisible = chatsPanel?.classList.contains('visible');
-                const isSameGroup = store.currentGroup?.id === groupId;
-                
-                console.debug('[CharacterGrid] Group click:', { groupId, isSameGroup, isPanelVisible });
-                
-                if (isPanelVisible && isSameGroup) {
-                    console.debug('[CharacterGrid] Same group, toggling off');
-                    card.classList.remove('selected');
-                    closeChatPanel();
-                    return;
-                }
-                
-                // 다른 그룹이면 현재 상태 초기화 (중복 호출 방지)
-                if (!isSameGroup) {
-                    store.setCurrentGroup(null);
-                    store.setCurrentCharacter(null);
-                }
-                
-                // 기존 선택 해제 (캐릭터 + 그룹 모두)
-                container.querySelectorAll('.lobby-char-card.selected, .lobby-group-card.selected').forEach(el => {
-                    el.classList.remove('selected');
-                });
-                
-                // 새로 선택
-                card.classList.add('selected');
-                
-                // 그룹 정보 가져오기
-                const groups = await api.getGroups();
-                const group = groups.find(g => g.id === groupId);
-                
-                if (group) {
-                    // 콜백 호출 (그룹 채팅 목록 표시)
-                    const handler = store.onGroupSelect;
-                    if (handler && typeof handler === 'function') {
-                        await handler(group);
-                    }
-                }
-            } catch (error) {
-                console.error('[CharacterGrid] Group handler error:', error);
-            } finally {
-                store.setLobbyLocked(false);
-            }
-        }, { preventDefault: true, stopPropagation: true, debugName: `group-${groupId}` });
-    });
-}
+// bindGroupEvents 제거됨 — setupGridDelegation()의 dispatchGridAction()으로 대체
