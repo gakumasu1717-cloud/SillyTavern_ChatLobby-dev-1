@@ -6087,27 +6087,24 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
    기본(시네마/라이트): 원형 + 흰 테두리 (베이스 스타일)
    ============================================ */
 
-/* 글래스: 인스타 스토리풍 그라데이션 링 */
+/* 글래스: 원형 (테두리 없음) */
 #chat-lobby-container[data-lobby-theme="glass"] .char-persona-badge {
     border-radius: 50%;
     border: none;
-    padding: 2px;
-    background: linear-gradient(135deg, #67e8f9, #a78bfa 55%, #f0abfc);
-    box-shadow: 0 0 10px rgba(167, 139, 250, 0.55);
 }
 
-/* 폴라로이드: 원형 + 두꺼운 흰 테두리 */
+/* 폴라로이드: 원형 (테두리 없음) */
 #chat-lobby-container[data-lobby-theme="polaroid"] .char-persona-badge {
     top: 14px;
     right: 14px;
     border-radius: 50%;
     padding: 0;
     background: #2a2a2a;
-    border: 3px solid #ffffff;
+    border: none;
     box-shadow: 0 2px 8px rgba(90, 70, 40, 0.4);
 }
 
-/* 배너 리스트: 원형 + 액센트 링 + 글로우 (우하단) */
+/* 배너 리스트: 원형, 행 우하단 고정 (테두리 없음) */
 #chat-lobby-container[data-lobby-theme="messenger"] .char-persona-badge {
     border-radius: 50%;
     padding: 0;
@@ -6116,16 +6113,15 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
     left: auto;
     right: 10px;
     bottom: 8px;
-    border: 2px solid var(--lobby-accent);
-    box-shadow: 0 0 8px rgba(94, 173, 242, 0.5);
+    border: none;
 }
 
-/* 매거진: 미니멀 사각 (이미지 우상단) */
+/* 매거진: 직각 사각 (테두리 없음) */
 #chat-lobby-container[data-lobby-theme="magazine"] .char-persona-badge {
     border-radius: 0;
     padding: 0;
     background: #1a1a1a;
-    border: 1px solid rgba(255, 255, 255, 0.85);
+    border: none;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
@@ -6584,12 +6580,14 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 #chat-lobby-remind-viewer {
     position: fixed;
     inset: 0;
-    z-index: 70000;
+    /* body 직속 + 최상위 (커스텀 테마의 어떤 레이어보다 위) */
+    z-index: 2147483000;
     background: rgba(0, 0, 0, 0.72);
     display: flex;
     align-items: center;
     justify-content: center;
     padding: 24px;
+    font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .remind-viewer-panel {
@@ -6788,7 +6786,8 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
         padding: 0;
     }
     .remind-viewer-panel {
-        max-height: 100%;
+        height: 100dvh;
+        max-height: 100dvh;
         border-radius: 0;
         border: none;
     }
@@ -6989,4 +6988,38 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
     margin: 10px 0;
     min-height: 60px;
     overflow: hidden;
+}
+
+/* ============================================
+   👤 페르소나 배지 위치 옵션 (우측 상단 / 우측 하단)
+   data-badge-pos는 테마 메뉴에서 설정 (배너 리스트는 행 레이아웃상 고정)
+   ============================================ */
+#chat-lobby-container[data-badge-pos="bottom"]:not([data-lobby-theme="messenger"]) .char-persona-badge {
+    top: auto;
+    bottom: 8px;
+}
+
+/* 폴라로이드/매거진은 하단에 이름 라벨이 있어 그 위로 배치 */
+#chat-lobby-container[data-badge-pos="bottom"][data-lobby-theme="polaroid"] .char-persona-badge {
+    top: auto;
+    bottom: 44px;
+    right: 14px;
+}
+
+#chat-lobby-container[data-badge-pos="bottom"][data-lobby-theme="magazine"] .char-persona-badge {
+    top: auto;
+    bottom: 56px;
+}
+
+/* 테마 메뉴 셀렉트 (배지 위치 등) */
+.theme-menu-select {
+    flex: 1;
+    min-width: 0;
+    background: var(--lobby-bg-card, #2f2f2f);
+    border: 1px solid var(--lobby-bg-hover, #444);
+    border-radius: 8px;
+    color: var(--lobby-text, #fff);
+    font-size: 12px;
+    padding: 5px 8px;
+    cursor: pointer;
 }

@@ -95,6 +95,13 @@ export function createThemeMenuHTML() {
             <input type="range" id="pref-badge-size" min="24" max="64" step="2" value="${badgeSize}">
             <span class="slider-value" id="pref-badge-size-value">${badgeSize}px</span>
         </div>
+        <div class="theme-menu-slider">
+            <span class="slider-label">배지 위치</span>
+            <select id="pref-badge-pos" class="theme-menu-select">
+                <option value="top" ${uiPrefs.get('badgePosition') !== 'bottom' ? 'selected' : ''}>우측 상단</option>
+                <option value="bottom" ${uiPrefs.get('badgePosition') === 'bottom' ? 'selected' : ''}>우측 하단</option>
+            </select>
+        </div>
         <div class="theme-menu-section-title">👁️ 표시</div>
         <label class="theme-menu-check">
             <input type="checkbox" id="pref-show-hero" ${showHero ? 'checked' : ''}>
@@ -118,6 +125,8 @@ export function applySizePrefs() {
     if (!container) return;
     container.style.setProperty('--card-width', `${uiPrefs.get('cardSize')}px`);
     container.style.setProperty('--persona-badge-size', `${uiPrefs.get('badgeSize')}px`);
+    // 배지 위치 (CSS가 data-badge-pos로 분기)
+    container.dataset.badgePos = uiPrefs.get('badgePosition') === 'bottom' ? 'bottom' : 'top';
 }
 
 /**
@@ -175,6 +184,13 @@ export function initThemeMenuEvents(onDisplayPrefChange) {
         applySizePrefs();
         const label = document.getElementById('pref-badge-size-value');
         if (label) label.textContent = `${v}px`;
+    });
+
+    // 배지 위치 (우측 상단/하단) - CSS만 바뀌므로 리렌더 불필요
+    const badgePosSelect = document.getElementById('pref-badge-pos');
+    listeners.add('themeMenu', badgePosSelect, 'change', (e) => {
+        uiPrefs.set('badgePosition', e.target.value === 'bottom' ? 'bottom' : 'top');
+        applySizePrefs();
     });
 
     // 초기 적용

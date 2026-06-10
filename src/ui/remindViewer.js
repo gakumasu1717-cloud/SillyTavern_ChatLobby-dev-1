@@ -1,6 +1,6 @@
 // ============================================
 // 리마인드 뷰어
-// 저장해 둔 채팅(구간)을 로비 안에서 소설처럼 다시 읽기
+// 저장해 둔 채팅(구간)을 소설처럼 다시 읽기
 // 연속 스크롤 + 메시지 단락 렌더링 (CHATNOVEL 뷰어 컨셉의 경량 재구현)
 //
 // 부하 대책:
@@ -39,8 +39,6 @@ export async function openRemindViewer(remindId) {
     currentMessages = null;
     regexEnabled = true;
 
-    const container = document.getElementById('chat-lobby-container') || document.body;
-
     const rangeText = (remind.start !== null || remind.end !== null)
         ? `#${remind.start ?? 0} ~ ${remind.end !== null ? '#' + remind.end : '끝'}`
         : '전체';
@@ -74,7 +72,12 @@ export async function openRemindViewer(remindId) {
             </div>
         </div>
     `;
-    container.appendChild(overlay);
+
+    // ⚠️ 반드시 document.body 직속으로 마운트할 것!
+    // 로비 컨테이너 안에 넣으면 조상의 transform/filter/backdrop-filter가
+    // position:fixed의 기준점(containing block)을 바꿔버려
+    // 모바일(특히 커스텀 테마 환경)에서 뷰어가 화면 밖으로 날아가거나 클리핑됨
+    document.body.appendChild(overlay);
     isViewerOpen = true;
 
     listeners.add('remindViewer', overlay.querySelector('.remind-viewer-close'), 'click', closeRemindViewer);
@@ -194,7 +197,7 @@ function getCurrentSlice() {
 }
 
 /**
- * 스와이프 반영된 메시지 본문 (CHATNOVEL parser 방식)
+ * 스와이프 반영된 메시지 본문 (백업용 - 원문 기준)
  */
 function resolveMes(msg) {
     if (Array.isArray(msg.swipes) && typeof msg.swipe_id === 'number'
@@ -245,7 +248,7 @@ function renderMessages() {
     slice.forEach((msg, i) => {
         const mesid = start + i;
 
-        // CHATNOVEL 파이프라인 (스와이프/정규식/이미지/마크다운/extra 이미지 포함)
+        // CHATNOVEL 파이프라인 (스와이프/정규식/이미지/iframe/마크다운/extra 이미지 포함)
         const formatted = renderMessageHtml(msg, {
             characterName: charName,
             userName: userName,

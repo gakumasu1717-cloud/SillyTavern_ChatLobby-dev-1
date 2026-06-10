@@ -5761,7 +5761,6 @@ ${message}` : message;
     currentRemind = remind;
     currentMessages = null;
     regexEnabled = true;
-    const container = document.getElementById("chat-lobby-container") || document.body;
     const rangeText = remind.start !== null || remind.end !== null ? `#${remind.start ?? 0} ~ ${remind.end !== null ? "#" + remind.end : "\uB05D"}` : "\uC804\uCCB4";
     const overlay = document.createElement("div");
     overlay.id = "chat-lobby-remind-viewer";
@@ -5792,7 +5791,7 @@ ${message}` : message;
             </div>
         </div>
     `;
-    container.appendChild(overlay);
+    document.body.appendChild(overlay);
     isViewerOpen = true;
     listeners.add("remindViewer", overlay.querySelector(".remind-viewer-close"), "click", closeRemindViewer);
     listeners.add("remindViewer", overlay.querySelector("#remind-viewer-regex"), "click", toggleRegex);
@@ -7367,8 +7366,10 @@ ${message}` : message;
     // 캐릭터 카드 페르소나 배지
     cardSize: 200,
     // 캐릭터 카드 폭 (px)
-    badgeSize: 36
+    badgeSize: 36,
     // 페르소나 배지 크기 (px)
+    badgePosition: "top"
+    // 페르소나 배지 위치 ('top' = 우측 상단, 'bottom' = 우측 하단)
   };
   var UiPrefs = class {
     constructor() {
@@ -7516,6 +7517,13 @@ ${message}` : message;
             <input type="range" id="pref-badge-size" min="24" max="64" step="2" value="${badgeSize}">
             <span class="slider-value" id="pref-badge-size-value">${badgeSize}px</span>
         </div>
+        <div class="theme-menu-slider">
+            <span class="slider-label">\uBC30\uC9C0 \uC704\uCE58</span>
+            <select id="pref-badge-pos" class="theme-menu-select">
+                <option value="top" ${uiPrefs.get("badgePosition") !== "bottom" ? "selected" : ""}>\uC6B0\uCE21 \uC0C1\uB2E8</option>
+                <option value="bottom" ${uiPrefs.get("badgePosition") === "bottom" ? "selected" : ""}>\uC6B0\uCE21 \uD558\uB2E8</option>
+            </select>
+        </div>
         <div class="theme-menu-section-title">\u{1F441}\uFE0F \uD45C\uC2DC</div>
         <label class="theme-menu-check">
             <input type="checkbox" id="pref-show-hero" ${showHero ? "checked" : ""}>
@@ -7533,6 +7541,7 @@ ${message}` : message;
     if (!container) return;
     container.style.setProperty("--card-width", `${uiPrefs.get("cardSize")}px`);
     container.style.setProperty("--persona-badge-size", `${uiPrefs.get("badgeSize")}px`);
+    container.dataset.badgePos = uiPrefs.get("badgePosition") === "bottom" ? "bottom" : "top";
   }
   function toggleThemeMenu() {
     const menu = document.getElementById("chat-lobby-theme-menu");
@@ -7574,6 +7583,11 @@ ${message}` : message;
       applySizePrefs();
       const label = document.getElementById("pref-badge-size-value");
       if (label) label.textContent = `${v}px`;
+    });
+    const badgePosSelect = document.getElementById("pref-badge-pos");
+    listeners.add("themeMenu", badgePosSelect, "change", (e) => {
+      uiPrefs.set("badgePosition", e.target.value === "bottom" ? "bottom" : "top");
+      applySizePrefs();
     });
     applySizePrefs();
   }

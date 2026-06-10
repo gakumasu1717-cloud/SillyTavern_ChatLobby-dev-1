@@ -11,6 +11,7 @@ const DEFAULTS = {
     personaBadges: true,   // 캐릭터 카드 페르소나 배지
     cardSize: 200,         // 캐릭터 카드 폭 (px)
     badgeSize: 36,         // 페르소나 배지 크기 (px)
+    badgePosition: 'top',  // 페르소나 배지 위치 ('top' = 우측 상단, 'bottom' = 우측 하단)
 };
 
 class UiPrefs {
