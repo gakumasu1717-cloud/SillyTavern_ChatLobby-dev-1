@@ -3,6 +3,7 @@
 // ============================================
 
 import { CONFIG } from '../config.js';
+import { listeners } from './listenerManager.js';
 
 /**
  * @typedef {Object} TouchClickOptions
@@ -128,6 +129,86 @@ export function createTouchClickHandler(element, handler, options = {}) {
         if (!touchHandled) {
             wrappedHandler(e, 'click');
         } else {
+        }
+        touchHandled = false;
+    });
+}
+
+/**
+ * 위임형 터치/클릭 핸들러 (컨테이너 1회 바인딩)
+ *
+ * createTouchClickHandler를 아이템마다 N번 바인딩하는 대신,
+ * 컨테이너에 4개(touchstart/move/end/click)만 걸고 라우터 함수가 분기한다.
+ * - 카드 수백 개 × 리스너 4개 → 리스너 4개 (렌더마다 재바인딩 불필요)
+ * - innerHTML 재렌더에도 바인딩 유지
+ *
+ * @param {HTMLElement} container - 위임 대상 컨테이너 (영속 요소)
+ * @param {(e: Event) => boolean} route - 라우터. 처리했으면 true 반환
+ *   (true일 때만 preventDefault/stopPropagation 적용 → 미처리 클릭은 그대로 통과)
+ * @param {{ group?: string, scrollThreshold?: number, debugName?: string }} [options]
+ */
+export function bindDelegatedTouchClick(container, route, options = {}) {
+    const {
+        group = 'delegated',
+        scrollThreshold = 10,
+        debugName = 'delegated',
+    } = options;
+
+    if (!container) return;
+
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let isScrolling = false;
+    let touchHandled = false;
+
+    const wrappedRoute = (e) => {
+        const now = Date.now();
+
+        // 전역 쿨다운 체크 (요소별 핸들러와 동일한 정책 공유)
+        if (now - globalLastClickTime < GLOBAL_CLICK_COOLDOWN) return;
+        if (isScrolling) return;
+
+        let handled = false;
+        try {
+            handled = route(e) === true;
+        } catch (error) {
+            console.error(`[EventHelper] ${debugName}: Route error:`, error);
+        }
+
+        if (handled) {
+            // 처리된 경우에만 쿨다운 갱신 + 기본동작 차단
+            globalLastClickTime = now;
+            if (e.cancelable) e.preventDefault();
+            e.stopPropagation();
+        }
+        return handled;
+    };
+
+    listeners.add(group, container, 'touchstart', (e) => {
+        touchHandled = false;
+        isScrolling = false;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+
+    listeners.add(group, container, 'touchmove', (e) => {
+        const deltaX = Math.abs(e.touches[0].clientX - touchStartX);
+        const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+        if (deltaX > scrollThreshold || deltaY > scrollThreshold) {
+            isScrolling = true;
+        }
+    }, { passive: true });
+
+    listeners.add(group, container, 'touchend', (e) => {
+        if (!isScrolling) {
+            touchHandled = wrappedRoute(e) === true;
+        }
+        isScrolling = false;
+    });
+
+    listeners.add(group, container, 'click', (e) => {
+        if (!touchHandled) {
+            wrappedRoute(e);
         }
         touchHandled = false;
     });

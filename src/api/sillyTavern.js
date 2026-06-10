@@ -466,6 +466,40 @@ class SillyTavernAPI {
     }
 
     /**
+     * 채팅 이름 변경
+     * @param {string} charAvatar - 캐릭터 아바타
+     * @param {string} oldFileName - 기존 파일명 (.jsonl 유무 무관)
+     * @param {string} newFileName - 새 파일명 (.jsonl 유무 무관)
+     * @returns {Promise<boolean>}
+     */
+    async renameChat(charAvatar, oldFileName, newFileName) {
+        try {
+            const originalFile = oldFileName.replace(/\.jsonl$/i, '') + '.jsonl';
+            const renamedFile = newFileName.replace(/\.jsonl$/i, '') + '.jsonl';
+
+            const response = await this.fetchWithRetry('/api/chats/rename', {
+                method: 'POST',
+                headers: this.getRequestHeaders(),
+                body: JSON.stringify({
+                    avatar_url: charAvatar,
+                    original_file: originalFile,
+                    renamed_file: renamedFile,
+                }),
+            });
+
+            if (response.ok) {
+                cache.invalidate('chats', charAvatar);
+            } else {
+                console.error('[API] Rename failed:', response.status);
+            }
+            return response.ok;
+        } catch (error) {
+            console.error('[API] Failed to rename chat:', error);
+            return false;
+        }
+    }
+
+    /**
      * 채팅 삭제
      * @param {string} fileName - 파일명
      * @param {string} charAvatar - 캐릭터 아바타
@@ -653,7 +687,7 @@ class SillyTavernAPI {
             
             for (let i = 0; i < group.chats.length; i += BATCH_SIZE) {
                 const batch = group.chats.slice(i, i + BATCH_SIZE);
-                const batchSettled = await Promise.allSettled(
+                const batchResults = await Promise.all(
                     batch.map(async (chatId) => {
                         try {
                             const response = await this.fetchWithRetry('/api/chats/group/get', {
@@ -689,7 +723,7 @@ class SillyTavernAPI {
                         }
                     })
                 );
-                allChats.push(...batchSettled.filter(r => r.status === 'fulfilled').map(r => r.value).filter(Boolean));
+                allChats.push(...batchResults.filter(Boolean));
             }
             
             return allChats;

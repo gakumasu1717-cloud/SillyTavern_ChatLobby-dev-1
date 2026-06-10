@@ -9,7 +9,9 @@ import { store } from '../data/store.js';
 import { escapeHtml, truncateText } from '../utils/textUtils.js';
 import { formatDate, getTimestamp } from '../utils/dateUtils.js';
 import { createTouchClickHandler, isMobile } from '../utils/eventHelpers.js';
-import { showToast, showAlert, showConfirm } from './notifications.js';
+import { waitFor, waitForChatChanged } from '../utils/waitFor.js';
+import { listeners } from '../utils/listenerManager.js';
+import { showToast, showAlert, showConfirm, showPrompt } from './notifications.js';
 import { CONFIG } from '../config.js';
 import { getFoldersOptionsHTML } from './templates.js';
 import { lastChatCache } from '../data/lastChatCache.js';
@@ -19,12 +21,6 @@ import {
     needsBranchAnalysis 
 } from '../utils/branchAnalyzer.js';
 import { getAllBranches, getAllFingerprints } from '../data/branchCache.js';
-
-// ============================================
-// DOM 재사용 (채팅 패널 재오픈 최적화)
-// ============================================
-let lastRenderedAvatar = null;   // 마지막으로 렌더링한 캐릭터 avatar
-let lastRenderedGroupId = null;  // 마지막으로 렌더링한 그룹 ID
 
 // ============================================
 // 툴팁 관련 변수
@@ -142,12 +138,12 @@ function bindTooltipEvents(container) {
     const lobbyContainer = document.getElementById('chat-lobby-container');
     if (!lobbyContainer) return;
     
-    // 이벤트 위임: 로비 컨테이너에 한 번만 등록
-    lobbyContainer.addEventListener('mouseover', handleTooltipMouseOver);
-    lobbyContainer.addEventListener('mouseout', handleTooltipMouseOut);
-    lobbyContainer.addEventListener('mousemove', handleTooltipMouseMove);
-    lobbyContainer.addEventListener('wheel', handleTooltipWheel, { passive: false });
-    
+    // 이벤트 위임: 로비 컨테이너에 한 번만 등록 ('tooltip' 그룹)
+    listeners.add('tooltip', lobbyContainer, 'mouseover', handleTooltipMouseOver);
+    listeners.add('tooltip', lobbyContainer, 'mouseout', handleTooltipMouseOut);
+    listeners.add('tooltip', lobbyContainer, 'mousemove', handleTooltipMouseMove);
+    listeners.add('tooltip', lobbyContainer, 'wheel', handleTooltipWheel, { passive: false });
+
     tooltipEventsInitialized = true;
 }
 
@@ -254,15 +250,9 @@ function handleTooltipMouseMove(e) {
  */
 export function cleanupTooltip() {
     hideTooltip();
-    
-    // 이벤트 위임 리스너 제거 (로비 컨테이너에서)
-    const lobbyContainer = document.getElementById('chat-lobby-container');
-    if (lobbyContainer && tooltipEventsInitialized) {
-        lobbyContainer.removeEventListener('mouseover', handleTooltipMouseOver);
-        lobbyContainer.removeEventListener('mouseout', handleTooltipMouseOut);
-        lobbyContainer.removeEventListener('mousemove', handleTooltipMouseMove);
-        lobbyContainer.removeEventListener('wheel', handleTooltipWheel);
-    }
+
+    // 이벤트 위임 리스너 제거 (그룹 일괄)
+    listeners.clear('tooltip');
     tooltipEventsInitialized = false;
     
     if (tooltipElement && tooltipElement.parentNode) {
@@ -324,26 +314,6 @@ export async function renderChatList(character) {
         return;
     }
     
-    // 🔥 DOM 재사용: 패널 닫았다가 같은 캐릭터 재오픈 시 DOM 재빌드 스킵
-    // closeChatPanel()이 currentCharacter를 null로 리셋하지만 DOM과 캐시는 남아있음
-    if (lastRenderedAvatar === character.avatar
-        && cache.isValid('chats', character.avatar)
-        && chatsList?.children.length > 0
-        && !chatsList.querySelector('.lobby-loading')) {
-        console.debug('[ChatList] DOM reuse — same character, cache valid, skipping rebuild');
-        store.setCurrentCharacter(character);
-        chatsPanel.classList.add('visible');
-        updateChatHeader(character);
-        showFolderBar(true);
-        const savedSortOption = storage.getSortOption();
-        const branchRefreshBtn = document.getElementById('chat-lobby-branch-refresh');
-        if (branchRefreshBtn) {
-            branchRefreshBtn.style.display = savedSortOption === 'branch' ? 'flex' : 'none';
-        }
-        updatePersonaQuickButton(character.avatar);
-        return;
-    }
-    
     store.setCurrentCharacter(character);
     
     if (!chatsPanel || !chatsList) {
@@ -372,8 +342,6 @@ export async function renderChatList(character) {
     
     if (cachedChats && cachedChats.length > 0 && cache.isValid('chats', character.avatar)) {
         renderChats(chatsList, cachedChats, character.avatar);
-        lastRenderedAvatar = character.avatar;
-        lastRenderedGroupId = null;
         return; // 캐시 유효하면 API 호출 안 함
     }
     
@@ -406,17 +374,14 @@ export async function renderChatList(character) {
         }
         
         renderChats(chatsList, chats, character.avatar);
-        lastRenderedAvatar = character.avatar;
-        lastRenderedGroupId = null;
     } catch (error) {
         console.error('[ChatList] Failed to load chats:', error);
         showToast('채팅 목록을 불러오지 못했습니다.', 'error');
-        lastRenderedAvatar = null;
         chatsList.innerHTML = `
             <div class="lobby-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;color:var(--text-muted,#888);padding:40px;">
                 <i>⚠️</i>
                 <div>채팅 목록 로딩 실패</div>
-                <button data-action="refresh" style="margin-top:10px;padding:8px 16px;cursor:pointer;">다시 시도</button>
+                <button onclick="window.chatLobbyRefresh()" style="margin-top:10px;padding:8px 16px;cursor:pointer;">다시 시도</button>
             </div>
         `;
     }
@@ -1203,9 +1168,7 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
     // 같은 버튼 다시 클릭하면 닫기 (토글)
     if (activeFolderMenu) {
         const prevBtn = activeFolderMenu._targetBtn;
-        activeFolderMenu.remove();
-        activeFolderMenu = null;
-        document.removeEventListener('click', closeFolderMenuOnClickOutside);
+        closeChatFolderMenu();
         if (prevBtn === targetBtn) return; // 같은 버튼이면 닫기만
     }
     
@@ -1216,6 +1179,9 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
     const menu = document.createElement('div');
     menu.className = 'chat-folder-menu';
     menu.innerHTML = `
+        <div class="folder-menu-item rename-chat-item">
+            ✏️ 이름 바꾸기
+        </div>
         <div class="folder-menu-title">폴더 이동</div>
         <div class="folder-menu-item ${!currentFolderId || currentFolderId === 'uncategorized' ? 'active' : ''}" data-folder-id="">
             📤 폴더에서 제거
@@ -1248,8 +1214,14 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
     activeFolderMenu = menu;
     activeFolderMenu._targetBtn = targetBtn; // 토글용 참조 저장
     
-    // 이벤트
-    menu.querySelectorAll('.folder-menu-item').forEach(item => {
+    // 이름 바꾸기
+    menu.querySelector('.rename-chat-item')?.addEventListener('click', async () => {
+        closeChatFolderMenu();
+        await renameChatPrompt(charAvatar, fileName);
+    });
+
+    // 폴더 이동
+    menu.querySelectorAll('.folder-menu-item:not(.rename-chat-item)').forEach(item => {
         item.addEventListener('click', async () => {
             const folderId = item.dataset.folderId;
             if (folderId) {
@@ -1265,9 +1237,9 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
         });
     });
     
-    // 외부 클릭 시 닫기
+    // 외부 클릭 시 닫기 ('chatFolderMenu' 그룹 - 닫을 때 일괄 해제)
     setTimeout(() => {
-        document.addEventListener('click', closeFolderMenuOnClickOutside);
+        listeners.add('chatFolderMenu', document, 'click', closeFolderMenuOnClickOutside);
     }, 10);
 }
 
@@ -1282,7 +1254,71 @@ function closeChatFolderMenu() {
         activeFolderMenu.remove();
         activeFolderMenu = null;
     }
-    document.removeEventListener('click', closeFolderMenuOnClickOutside);
+    listeners.clear('chatFolderMenu');
+}
+
+// ============================================
+// 채팅 이름 바꾸기
+// ============================================
+
+/**
+ * 채팅 이름 변경 (입력 → 검증 → API → 로컬 키 마이그레이션)
+ * @param {string} charAvatar
+ * @param {string} fileName
+ */
+async function renameChatPrompt(charAvatar, fileName) {
+    const currentName = fileName.replace(/\.jsonl$/i, '');
+
+    // 현재 열린 채팅은 ST 내부 포인터(char.chat)가 꼬이므로 차단
+    const context = api.getContext();
+    const currentChatFile = context?.characters?.[context?.characterId]?.chat;
+    if (currentChatFile === currentName) {
+        showToast('현재 열린 채팅은 이름을 바꿀 수 없습니다.\n다른 채팅으로 이동 후 시도해주세요.', 'warning');
+        return;
+    }
+
+    const input = await showPrompt('새 채팅 이름을 입력하세요.', '✏️ 이름 바꾸기', currentName);
+    if (input === null) return; // 취소
+
+    const newName = input.trim().replace(/\.jsonl$/i, '');
+    if (!newName || newName === currentName) return;
+
+    // 파일명 금지 문자 검사
+    if (/[\\/:*?"<>|]/.test(newName)) {
+        showToast('파일명에 사용할 수 없는 문자가 있습니다: \\ / : * ? " < > |', 'error');
+        return;
+    }
+
+    // 중복 이름 검사 (캐시된 목록 기준)
+    const chats = cache.get('chats', charAvatar);
+    if (Array.isArray(chats) && chats.some(c =>
+        (c.file_name || '').replace(/\.jsonl$/i, '') === newName)) {
+        showToast('같은 이름의 채팅이 이미 있습니다.', 'error');
+        return;
+    }
+
+    const token = operationLock.acquire('renameChat', 10000);
+    if (!token) {
+        showToast('다른 작업이 진행 중입니다.', 'warning');
+        return;
+    }
+
+    try {
+        const success = await api.renameChat(charAvatar, currentName, newName);
+        if (success) {
+            // 폴더 배정/즐겨찾기 키 함께 이동
+            storage.renameChatKey(charAvatar, currentName, newName);
+            showToast(`이름 변경: "${newName}"`, 'success');
+            await refreshCurrentChatList(true);
+        } else {
+            showToast('이름 변경에 실패했습니다.', 'error');
+        }
+    } catch (e) {
+        console.error('[ChatList] Rename failed:', e);
+        showToast('이름 변경 중 오류가 발생했습니다.', 'error');
+    } finally {
+        operationLock.release(token);
+    }
 }
 
 /**
@@ -1497,11 +1533,13 @@ export async function executeBatchDelete() {
     
     if (!confirmed) return;
     
-    if (!operationLock.acquire('batchDelete')) {
+    // 순차 삭제는 개수에 비례해 오래 걸림 → 개수 기반 타임아웃 (최대 2분)
+    const token = operationLock.acquire('batchDelete', Math.min(120000, 10000 + chatItems.length * 1500));
+    if (!token) {
         showToast('다른 작업이 진행 중입니다.', 'warning');
         return;
     }
-    
+
     let successCount = 0;
     let failCount = 0;
     
@@ -1550,7 +1588,7 @@ export async function executeBatchDelete() {
         console.error('[BatchDelete] Error:', error);
         showToast('배치 삭제 중 오류가 발생했습니다.', 'error');
     } finally {
-        operationLock.release();
+        operationLock.release(token);
     }
 }
 
@@ -1655,7 +1693,6 @@ export async function renderGroupChatList(group) {
     // 캐릭터 대신 그룹 설정
     store.setCurrentCharacter(null);
     store.setCurrentGroup(group);
-    lastRenderedAvatar = null;  // 그룹 전환 시 캐릭터 DOM 재사용 무효화
     
     if (!chatsPanel || !chatsList) {
         console.error('[ChatList] Chat panel elements not found');
@@ -1885,60 +1922,69 @@ function bindGroupChatEvents(container, group) {
         // 채팅 관리 패널을 통해 원하는 채팅을 선택하는 방식 사용
         createTouchClickHandler(chatContent, async () => {
             // 전역 OperationLock으로 Race Condition 방지
-            if (!operationLock.acquire('openGroupChat')) return;
-            
+            // 최악 경로: 그룹 선택 대기(5s) + 목록 로드(3s) + 채팅 로드(8s) → 20초
+            const token = operationLock.acquire('openGroupChat', 20000);
+            if (!token) return;
+
             try {
                 console.debug('[ChatList] Opening group chat:', { groupId: group.id, chatFile });
-                
+
                 const context = api.getContext();
                 const chatFileName = chatFile.replace('.jsonl', '');
-                
+
                 // 1. 로비 먼저 닫기
                 console.debug('[ChatList] Closing lobby first...');
                 const overlay = document.getElementById('chat-lobby-overlay');
                 const lobbyContainer = document.getElementById('chat-lobby-container');
                 const fab = document.getElementById('chat-lobby-fab');
                 const chatsPanel = document.getElementById('chat-lobby-chats');
-                
+
                 if (overlay) overlay.style.display = 'none';
                 if (lobbyContainer) lobbyContainer.style.display = 'none';
                 if (fab) fab.style.display = 'flex';
                 if (chatsPanel) chatsPanel.classList.remove('visible');
-                
+
                 store.setCurrentGroup(null);
                 store.setCurrentCharacter(null);
                 store.setLobbyOpen(false);
-                
+
                 // 2. 그룹 카드 클릭하여 그룹 선택 (이때 최근 채팅이 열림)
                 console.debug('[ChatList] Selecting group via UI click...');
                 const groupCard = document.querySelector(`.group_select[data-grid="${group.id}"]`);
-                
+
                 if (!groupCard) {
                     console.error('[ChatList] Group card not found:', `.group_select[data-grid="${group.id}"]`);
                     showToast('그룹을 찾을 수 없습니다.', 'error');
                     return;
                 }
-                
-                // jQuery 클릭
+
+                // ⚠️ 리스너 먼저 등록 → 클릭 (고정 딜레이 대신 이벤트 기반 대기)
+                const groupChatChanged = waitForChatChanged(5000);
                 if (window.$) {
                     window.$(groupCard).trigger('click');
                 } else {
                     groupCard.click();
                 }
-                
-                // 그룹 선택 완료 대기
-                await new Promise(resolve => setTimeout(resolve, 600));
-                
+
+                // 그룹 선택(채팅 로드) 완료 대기
+                await groupChatChanged;
+
+                // 안전 타임아웃 발동 여부 확인 (새 작업과의 겹침 방지)
+                if (!operationLock.isCurrent(token)) {
+                    console.warn('[ChatList] openGroupChat became stale, aborting');
+                    return;
+                }
+
                 // 3. 현재 열린 채팅이 원하는 채팅인지 확인
                 const currentContext = api.getContext();
                 const currentChat = currentContext?.chatId || '';
                 console.debug('[ChatList] Current chat after group select:', currentChat, 'Target:', chatFileName);
-                
+
                 if (currentChat === chatFileName || currentChat.includes(chatFileName)) {
                     console.debug('[ChatList] Target chat is already open');
                     return;
                 }
-                
+
                 // 4. 원하는 채팅이 아니면 채팅 관리 패널을 통해 선택
                 console.debug('[ChatList] Opening chat management panel...');
                 const manageChatsBtn = document.getElementById('option_select_chat');
@@ -1947,39 +1993,48 @@ function bindGroupChatEvents(container, group) {
                     showToast('채팅 관리 버튼을 찾을 수 없습니다.', 'error');
                     return;
                 }
-                
+
                 manageChatsBtn.click();
-                await new Promise(resolve => setTimeout(resolve, 500));
-                
+                // 채팅 목록이 로드될 때까지 조건 대기 (고정 딜레이 대신)
+                await waitFor(() => document.querySelectorAll('.select_chat_block').length > 0, 3000);
+
+                if (!operationLock.isCurrent(token)) {
+                    console.warn('[ChatList] openGroupChat became stale, aborting');
+                    return;
+                }
+
                 // 5. 채팅 목록에서 원하는 채팅 찾아 클릭
                 const chatItems = document.querySelectorAll('.select_chat_block');
                 console.debug('[ChatList] Found', chatItems.length, 'chat items');
-                
+
                 for (const chatItem of chatItems) {
                     const itemFileName = chatItem.getAttribute('file_name') || '';
                     const cleanItemName = itemFileName.replace('.jsonl', '').trim();
                     const cleanTargetName = chatFileName.replace('.jsonl', '').trim();
-                    
+
                     if (cleanItemName === cleanTargetName) {
                         console.debug('[ChatList] Found target chat, clicking...');
+                        // 대상 채팅 로드 완료까지 락 유지 (조기 해제 방지)
+                        const targetChatChanged = waitForChatChanged(8000);
                         if (window.$) {
                             window.$(chatItem).trigger('click');
                         } else {
                             chatItem.click();
                         }
+                        await targetChatChanged;
                         console.debug('[ChatList] Group chat opened successfully');
                         return;
                     }
                 }
-                
+
                 console.warn('[ChatList] Target chat not found in list');
                 showToast('채팅을 찾을 수 없습니다.', 'warning');
-                
+
             } catch (error) {
                 console.error('[ChatList] Failed to open group chat:', error);
                 showToast('그룹 채팅을 열지 못했습니다.', 'error');
             } finally {
-                operationLock.release();
+                operationLock.release(token);
             }
         }, { preventDefault: true, stopPropagation: true, debugName: `group-chat-${index}` });
         
@@ -2037,14 +2092,10 @@ export function updatePersonaQuickButton(charAvatar) {
     console.debug('[ChatList] Button found:', !!btn, 'Image found:', !!img);
     if (!btn || !img) return;
     
-    // lastChatCache에서 마지막 페르소나 가져오기 (직접 import 사용)
-    const lastPersona = lastChatCache.getPersona(charAvatar);
+    // lastChatCache에서 마지막 페르소나 가져오기 (동적 import 방지를 위해 전역에서 가져옴)
+    const lastPersona = window._chatLobbyLastChatCache ? window._chatLobbyLastChatCache.getPersona(charAvatar) : null;
     
     if (lastPersona) {
-        // 🔥 전역 이미지 에러 핸들러가 src=""일 때 display:none + fallbackApplied를
-        // 설정했을 수 있으므로, 유효한 src 설정 전에 반드시 리셋해야 함
-        delete img.dataset.fallbackApplied;
-        img.style.display = '';
         img.src = '/User Avatars/' + encodeURIComponent(lastPersona);
         img.alt = lastPersona.replace(/\.[^/.]+$/, '');
         btn.dataset.persona = lastPersona;

@@ -15,12 +15,14 @@ import { deactivateBatchMode } from './chatList.js';
 import { operationLock } from '../utils/operationLock.js';
 import { getLocalDateString } from '../data/calendarStorage.js';
 import { waitForChatChanged } from '../utils/waitFor.js';
+import { listeners } from '../utils/listenerManager.js';
 
 // ============================================
 // 디버그 로깅
 // ============================================
 
-const DEBUG = true;
+// ⚠️ 릴리즈에서는 false 유지 - 저사양 기기에서 광범위한 console.debug는 무시 못 할 비용
+const DEBUG = false;
 
 function log(...args) {
     if (DEBUG) console.debug('[TabView]', ...args);
@@ -220,15 +222,22 @@ export function switchTab(tabId) {
     const tagBar = document.getElementById('chat-lobby-tag-bar');
     const collapseBtn = document.getElementById('chat-lobby-collapse-btn');
     
+    const heroCorner = document.getElementById('chat-lobby-hero');
+
     if (tabId === 'characters') {
         [characterSection, personaBar, searchSection, tagBar, collapseBtn].forEach(el => {
             if (el) el.style.display = '';
         });
         hideAllTabContents();
+        // 최애 코너는 캐릭터 탭에서만 (내용 있을 때)
+        if (heroCorner) {
+            heroCorner.style.display = heroCorner.dataset.hasContent === 'true' ? '' : 'none';
+        }
     } else {
         [characterSection, personaBar, searchSection, tagBar, collapseBtn].forEach(el => {
             if (el) el.style.display = 'none';
         });
+        if (heroCorner) heroCorner.style.display = 'none';
         showTabContent(tabId);
     }
     
@@ -553,62 +562,6 @@ function parseKeyBasic(key) {
     return { avatar, fileName };
 }
 
-function parseChatKey(key, characters, groups) {
-    // getChatKey 형식: "avatar::fileName" (:: 구분자)
-    const sepIdx = key.indexOf('::');
-    if (sepIdx === -1) {
-        log(`Invalid key format (no :: separator): ${key}`);
-        return null;
-    }
-    const avatar = key.substring(0, sepIdx);
-    const fileName = key.substring(sepIdx + 2);
-    
-    if (!avatar || !fileName) return null;
-    
-    const isGroup = avatar.startsWith('group:');
-    const actualAvatar = isGroup ? avatar.replace('group:', '') : avatar;
-    
-    let entityInfo = null;
-    if (isGroup) {
-        entityInfo = groups.find(g => g.id === actualAvatar);
-    } else {
-        entityInfo = characters.find(c => c.avatar === actualAvatar);
-    }
-    
-    // 캐릭터 못 찾아도 표시
-    const name = entityInfo?.name || actualAvatar.replace(/\.[^.]+$/, '');
-    
-    const cachedTime = lastChatCache.lastChatTimes.get(actualAvatar);
-    const lastChatTime = typeof cachedTime === 'number' ? cachedTime : cachedTime?.time || 0;
-    
-    // 미리보기 데이터 가져오기 - 캐시된 최근 채팅에서 찾기
-    let preview = '';
-    let messageCount = 0;
-    const cachedChat = state.cachedRecentChats.find(c => 
-        c.avatar === actualAvatar && (c.file === fileName || c.chatName?.includes(fileName.replace('.jsonl', '')))
-    );
-    if (cachedChat) {
-        preview = cachedChat.preview || '';
-        messageCount = cachedChat.messageCount || 0;
-    }
-    
-    return {
-        key,
-        avatar: actualAvatar,
-        fileName,
-        file: fileName,
-        characterName: name,
-        name,
-        type: isGroup ? 'group' : 'char',
-        isGroup,
-        lastChatTime,
-        preview,
-        messageCount,
-        isFavorite: storage.isFavorite(actualAvatar, fileName),
-        folderId: storage.getChatFolder(actualAvatar, fileName),
-    };
-}
-
 function renderLibraryView() {
     const container = document.querySelector('.tab-content[data-tab="library"]');
     if (!container) return;
@@ -820,7 +773,7 @@ function createChatItem(chat, idx, source) {
     // 아바타 이미지 URL 생성
     const avatarSrc = chat.thumbnailSrc || (chat.avatar ? `/characters/${chat.avatar}` : '');
     const avatarHTML = avatarSrc 
-        ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" data-fallback="emoji"></div>`
+        ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" onerror="this.parentElement.innerHTML='👤'"></div>`
         : `<div class="chat-avatar-lg">👤</div>`;
     
     // 한 줄로: 캐릭터명 - 채팅명
@@ -889,7 +842,7 @@ function createChatItemHTML(chat, idx, source) {
     // 아바타 이미지 URL 생성
     const avatarSrc = chat.thumbnailSrc || (chat.avatar ? `/characters/${chat.avatar}` : '');
     const avatarHTML = avatarSrc 
-        ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" data-fallback="emoji"></div>`
+        ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" onerror="this.parentElement.innerHTML='👤'"></div>`
         : `<div class="chat-avatar-lg">👤</div>`;
     
     // 한 줄로: 캐릭터명 - 채팅명
@@ -1006,11 +959,13 @@ async function libraryBatchDelete() {
     );
     if (!confirmed) return;
     
-    if (!operationLock.acquire('libraryBatchDelete')) {
+    // 순차 삭제는 개수에 비례해 오래 걸림 → 개수 기반 타임아웃 (최대 2분)
+    const token = operationLock.acquire('libraryBatchDelete', Math.min(120000, 10000 + checked.length * 1500));
+    if (!token) {
         showToast('다른 작업이 진행 중입니다.', 'warning');
         return;
     }
-    
+
     try {
         // 현재 열린 채팅 확인
         const context = api.getContext();
@@ -1064,7 +1019,7 @@ async function libraryBatchDelete() {
         await loadLibrary();
         renderLibraryView();
     } finally {
-        operationLock.release();
+        operationLock.release(token);
     }
 }
 
@@ -1155,7 +1110,7 @@ function libraryBatchShowMoveMenu(targetBtn) {
         contextMenuCloseHandler = function(e) {
             if (!menu.contains(e.target)) closeContextMenu();
         };
-        document.addEventListener('click', contextMenuCloseHandler);
+        listeners.add('tabContextMenu', document, 'click', contextMenuCloseHandler);
     }, 10);
 }
 
@@ -1185,11 +1140,12 @@ async function handleDeleteChat(avatar, fileName, itemElement) {
     if (!confirmed) return;
     
     // 확인 후 락 획득
-    if (!operationLock.acquire('handleDeleteChat')) {
+    const token = operationLock.acquire('handleDeleteChat', 10000);
+    if (!token) {
         showToast('다른 작업이 진행 중입니다.', 'warning');
         return;
     }
-    
+
     try {
         const success = await api.deleteChat(fileName, avatar);
         
@@ -1225,7 +1181,7 @@ async function handleDeleteChat(avatar, fileName, itemElement) {
         logError('Delete chat failed:', e);
         showToast('채팅 삭제 중 오류가 발생했습니다.', 'error');
     } finally {
-        operationLock.release();
+        operationLock.release(token);
     }
 }
 
@@ -1233,61 +1189,63 @@ async function handleDeleteChat(avatar, fileName, itemElement) {
 // 채팅 열기
 // ============================================
 
-async function openRecentChat(chat, idx) {
-    if (!operationLock.acquire('openRecentChat')) return;
-    
+export async function openRecentChat(chat, idx) {
+    // waitForChatChanged(8000) + 마진 → 12초
+    const token = operationLock.acquire('openRecentChat', 12000);
+    if (!token) return;
+
     try {
         log('Opening recent chat:', chat.file, chat.avatar);
-        
+
         // index.js의 완전한 closeLobby 호출
         window.dispatchEvent(new CustomEvent('chatlobby:close'));
-        
-        // 🔥 FIX: closeLobby가 startRecentDomObserver()를 호출하므로
-        // 채팅 전환 중 Observer 간섭을 방지하기 위해 즉시 정지
-        stopRecentDomObserver();
-        
+
         // DOM이 다시 보이도록 대기 (rAF 2회 체이닝이 더 안정적)
         await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-        
+
         // selector로 원본 DOM 요소 찾기 (isGroup 처리 포함)
         const selector = chat.isGroup
             ? `.recentChat[data-group="${chat.avatar}"]`
             : `.recentChat[data-file="${chat.file}"][data-avatar="${chat.avatar}"]`;
         const recentEl = document.querySelector(selector);
-        
+
         if (recentEl) {
             log('Found element via selector, clicking');
-            // 🔥 FIX: CHAT_CHANGED 이벤트로 전환 완료 확인 (800ms 하드코딩 대체)
-            const chatChangedPromise = waitForChatChanged(5000);
+            // ⚠️ 고정 딜레이 대신 이벤트 기반 대기 - 느린 기기에서 락 조기 해제 방지
+            const chatChangedPromise = waitForChatChanged(8000);
             recentEl.click();
-            const changed = await chatChangedPromise;
-            if (!changed) {
-                log('CHAT_CHANGED timeout for recentChat click, using fallback delay');
-                await new Promise(r => setTimeout(r, 500));
-            }
+            await chatChangedPromise;
         } else {
-            // 최후 수단: 캐릭터 선택
-            log('Element not found, using character select');
-            const chatChangedPromise = waitForChatChanged(5000);
-            const event = new CustomEvent('lobby:select-character', { 
-                detail: { avatar: chat.avatar } 
+            // 최후 수단: openChat 핸들러로 직접 열기 (캐릭터 채팅인 경우)
+            if (!chat.isGroup && chat.avatar && chat.file) {
+                log('Element not found, opening via openChat handler');
+                const context = api.getContext();
+                const charIndex = (context?.characters || []).findIndex(c => c.avatar === chat.avatar);
+                if (charIndex !== -1) {
+                    // openChat이 자체 락을 쓰므로 현재 락은 먼저 해제
+                    operationLock.release(token);
+                    await openChat({
+                        fileName: chat.file,
+                        charAvatar: chat.avatar,
+                        charIndex: String(charIndex),
+                    });
+                    return;
+                }
+            }
+            // 그래도 안 되면 캐릭터 선택 이벤트로 폴백
+            log('Falling back to character select event');
+            const event = new CustomEvent('lobby:select-character', {
+                detail: { avatar: chat.avatar }
             });
             document.dispatchEvent(event);
-            const changed = await chatChangedPromise;
-            if (!changed) {
-                await new Promise(r => setTimeout(r, 500));
-            }
+
+            await new Promise(r => setTimeout(r, 800));
         }
-        
-        // 🔥 FIX: 채팅 전환 완료 후 Observer 재시작
-        startRecentDomObserver();
     } catch (e) {
         logError('openRecentChat failed:', e);
         showToast('채팅을 열지 못했습니다.', 'error');
-        // 에러 시에도 Observer 복구
-        startRecentDomObserver();
     } finally {
-        operationLock.release();
+        operationLock.release(token);
     }
 }
 
@@ -1331,11 +1289,9 @@ function closeContextMenu() {
         state.activeContextMenu.remove();
         state.activeContextMenu = null;
     }
-    // 리스너도 정리
-    if (contextMenuCloseHandler) {
-        document.removeEventListener('click', contextMenuCloseHandler);
-        contextMenuCloseHandler = null;
-    }
+    // 리스너도 정리 (그룹 일괄)
+    listeners.clear('tabContextMenu');
+    contextMenuCloseHandler = null;
 }
 
 function showFolderMenu(targetBtn, avatar, fileName) {
@@ -1421,7 +1377,7 @@ function showFolderMenu(targetBtn, avatar, fileName) {
                 closeContextMenu();
             }
         };
-        document.addEventListener('click', contextMenuCloseHandler);
+        listeners.add('tabContextMenu', document, 'click', contextMenuCloseHandler);
     }, 10);
 }
 
@@ -1466,9 +1422,16 @@ function getTimeAgo(timestamp) {
 // ============================================
 
 export function bindTabEvents() {
-    log('Binding tab events');
-    document.querySelectorAll('.lobby-tab').forEach(tab => {
-        tab.addEventListener('click', () => switchTab(tab.dataset.tab));
+    // ⚠️ openLobby마다 호출되므로 중복 등록 가드 필수
+    // (이전에는 로비를 열 때마다 탭에 리스너가 하나씩 쌓였음)
+    const tabBar = document.getElementById('chat-lobby-tabs');
+    if (!tabBar || tabBar.dataset.bound === 'true') return;
+    tabBar.dataset.bound = 'true';
+
+    log('Binding tab events (delegated)');
+    listeners.add('tabBar', tabBar, 'click', (e) => {
+        const tab = e.target.closest('.lobby-tab');
+        if (tab?.dataset.tab) switchTab(tab.dataset.tab);
     });
 }
 

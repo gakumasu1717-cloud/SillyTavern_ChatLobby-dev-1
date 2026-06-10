@@ -296,7 +296,7 @@ async function saveBaselineSnapshot() {
     
     for (let i = 0; i < characters.length; i += BATCH_SIZE) {
         const batch = characters.slice(i, i + BATCH_SIZE);
-        const batchSettled = await Promise.allSettled(
+        const batchResults = await Promise.all(
             batch.map(async (char) => {
                 // 캐릭터 스냅샷은 항상 fresh data 필요 (forceRefresh=true)
                 let chats;
@@ -312,7 +312,7 @@ async function saveBaselineSnapshot() {
                 return { avatar: char.avatar, chatCount, messageCount };
             })
         );
-        rankings.push(...batchSettled.filter(r => r.status === 'fulfilled').map(r => r.value));
+        rankings.push(...batchResults);
         
         // 배치 간 약간의 딜레이로 메인 스레드 블로킹 방지
         if (i + BATCH_SIZE < characters.length) {
@@ -410,7 +410,7 @@ async function saveTodaySnapshot() {
         
         for (let i = 0; i < characters.length; i += BATCH_SIZE) {
             const batch = characters.slice(i, i + BATCH_SIZE);
-            const batchSettled = await Promise.allSettled(
+            const batchResults = await Promise.all(
                 batch.map(async (char) => {
                     // 캐릭터 스냅샷은 항상 fresh data 필요 (forceRefresh=true)
                     let chats;
@@ -427,7 +427,7 @@ async function saveTodaySnapshot() {
                     return { avatar: char.avatar, chatCount, messageCount };
                 })
             );
-            rankings.push(...batchSettled.filter(r => r.status === 'fulfilled').map(r => r.value));
+            rankings.push(...batchResults);
             
             // 배치 간 약간의 딜레이로 메인 스레드 블로킹 방지
             if (i + BATCH_SIZE < characters.length) {
@@ -556,7 +556,7 @@ function renderCalendar() {
             const totalText = totalIncrease >= 0 ? `+${totalIncrease}` : `${totalIncrease}`;
             
             contentHtml = `
-                <img class="cal-card-avatar" src="${avatarUrl}" alt="" data-fallback="fade">
+                <img class="cal-card-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">
                 <div class="cal-card-day">${day}</div>
                 <div class="cal-card-gradient"></div>
                 <div class="cal-card-info">
@@ -670,7 +670,7 @@ function showLastMessagePanel(date) {
             
             cardsHtml += `
                 <div class="lastmsg-card">
-                    <img class="lastmsg-avatar" src="${avatarUrl}" alt="" data-fallback="fade">
+                    <img class="lastmsg-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0.3'">
                     <div class="lastmsg-name">${charName}</div>
                     <div class="lastmsg-stats">
                         <div class="lastmsg-label">Last Chat</div>

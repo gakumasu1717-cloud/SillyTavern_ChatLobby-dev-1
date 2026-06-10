@@ -132,7 +132,7 @@ async function fetchRankings(characters) {
     
     for (let i = 0; i < characters.length; i += BATCH_SIZE) {
         const batch = characters.slice(i, i + BATCH_SIZE);
-        const batchSettled = await Promise.allSettled(
+        const batchResults = await Promise.all(
             batch.map(async (char) => {
                 try {
                     let chats = cache.get('chats', char.avatar);
@@ -186,7 +186,7 @@ async function fetchRankings(characters) {
                 }
             })
         );
-        results.push(...batchSettled.filter(r => r.status === 'fulfilled').map(r => r.value));
+        results.push(...batchResults);
     }
     
     return results.sort((a, b) => {
@@ -395,7 +395,7 @@ function showQuiz(container) {
                     const avatarUrl = char.avatar ? `/characters/${encodeURIComponent(char.avatar)}` : '/img/ai4.png';
                     return `
                         <div class="quiz-option spin-animation" data-name="${escapeHtml(char.name)}" style="animation-delay: ${i * 0.2}s">
-                            <img src="${avatarUrl}" alt="${escapeHtml(char.name)}" data-fallback="avatar">
+                            <img src="${avatarUrl}" alt="${escapeHtml(char.name)}" onerror="this.src='/img/ai4.png'">
                             <span>${escapeHtml(char.name)}</span>
                         </div>
                     `;
@@ -429,7 +429,7 @@ function showQuizResult(container) {
             <h2>${isCorrect ? '정답이에요!' : '아쉬워요!'}</h2>
             ${!isCorrect ? `<p class="wrapped-subtitle">정답은 <strong>${escapeHtml(correct.name)}</strong> 이었어요!</p>` : ''}
             <div class="result-avatar ${isCorrect ? 'sparkle-animation' : ''}">
-                <img src="${avatarUrl}" alt="${escapeHtml(correct.name)}" data-fallback="avatar">
+                <img src="${avatarUrl}" alt="${escapeHtml(correct.name)}" onerror="this.src='/img/ai4.png'">
                 <span>${escapeHtml(correct.name)}</span>
             </div>
             <button class="wrapped-btn primary" data-action="next">다음</button>
@@ -648,7 +648,7 @@ function showFinalStats(container) {
         return `
             <div class="stats-rank-item ${i < 3 ? 'top-3' : ''}" style="animation-delay: ${i * 0.05}s">
                 <span class="rank-medal">${medal}</span>
-                <img class="rank-avatar" src="${avatarUrl}" alt="${escapeHtml(r.name)}" data-fallback="avatar">
+                <img class="rank-avatar" src="${avatarUrl}" alt="${escapeHtml(r.name)}" onerror="this.src='/img/ai4.png'">
                 <div class="rank-info">
                     <div class="rank-name">${escapeHtml(r.name)}</div>
                     <div class="rank-stats">채팅 ${r.chatCount}개 | 메시지 ${r.messageCount.toLocaleString()}개</div>
@@ -708,7 +708,7 @@ function showFinalStats(container) {
         <div class="stats-section stats-top-char">
             <h4>🏆 ${escapeHtml(top.name)}와의 통계</h4>
             <div class="top-char-card">
-                <img class="top-char-avatar" src="${topCharAvatarUrl}" alt="${escapeHtml(top.name)}" data-fallback="avatar">
+                <img class="top-char-avatar" src="${topCharAvatarUrl}" alt="${escapeHtml(top.name)}" onerror="this.src='/img/ai4.png'">
                 <div class="top-char-stats">
                     <div class="top-char-stat-item">
                         <span class="stat-label">첫 대화일</span>

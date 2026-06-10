@@ -207,7 +207,7 @@ class CacheManager {
             );
         }
         
-        await Promise.allSettled(promises);
+        await Promise.all(promises);
     }
     
     /**
@@ -261,7 +261,7 @@ class CacheManager {
             }
         });
         
-        await Promise.allSettled(promises);
+        await Promise.all(promises);
     }
 }
 

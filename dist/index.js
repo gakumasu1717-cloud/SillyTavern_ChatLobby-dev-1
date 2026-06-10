@@ -44,17 +44,20 @@
         extensionFolderPath: "third-party/SillyTavern-ChatLobby",
         storageKey: "chatLobby_data",
         // 캐시 설정
+        // ⚠️ TTL을 짧게 잡으면 로비를 열 때마다 사실상 전체 재요청이 발생함 (렉의 주원인)
+        // 변경 감지는 이벤트(CHAT_CHANGED, CHARACTER_EDITED 등)가 스코프 무효화로 처리하므로
+        // TTL은 "이벤트를 놓쳤을 때의 안전망" 역할만 하면 됨 → 길게 설정
         cache: {
-          chatsDuration: 3e4,
-          // 채팅 목록 캐시 30초
-          chatCountDuration: 6e4,
-          // 채팅 수 캐시 1분
-          messageCountsDuration: 6e4,
-          // 메시지 수 캐시 1분
-          personasDuration: 6e4,
-          // 페르소나 캐시 1분
-          charactersDuration: 3e4
-          // 캐릭터 캐시 30초
+          chatsDuration: 3e5,
+          // 채팅 목록 캐시 5분
+          chatCountsDuration: 6e5,
+          // 채팅 수 캐시 10분
+          messageCountsDuration: 6e5,
+          // 메시지 수 캐시 10분
+          personasDuration: 6e5,
+          // 페르소나 캐시 10분
+          charactersDuration: 3e5
+          // 캐릭터 캐시 5분
         },
         // UI 설정
         ui: {
@@ -427,7 +430,7 @@ ${message}` : message;
           })
         );
       }
-      await Promise.allSettled(promises);
+      await Promise.all(promises);
     }
     /**
      * 페르소나 프리로딩
@@ -473,7 +476,7 @@ ${message}` : message;
           console.error("[Cache] Failed to preload chats for", char.name, e);
         }
       });
-      await Promise.allSettled(promises);
+      await Promise.all(promises);
     }
   };
   var cache = new CacheManager();
@@ -738,6 +741,28 @@ ${message}` : message;
       this.assignChatToFolder(charAvatar, chatFileName, folderId);
     }
     /**
+     * 채팅 이름 변경 시 로컬 데이터 키 마이그레이션
+     * (폴더 배정 + 즐겨찾기가 채팅 키에 묶여 있으므로 함께 이동)
+     * @param {string} charAvatar
+     * @param {string} oldFileName
+     * @param {string} newFileName
+     */
+    renameChatKey(charAvatar, oldFileName, newFileName) {
+      this.update((data) => {
+        const oldKey = this.getChatKey(charAvatar, oldFileName);
+        const newKey = this.getChatKey(charAvatar, newFileName);
+        if (oldKey === newKey) return;
+        if (data.chatAssignments[oldKey] !== void 0) {
+          data.chatAssignments[newKey] = data.chatAssignments[oldKey];
+          delete data.chatAssignments[oldKey];
+        }
+        const favIndex = data.favorites.indexOf(oldKey);
+        if (favIndex > -1) {
+          data.favorites[favIndex] = newKey;
+        }
+      });
+    }
+    /**
      * 채팅이 속한 폴더 가져오기
      * @param {string} charAvatar
      * @param {string} chatFileName
@@ -973,6 +998,8 @@ ${message}` : message;
      */
     recordPersonaUsage(personaKey) {
       if (!personaKey) return;
+      const current = this.load().personaRecentUsage;
+      if (Array.isArray(current) && current[0] === personaKey) return;
       this.update((data) => {
         if (!Array.isArray(data.personaRecentUsage)) data.personaRecentUsage = [];
         const idx = data.personaRecentUsage.indexOf(personaKey);
@@ -1568,6 +1595,37 @@ ${message}` : message;
       }
     }
     /**
+     * 채팅 이름 변경
+     * @param {string} charAvatar - 캐릭터 아바타
+     * @param {string} oldFileName - 기존 파일명 (.jsonl 유무 무관)
+     * @param {string} newFileName - 새 파일명 (.jsonl 유무 무관)
+     * @returns {Promise<boolean>}
+     */
+    async renameChat(charAvatar, oldFileName, newFileName) {
+      try {
+        const originalFile = oldFileName.replace(/\.jsonl$/i, "") + ".jsonl";
+        const renamedFile = newFileName.replace(/\.jsonl$/i, "") + ".jsonl";
+        const response = await this.fetchWithRetry("/api/chats/rename", {
+          method: "POST",
+          headers: this.getRequestHeaders(),
+          body: JSON.stringify({
+            avatar_url: charAvatar,
+            original_file: originalFile,
+            renamed_file: renamedFile
+          })
+        });
+        if (response.ok) {
+          cache.invalidate("chats", charAvatar);
+        } else {
+          console.error("[API] Rename failed:", response.status);
+        }
+        return response.ok;
+      } catch (error) {
+        console.error("[API] Failed to rename chat:", error);
+        return false;
+      }
+    }
+    /**
      * 채팅 삭제
      * @param {string} fileName - 파일명
      * @param {string} charAvatar - 캐릭터 아바타
@@ -1716,7 +1774,7 @@ ${message}` : message;
         const allChats = [];
         for (let i = 0; i < group.chats.length; i += BATCH_SIZE) {
           const batch = group.chats.slice(i, i + BATCH_SIZE);
-          const batchSettled = await Promise.allSettled(
+          const batchResults = await Promise.all(
             batch.map(async (chatId) => {
               try {
                 const response = await this.fetchWithRetry("/api/chats/group/get", {
@@ -1746,7 +1804,7 @@ ${message}` : message;
               }
             })
           );
-          allChats.push(...batchSettled.filter((r) => r.status === "fulfilled").map((r) => r.value).filter(Boolean));
+          allChats.push(...batchResults.filter(Boolean));
         }
         return allChats;
       } catch (error) {
@@ -1955,23 +2013,6 @@ ${message}` : message;
       this._loadFromStorage();
     }
     /**
-     * 엔트리 정규화 — 하위호환 타입 (숫자, 구버전 오브젝트)을 현재 형식으로 변환
-     * @param {any} value
-     * @returns {{ time: number, persona: string|null }}
-     */
-    _normalizeEntry(value) {
-      if (typeof value === "number") {
-        return { time: value, persona: null };
-      }
-      if (value && typeof value === "object") {
-        return {
-          time: value.time || value.timestamp || 0,
-          persona: value.persona || null
-        };
-      }
-      return { time: 0, persona: null };
-    }
-    /**
      * localStorage에서 캐시 복원 (하위 호환성 지원)
      */
     _loadFromStorage() {
@@ -1980,20 +2021,18 @@ ${message}` : message;
         if (stored) {
           const data = JSON.parse(stored);
           if (data && typeof data === "object") {
-            let migrated = false;
             Object.entries(data).forEach(([avatar, value]) => {
-              const normalized = this._normalizeEntry(value);
-              this.lastChatTimes.set(avatar, normalized);
-              if (typeof value === "number" || value && value.timestamp) {
-                migrated = true;
+              if (typeof value === "number") {
+                this.lastChatTimes.set(avatar, { time: value, persona: null });
+              } else if (value && typeof value === "object") {
+                this.lastChatTimes.set(avatar, {
+                  time: value.time || value.timestamp || 0,
+                  // timestamp 하위 호환
+                  persona: value.persona || null
+                });
               }
             });
             console.debug("[LastChatCache] Restored", this.lastChatTimes.size, "entries from storage");
-            if (migrated) {
-              console.debug("[LastChatCache] Migrated legacy entries, saving normalized format");
-              this._dirty = true;
-              this._saveToStorage();
-            }
           }
         }
       } catch (e) {
@@ -2150,8 +2189,7 @@ ${message}` : message;
             }
             return 0;
           });
-          const settled = await Promise.allSettled(fallbackPromises);
-          const times = settled.filter((r) => r.status === "fulfilled").map((r) => r.value);
+          const times = await Promise.all(fallbackPromises);
           lastTime = Math.max(...times, 0);
         }
         if (lastTime > 0) this.set(charAvatar, lastTime);
@@ -2179,7 +2217,7 @@ ${message}` : message;
       try {
         for (let i = 0; i < characters.length; i += batchSize) {
           const batch = characters.slice(i, i + batchSize);
-          await Promise.allSettled(batch.map(async (char) => {
+          await Promise.all(batch.map(async (char) => {
             const cached = this.get(char.avatar);
             if (cached > 0) return;
             if (char.date_last_chat) {
@@ -2206,19 +2244,6 @@ ${message}` : message;
       const cached = this.get(char.avatar);
       if (cached > 0) return cached;
       return char.date_last_chat || 0;
-    }
-    /**
-     * 채팅 열기 시 마지막 시간 갱신
-     */
-    markOpened(charAvatar) {
-      if (!charAvatar) return;
-      this.updateNow(charAvatar);
-    }
-    /**
-     * 채팅 열기만으로는 캐시를 갱신하지 않음
-     */
-    markViewed(charAvatar) {
-      console.debug("[LastChatCache] markViewed (no update):", charAvatar);
     }
     /**
      * 캐시 클리어
@@ -2274,13 +2299,14 @@ ${message}` : message;
   // src/utils/operationLock.js
   var OperationLock = class {
     constructor() {
-      this._locked = false;
+      this._seq = 0;
+      this._token = null;
       this._currentOp = null;
       this._safetyTimer = null;
     }
     /** 현재 잠금 상태 */
     get isLocked() {
-      return this._locked;
+      return this._token !== null;
     }
     /** 현재 실행 중인 작업명 */
     get currentOp() {
@@ -2290,26 +2316,50 @@ ${message}` : message;
      * Lock 획득 시도
      * @param {string} opName - 작업 이름 (디버그용)
      * @param {number} timeout - 안전 해제 타임아웃 (ms)
-     * @returns {boolean} - 획득 성공 여부
+     *   ⚠️ 작업의 "최악 소요 시간"보다 길게 잡을 것.
+     *   (예: openChat은 waitForChatChanged 5초 × 2회 + 마진 → 15000)
+     * @returns {number|null} - 성공 시 토큰, 실패 시 null
      */
     acquire(opName, timeout = 8e3) {
-      if (this._locked) {
+      if (this._token !== null) {
         console.warn(`[OperationLock] Blocked: "${opName}" (running: "${this._currentOp}")`);
-        return false;
+        return null;
       }
-      this._locked = true;
+      const token = ++this._seq;
+      this._token = token;
       this._currentOp = opName;
       this._safetyTimer = setTimeout(() => {
-        console.warn(`[OperationLock] Safety release: "${opName}" timed out (${timeout}ms)`);
-        this.release();
+        if (this._token === token) {
+          console.warn(`[OperationLock] Safety release: "${opName}" timed out (${timeout}ms)`);
+          this._clear();
+        }
       }, timeout);
-      return true;
+      return token;
     }
     /**
-     * Lock 해제
+     * 해당 토큰이 아직 유효한(현재 활성) 작업인지 확인
+     * 안전 타임아웃으로 해제됐거나 다른 작업이 시작됐으면 false
+     * @param {number|null} token
+     * @returns {boolean}
      */
-    release() {
-      this._locked = false;
+    isCurrent(token) {
+      return token !== null && token !== void 0 && token === this._token;
+    }
+    /**
+     * Lock 해제 (토큰 일치 시에만)
+     * @param {number|null} token - acquire()가 반환한 토큰
+     * @returns {boolean} - 실제로 해제됐는지
+     */
+    release(token) {
+      if (!this.isCurrent(token)) {
+        return false;
+      }
+      this._clear();
+      return true;
+    }
+    /** 내부 상태 초기화 */
+    _clear() {
+      this._token = null;
       this._currentOp = null;
       if (this._safetyTimer) {
         clearTimeout(this._safetyTimer);
@@ -2375,6 +2425,75 @@ ${message}` : message;
 
   // src/utils/eventHelpers.js
   init_config();
+
+  // src/utils/listenerManager.js
+  var ListenerManager = class {
+    constructor() {
+      this._groups = /* @__PURE__ */ new Map();
+    }
+    /**
+     * 리스너 등록 (그룹 단위 추적)
+     * @param {string} group - 그룹 이름 (모듈/기능 단위, 예: 'global', 'radialMenu', 'tooltip')
+     * @param {EventTarget|null} target - 대상 (null이면 무시)
+     * @param {string} type - 이벤트 타입
+     * @param {Function} handler - 핸들러
+     * @param {any} [options] - addEventListener 옵션
+     * @returns {Function} handler (체이닝용)
+     */
+    add(group, target, type, handler, options) {
+      if (!target || typeof handler !== "function") return handler;
+      target.addEventListener(type, handler, options);
+      if (!this._groups.has(group)) {
+        this._groups.set(group, []);
+      }
+      this._groups.get(group).push({ target, type, handler, options });
+      return handler;
+    }
+    /**
+     * 그룹의 모든 리스너 해제
+     * @param {string} group
+     * @returns {number} 해제된 리스너 수
+     */
+    clear(group) {
+      const list = this._groups.get(group);
+      if (!list) return 0;
+      for (const { target, type, handler, options } of list) {
+        try {
+          target.removeEventListener(type, handler, options);
+        } catch (e) {
+          console.warn(`[ListenerManager] Failed to remove ${group}/${type}:`, e);
+        }
+      }
+      this._groups.delete(group);
+      return list.length;
+    }
+    /**
+     * 모든 그룹 해제 (확장 전체 cleanup용)
+     */
+    clearAll() {
+      let total = 0;
+      for (const group of [...this._groups.keys()]) {
+        total += this.clear(group);
+      }
+      if (total > 0) {
+        console.debug(`[ListenerManager] Cleared ${total} listeners`);
+      }
+    }
+    /**
+     * 그룹별 등록 현황 (디버그용)
+     * @returns {Object<string, number>}
+     */
+    stats() {
+      const result = {};
+      this._groups.forEach((list, group) => {
+        result[group] = list.length;
+      });
+      return result;
+    }
+  };
+  var listeners = new ListenerManager();
+
+  // src/utils/eventHelpers.js
   var isMobile = () => window.innerWidth <= CONFIG.ui.mobileBreakpoint || "ontouchstart" in window;
   function debounce(func, wait = CONFIG.ui.debounceWait) {
     let timeout;
@@ -2446,6 +2565,60 @@ ${message}` : message;
       if (!touchHandled) {
         wrappedHandler(e, "click");
       } else {
+      }
+      touchHandled = false;
+    });
+  }
+  function bindDelegatedTouchClick(container, route, options = {}) {
+    const {
+      group = "delegated",
+      scrollThreshold = 10,
+      debugName = "delegated"
+    } = options;
+    if (!container) return;
+    let touchStartX2 = 0;
+    let touchStartY = 0;
+    let isScrolling = false;
+    let touchHandled = false;
+    const wrappedRoute = (e) => {
+      const now = Date.now();
+      if (now - globalLastClickTime < GLOBAL_CLICK_COOLDOWN) return;
+      if (isScrolling) return;
+      let handled = false;
+      try {
+        handled = route(e) === true;
+      } catch (error) {
+        console.error(`[EventHelper] ${debugName}: Route error:`, error);
+      }
+      if (handled) {
+        globalLastClickTime = now;
+        if (e.cancelable) e.preventDefault();
+        e.stopPropagation();
+      }
+      return handled;
+    };
+    listeners.add(group, container, "touchstart", (e) => {
+      touchHandled = false;
+      isScrolling = false;
+      touchStartX2 = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    listeners.add(group, container, "touchmove", (e) => {
+      const deltaX = Math.abs(e.touches[0].clientX - touchStartX2);
+      const deltaY = Math.abs(e.touches[0].clientY - touchStartY);
+      if (deltaX > scrollThreshold || deltaY > scrollThreshold) {
+        isScrolling = true;
+      }
+    }, { passive: true });
+    listeners.add(group, container, "touchend", (e) => {
+      if (!isScrolling) {
+        touchHandled = wrappedRoute(e) === true;
+      }
+      isScrolling = false;
+    });
+    listeners.add(group, container, "click", (e) => {
+      if (!touchHandled) {
+        wrappedRoute(e);
       }
       touchHandled = false;
     });
@@ -2696,7 +2869,7 @@ ${message}` : message;
       for (let i = 0; i < needsUpdate.length; i += BATCH_SIZE) {
         if (ctx && !checkSafety(ctx)) break;
         const batch = needsUpdate.slice(i, i + BATCH_SIZE);
-        await Promise.allSettled(batch.map(async (chat) => {
+        await Promise.all(batch.map(async (chat) => {
           const fn = chat.file_name || "";
           const content = await loadChatContent(charAvatar, fn, ctx);
           if (content && content.length > 0) {
@@ -2764,7 +2937,7 @@ ${message}` : message;
     }
     const chatContents = {};
     const chatHashes = {};
-    await Promise.allSettled(group.map(async (item) => {
+    await Promise.all(group.map(async (item) => {
       const content = await loadChatContent(charAvatar, item.fileName, ctx);
       if (content) {
         chatContents[item.fileName] = content;
@@ -3061,8 +3234,6 @@ ${message}` : message;
   }
 
   // src/ui/chatList.js
-  var lastRenderedAvatar = null;
-  var lastRenderedGroupId = null;
   var tooltipElement = null;
   var tooltipTimeout = null;
   var currentTooltipTarget = null;
@@ -3142,10 +3313,10 @@ ${message}` : message;
     }
     const lobbyContainer = document.getElementById("chat-lobby-container");
     if (!lobbyContainer) return;
-    lobbyContainer.addEventListener("mouseover", handleTooltipMouseOver);
-    lobbyContainer.addEventListener("mouseout", handleTooltipMouseOut);
-    lobbyContainer.addEventListener("mousemove", handleTooltipMouseMove);
-    lobbyContainer.addEventListener("wheel", handleTooltipWheel, { passive: false });
+    listeners.add("tooltip", lobbyContainer, "mouseover", handleTooltipMouseOver);
+    listeners.add("tooltip", lobbyContainer, "mouseout", handleTooltipMouseOut);
+    listeners.add("tooltip", lobbyContainer, "mousemove", handleTooltipMouseMove);
+    listeners.add("tooltip", lobbyContainer, "wheel", handleTooltipWheel, { passive: false });
     tooltipEventsInitialized = true;
   }
   function handleTooltipMouseOver(e) {
@@ -3205,13 +3376,7 @@ ${message}` : message;
   }
   function cleanupTooltip() {
     hideTooltip();
-    const lobbyContainer = document.getElementById("chat-lobby-container");
-    if (lobbyContainer && tooltipEventsInitialized) {
-      lobbyContainer.removeEventListener("mouseover", handleTooltipMouseOver);
-      lobbyContainer.removeEventListener("mouseout", handleTooltipMouseOut);
-      lobbyContainer.removeEventListener("mousemove", handleTooltipMouseMove);
-      lobbyContainer.removeEventListener("wheel", handleTooltipWheel);
-    }
+    listeners.clear("tooltip");
     tooltipEventsInitialized = false;
     if (tooltipElement && tooltipElement.parentNode) {
       tooltipElement.parentNode.removeChild(tooltipElement);
@@ -3237,20 +3402,6 @@ ${message}` : message;
       console.debug("[ChatList] Skipping - same character already visible with valid cache");
       return;
     }
-    if (lastRenderedAvatar === character.avatar && cache.isValid("chats", character.avatar) && chatsList?.children.length > 0 && !chatsList.querySelector(".lobby-loading")) {
-      console.debug("[ChatList] DOM reuse \u2014 same character, cache valid, skipping rebuild");
-      store.setCurrentCharacter(character);
-      chatsPanel.classList.add("visible");
-      updateChatHeader(character);
-      showFolderBar(true);
-      const savedSortOption2 = storage.getSortOption();
-      const branchRefreshBtn2 = document.getElementById("chat-lobby-branch-refresh");
-      if (branchRefreshBtn2) {
-        branchRefreshBtn2.style.display = savedSortOption2 === "branch" ? "flex" : "none";
-      }
-      updatePersonaQuickButton(character.avatar);
-      return;
-    }
     store.setCurrentCharacter(character);
     if (!chatsPanel || !chatsList) {
       console.error("[ChatList] Chat panel elements not found");
@@ -3269,8 +3420,6 @@ ${message}` : message;
     const cachedChats = cache.get("chats", character.avatar);
     if (cachedChats && cachedChats.length > 0 && cache.isValid("chats", character.avatar)) {
       renderChats(chatsList, cachedChats, character.avatar);
-      lastRenderedAvatar = character.avatar;
-      lastRenderedGroupId = null;
       return;
     }
     chatsList.innerHTML = '<div class="lobby-loading">\uCC44\uD305 \uB85C\uB529 \uC911...</div>';
@@ -3293,17 +3442,14 @@ ${message}` : message;
         return;
       }
       renderChats(chatsList, chats, character.avatar);
-      lastRenderedAvatar = character.avatar;
-      lastRenderedGroupId = null;
     } catch (error) {
       console.error("[ChatList] Failed to load chats:", error);
       showToast("\uCC44\uD305 \uBAA9\uB85D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
-      lastRenderedAvatar = null;
       chatsList.innerHTML = `
             <div class="lobby-empty-state" style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;text-align:center;color:var(--text-muted,#888);padding:40px;">
                 <i>\u26A0\uFE0F</i>
                 <div>\uCC44\uD305 \uBAA9\uB85D \uB85C\uB529 \uC2E4\uD328</div>
-                <button data-action="refresh" style="margin-top:10px;padding:8px 16px;cursor:pointer;">\uB2E4\uC2DC \uC2DC\uB3C4</button>
+                <button onclick="window.chatLobbyRefresh()" style="margin-top:10px;padding:8px 16px;cursor:pointer;">\uB2E4\uC2DC \uC2DC\uB3C4</button>
             </div>
         `;
     }
@@ -3775,9 +3921,7 @@ ${message}` : message;
   function showChatFolderMenu(targetBtn, charAvatar, fileName) {
     if (activeFolderMenu) {
       const prevBtn = activeFolderMenu._targetBtn;
-      activeFolderMenu.remove();
-      activeFolderMenu = null;
-      document.removeEventListener("click", closeFolderMenuOnClickOutside);
+      closeChatFolderMenu();
       if (prevBtn === targetBtn) return;
     }
     const data = storage.load();
@@ -3786,6 +3930,9 @@ ${message}` : message;
     const menu = document.createElement("div");
     menu.className = "chat-folder-menu";
     menu.innerHTML = `
+        <div class="folder-menu-item rename-chat-item">
+            \u270F\uFE0F \uC774\uB984 \uBC14\uAFB8\uAE30
+        </div>
         <div class="folder-menu-title">\uD3F4\uB354 \uC774\uB3D9</div>
         <div class="folder-menu-item ${!currentFolderId || currentFolderId === "uncategorized" ? "active" : ""}" data-folder-id="">
             \u{1F4E4} \uD3F4\uB354\uC5D0\uC11C \uC81C\uAC70
@@ -3813,7 +3960,11 @@ ${message}` : message;
     lobbyContainer.appendChild(menu);
     activeFolderMenu = menu;
     activeFolderMenu._targetBtn = targetBtn;
-    menu.querySelectorAll(".folder-menu-item").forEach((item) => {
+    menu.querySelector(".rename-chat-item")?.addEventListener("click", async () => {
+      closeChatFolderMenu();
+      await renameChatPrompt(charAvatar, fileName);
+    });
+    menu.querySelectorAll(".folder-menu-item:not(.rename-chat-item)").forEach((item) => {
       item.addEventListener("click", async () => {
         const folderId = item.dataset.folderId;
         if (folderId) {
@@ -3829,7 +3980,7 @@ ${message}` : message;
       });
     });
     setTimeout(() => {
-      document.addEventListener("click", closeFolderMenuOnClickOutside);
+      listeners.add("chatFolderMenu", document, "click", closeFolderMenuOnClickOutside);
     }, 10);
   }
   function closeFolderMenuOnClickOutside(e) {
@@ -3842,7 +3993,49 @@ ${message}` : message;
       activeFolderMenu.remove();
       activeFolderMenu = null;
     }
-    document.removeEventListener("click", closeFolderMenuOnClickOutside);
+    listeners.clear("chatFolderMenu");
+  }
+  async function renameChatPrompt(charAvatar, fileName) {
+    const currentName = fileName.replace(/\.jsonl$/i, "");
+    const context = api.getContext();
+    const currentChatFile = context?.characters?.[context?.characterId]?.chat;
+    if (currentChatFile === currentName) {
+      showToast("\uD604\uC7AC \uC5F4\uB9B0 \uCC44\uD305\uC740 \uC774\uB984\uC744 \uBC14\uAFC0 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.\n\uB2E4\uB978 \uCC44\uD305\uC73C\uB85C \uC774\uB3D9 \uD6C4 \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694.", "warning");
+      return;
+    }
+    const input = await showPrompt("\uC0C8 \uCC44\uD305 \uC774\uB984\uC744 \uC785\uB825\uD558\uC138\uC694.", "\u270F\uFE0F \uC774\uB984 \uBC14\uAFB8\uAE30", currentName);
+    if (input === null) return;
+    const newName = input.trim().replace(/\.jsonl$/i, "");
+    if (!newName || newName === currentName) return;
+    if (/[\\/:*?"<>|]/.test(newName)) {
+      showToast('\uD30C\uC77C\uBA85\uC5D0 \uC0AC\uC6A9\uD560 \uC218 \uC5C6\uB294 \uBB38\uC790\uAC00 \uC788\uC2B5\uB2C8\uB2E4: \\ / : * ? " < > |', "error");
+      return;
+    }
+    const chats = cache.get("chats", charAvatar);
+    if (Array.isArray(chats) && chats.some((c) => (c.file_name || "").replace(/\.jsonl$/i, "") === newName)) {
+      showToast("\uAC19\uC740 \uC774\uB984\uC758 \uCC44\uD305\uC774 \uC774\uBBF8 \uC788\uC2B5\uB2C8\uB2E4.", "error");
+      return;
+    }
+    const token = operationLock.acquire("renameChat", 1e4);
+    if (!token) {
+      showToast("\uB2E4\uB978 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.", "warning");
+      return;
+    }
+    try {
+      const success = await api.renameChat(charAvatar, currentName, newName);
+      if (success) {
+        storage.renameChatKey(charAvatar, currentName, newName);
+        showToast(`\uC774\uB984 \uBCC0\uACBD: "${newName}"`, "success");
+        await refreshCurrentChatList(true);
+      } else {
+        showToast("\uC774\uB984 \uBCC0\uACBD\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4.", "error");
+      }
+    } catch (e) {
+      console.error("[ChatList] Rename failed:", e);
+      showToast("\uC774\uB984 \uBCC0\uACBD \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "error");
+    } finally {
+      operationLock.release(token);
+    }
   }
   function handleSortChange(sortValue) {
     storage.setSortOption(sortValue);
@@ -3980,7 +4173,8 @@ ${message}` : message;
       true
     );
     if (!confirmed) return;
-    if (!operationLock.acquire("batchDelete")) {
+    const token = operationLock.acquire("batchDelete", Math.min(12e4, 1e4 + chatItems.length * 1500));
+    if (!token) {
       showToast("\uB2E4\uB978 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.", "warning");
       return;
     }
@@ -4021,7 +4215,7 @@ ${message}` : message;
       console.error("[BatchDelete] Error:", error);
       showToast("\uBC30\uCE58 \uC0AD\uC81C \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "error");
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
   function isBatchMode() {
@@ -4082,7 +4276,6 @@ ${message}` : message;
     }
     store.setCurrentCharacter(null);
     store.setCurrentGroup(group);
-    lastRenderedAvatar = null;
     if (!chatsPanel || !chatsList) {
       console.error("[ChatList] Chat panel elements not found");
       return;
@@ -4239,7 +4432,8 @@ ${message}` : message;
         }, { debugName: `group-fav-${index}` });
       }
       createTouchClickHandler(chatContent, async () => {
-        if (!operationLock.acquire("openGroupChat")) return;
+        const token = operationLock.acquire("openGroupChat", 2e4);
+        if (!token) return;
         try {
           console.debug("[ChatList] Opening group chat:", { groupId: group.id, chatFile });
           const context = api.getContext();
@@ -4263,12 +4457,17 @@ ${message}` : message;
             showToast("\uADF8\uB8F9\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
             return;
           }
+          const groupChatChanged = waitForChatChanged(5e3);
           if (window.$) {
             window.$(groupCard).trigger("click");
           } else {
             groupCard.click();
           }
-          await new Promise((resolve) => setTimeout(resolve, 600));
+          await groupChatChanged;
+          if (!operationLock.isCurrent(token)) {
+            console.warn("[ChatList] openGroupChat became stale, aborting");
+            return;
+          }
           const currentContext = api.getContext();
           const currentChat = currentContext?.chatId || "";
           console.debug("[ChatList] Current chat after group select:", currentChat, "Target:", chatFileName);
@@ -4284,7 +4483,11 @@ ${message}` : message;
             return;
           }
           manageChatsBtn.click();
-          await new Promise((resolve) => setTimeout(resolve, 500));
+          await waitFor(() => document.querySelectorAll(".select_chat_block").length > 0, 3e3);
+          if (!operationLock.isCurrent(token)) {
+            console.warn("[ChatList] openGroupChat became stale, aborting");
+            return;
+          }
           const chatItems = document.querySelectorAll(".select_chat_block");
           console.debug("[ChatList] Found", chatItems.length, "chat items");
           for (const chatItem of chatItems) {
@@ -4293,11 +4496,13 @@ ${message}` : message;
             const cleanTargetName = chatFileName.replace(".jsonl", "").trim();
             if (cleanItemName === cleanTargetName) {
               console.debug("[ChatList] Found target chat, clicking...");
+              const targetChatChanged = waitForChatChanged(8e3);
               if (window.$) {
                 window.$(chatItem).trigger("click");
               } else {
                 chatItem.click();
               }
+              await targetChatChanged;
               console.debug("[ChatList] Group chat opened successfully");
               return;
             }
@@ -4308,7 +4513,7 @@ ${message}` : message;
           console.error("[ChatList] Failed to open group chat:", error);
           showToast("\uADF8\uB8F9 \uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
         } finally {
-          operationLock.release();
+          operationLock.release(token);
         }
       }, { preventDefault: true, stopPropagation: true, debugName: `group-chat-${index}` });
       if (delBtn) {
@@ -4347,10 +4552,8 @@ ${message}` : message;
     const img = btn ? btn.querySelector(".persona-quick-avatar") : null;
     console.debug("[ChatList] Button found:", !!btn, "Image found:", !!img);
     if (!btn || !img) return;
-    const lastPersona = lastChatCache.getPersona(charAvatar);
+    const lastPersona = window._chatLobbyLastChatCache ? window._chatLobbyLastChatCache.getPersona(charAvatar) : null;
     if (lastPersona) {
-      delete img.dataset.fallbackApplied;
-      img.style.display = "";
       img.src = "/User Avatars/" + encodeURIComponent(lastPersona);
       img.alt = lastPersona.replace(/\.[^/.]+$/, "");
       btn.dataset.persona = lastPersona;
@@ -4370,10 +4573,10 @@ ${message}` : message;
   init_notifications();
   init_config();
   async function openChat(chatInfo) {
-    if (!operationLock.acquire("openChat")) return;
+    const token = operationLock.acquire("openChat", 15e3);
+    if (!token) return;
     const { fileName, charAvatar, charIndex } = chatInfo;
     console.debug("[ChatHandlers] openChat called:", { fileName, charAvatar, charIndex });
-    let lobbyHidden = false;
     try {
       if (!charAvatar || !fileName) {
         console.error("[ChatHandlers] Missing chat data");
@@ -4394,10 +4597,18 @@ ${message}` : message;
       const isSameCharacter = currentChar?.avatar === charAvatar;
       if (!isSameCharacter) {
         console.debug("[ChatHandlers] Different character, selecting...");
+        const targetChar = characters[index];
+        if (targetChar && typeof targetChar.chat === "string") {
+          targetChar.chat = chatFileName;
+        }
         const chatChangedPromise = waitForChatChanged(5e3);
         await api.selectCharacterById(index);
         const chatChanged = await chatChangedPromise;
         console.debug("[ChatHandlers] Chat changed event received:", chatChanged);
+        if (!operationLock.isCurrent(token)) {
+          console.warn("[ChatHandlers] openChat became stale, aborting");
+          return;
+        }
         if (!chatChanged) {
           const charSelected = await waitForCharacterSelect(charAvatar, 2e3);
           if (!charSelected) {
@@ -4405,40 +4616,28 @@ ${message}` : message;
             return;
           }
         }
-        const stateReady = await waitFor(() => {
-          const ctx = api.getContext();
-          const cur = ctx?.characters?.[ctx?.characterId];
-          return cur?.avatar === charAvatar && !!cur?.chat;
-        }, 3e3, 100);
-        if (!stateReady) {
-          console.warn("[ChatHandlers] Character state not ready after switch, adding safety delay");
-          await new Promise((r) => setTimeout(r, 500));
+        await new Promise((r) => setTimeout(r, 300));
+        if (!operationLock.isCurrent(token)) {
+          console.warn("[ChatHandlers] openChat became stale, aborting");
+          return;
         }
       } else {
         console.debug("[ChatHandlers] Same character already selected, skipping selectCharacterById");
       }
-      hideLobbyUI();
-      lobbyHidden = true;
-      const freshContext = api.getContext();
+      closeLobbyKeepState();
+      const ctxAfter = api.getContext();
+      const loadedChat = ctxAfter?.characters?.[ctxAfter.characterId]?.chat;
+      if (!isSameCharacter && loadedChat === chatFileName) {
+        console.debug("[ChatHandlers] Target chat already loaded via select, skipping openCharacterChat");
+        return;
+      }
       console.debug("[ChatHandlers] Opening chat:", chatFileName);
-      if (typeof freshContext?.openCharacterChat === "function") {
+      if (typeof context?.openCharacterChat === "function") {
         try {
           const openChatChangedPromise = waitForChatChanged(5e3);
-          await freshContext.openCharacterChat(chatFileName);
+          await context.openCharacterChat(chatFileName);
           await openChatChangedPromise;
-          const verified = await waitFor(() => {
-            const ctx = api.getContext();
-            return ctx?.characters?.[ctx?.characterId]?.chat === chatFileName;
-          }, 2e3, 100);
-          if (!verified) {
-            console.warn("[ChatHandlers] Chat mismatch after open, retrying once...");
-            const retryCtx = api.getContext();
-            const retryPromise = waitForChatChanged(5e3);
-            await retryCtx.openCharacterChat(chatFileName);
-            await retryPromise;
-          }
-          console.debug("[ChatHandlers] Chat opened and verified");
-          finalizeLobbyClose();
+          console.debug("[ChatHandlers] Chat opened and CHAT_CHANGED confirmed");
           return;
         } catch (err) {
           console.warn("[ChatHandlers] context.openCharacterChat failed:", err);
@@ -4446,15 +4645,11 @@ ${message}` : message;
       }
       console.debug("[ChatHandlers] Using fallback method...");
       await openChatByFileName(fileName);
-      finalizeLobbyClose();
     } catch (error) {
       console.error("[ChatHandlers] Failed to open chat:", error);
       showToast("\uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
-      if (lobbyHidden) {
-        finalizeLobbyClose();
-      }
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
   async function openChatByFileName(fileName) {
@@ -4496,6 +4691,7 @@ ${message}` : message;
   }
   async function deleteChat(chatInfo) {
     const { fileName, charAvatar, element } = chatInfo;
+    let token = null;
     if (!fileName || !charAvatar) {
       console.error("[ChatHandlers] Missing chat data for delete");
       showToast("\uC0AD\uC81C\uD560 \uCC44\uD305 \uC815\uBCF4\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
@@ -4517,7 +4713,8 @@ ${message}` : message;
       true
     );
     if (!confirmed) return;
-    if (!operationLock.acquire("deleteChat")) {
+    token = operationLock.acquire("deleteChat", 1e4);
+    if (!token) {
       showToast("\uB2E4\uB978 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.", "warning");
       return;
     }
@@ -4560,7 +4757,7 @@ ${message}` : message;
       console.error("[ChatHandlers] Error deleting chat:", error);
       showToast("\uCC44\uD305 \uC0AD\uC81C \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "error");
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
   function updateChatCountAfterDelete() {
@@ -4581,21 +4778,69 @@ ${message}` : message;
       }
     }
   }
+  async function findLightestChatName(charAvatar) {
+    let chats = cache.isValid("chats", charAvatar) ? cache.get("chats", charAvatar) : null;
+    if (!Array.isArray(chats)) {
+      try {
+        chats = await api.fetchChatsForCharacter(charAvatar);
+      } catch (e) {
+        return null;
+      }
+    }
+    if (!Array.isArray(chats) || chats.length === 0) return null;
+    let best = null;
+    let bestCount = Infinity;
+    for (const chat of chats) {
+      const count = typeof chat.chat_items === "number" ? chat.chat_items : NaN;
+      if (Number.isNaN(count)) continue;
+      if (count < bestCount) {
+        bestCount = count;
+        best = chat.file_name || null;
+      }
+    }
+    return best ? best.replace(/\.jsonl$/i, "") : null;
+  }
+  async function selectCharacterLight(charIndexNum, charAvatar, token = null) {
+    const context = api.getContext();
+    const targetChar = context?.characters?.[charIndexNum];
+    if (targetChar && targetChar.avatar === charAvatar && typeof targetChar.chat === "string") {
+      try {
+        const lightest = await findLightestChatName(charAvatar);
+        if (lightest && targetChar.chat !== lightest) {
+          console.debug("[ChatHandlers] Light select: redirecting chat pointer to", lightest);
+          targetChar.chat = lightest;
+        }
+      } catch (e) {
+        console.warn("[ChatHandlers] findLightestChatName failed, using default chat:", e);
+      }
+    }
+    const chatChangedPromise = waitForChatChanged(5e3);
+    await api.selectCharacterById(charIndexNum);
+    const chatChanged = await chatChangedPromise;
+    if (token !== null && !operationLock.isCurrent(token)) return false;
+    if (!chatChanged) {
+      const selected = await waitForCharacterSelect(charAvatar, 2e3);
+      if (!selected) return false;
+    }
+    await new Promise((r) => setTimeout(r, 300));
+    return token === null || operationLock.isCurrent(token);
+  }
   async function startNewChat() {
-    if (!operationLock.acquire("startNewChat")) return;
+    const token = operationLock.acquire("startNewChat", 15e3);
+    if (!token) return;
     try {
       const btn = document.getElementById("chat-lobby-new-chat");
       const isGroup = btn?.dataset.isGroup === "true";
       if (isGroup) {
-        await startNewGroupChat(btn);
+        await startNewGroupChat(btn, token);
       } else {
-        await startNewCharacterChat(btn);
+        await startNewCharacterChat(btn, token);
       }
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
-  async function startNewCharacterChat(btn) {
+  async function startNewCharacterChat(btn, token = null) {
     const charIndex = btn?.dataset.charIndex;
     const charAvatar = btn?.dataset.charAvatar;
     const charIndexNum = parseInt(charIndex, 10);
@@ -4614,40 +4859,28 @@ ${message}` : message;
       actualChatCount = btn?.dataset.hasChats === "true" ? 1 : 0;
     }
     try {
-      cache.invalidate("chats", charAvatar);
+      closeLobbyKeepState();
       const context = api.getContext();
       const currentChar = context?.characters?.[context.characterId];
       const isSameCharacter = currentChar?.avatar === charAvatar;
       if (!isSameCharacter) {
-        const chatChangedPromise = waitForChatChanged(5e3);
-        await api.selectCharacterById(charIndexNum);
-        const chatChanged = await chatChangedPromise;
-        if (!chatChanged) {
-          await waitForCharacterSelect(charAvatar, 2e3);
-        }
-        const stateReady = await waitFor(() => {
-          const ctx = api.getContext();
-          const cur = ctx?.characters?.[ctx?.characterId];
-          return cur?.avatar === charAvatar;
-        }, 3e3, 100);
-        if (!stateReady) {
-          console.warn("[ChatHandlers] Character state not ready for new chat");
-          await new Promise((r) => setTimeout(r, 500));
+        const selected = await selectCharacterLight(charIndexNum, charAvatar, token);
+        if (!selected) {
+          console.warn("[ChatHandlers] startNewCharacterChat: select failed or stale, aborting");
+          return;
         }
       }
-      hideLobbyUI();
+      cache.invalidate("chats", charAvatar);
       if (actualChatCount > 0) {
         const newChatBtn = await waitForElement("#option_start_new_chat", 1e3);
         if (newChatBtn) newChatBtn.click();
       }
-      finalizeLobbyClose();
     } catch (error) {
       console.error("[ChatHandlers] Failed to start new chat:", error);
       showToast("\uC0C8 \uCC44\uD305\uC744 \uC2DC\uC791\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
-      finalizeLobbyClose();
     }
   }
-  async function startNewGroupChat(btn) {
+  async function startNewGroupChat(btn, token = null) {
     const groupId = btn?.dataset.groupId;
     const groupName = btn?.dataset.groupName;
     if (!groupId) {
@@ -4664,17 +4897,18 @@ ${message}` : message;
         return;
       }
       console.debug("[ChatHandlers] Found group card, clicking...");
+      const chatChangedPromise = waitForChatChanged(5e3);
       if (window.$) {
         window.$(groupCard).trigger("click");
       } else {
         groupCard.click();
       }
-      const groupChatChanged = waitForChatChanged(3e3);
-      const groupChanged = await groupChatChanged;
-      if (!groupChanged) {
-        await new Promise((resolve) => setTimeout(resolve, 500));
+      await chatChangedPromise;
+      if (token !== null && !operationLock.isCurrent(token)) {
+        console.warn("[ChatHandlers] startNewGroupChat became stale, aborting");
+        return;
       }
-      hideLobbyUI();
+      closeLobbyKeepState();
       const newChatBtn = await waitForElement("#option_start_new_chat", 1e3);
       if (newChatBtn) {
         console.debug("[ChatHandlers] Clicking new chat button");
@@ -4683,11 +4917,9 @@ ${message}` : message;
         console.error("[ChatHandlers] New chat button not found");
         showToast("\uC0C8 \uCC44\uD305 \uBC84\uD2BC\uC744 \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
       }
-      finalizeLobbyClose();
     } catch (error) {
       console.error("[ChatHandlers] Failed to start new group chat:", error);
       showToast("\uADF8\uB8F9 \uC0C8 \uCC44\uD305\uC744 \uC2DC\uC791\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
-      finalizeLobbyClose();
     }
   }
   async function deleteCharacter() {
@@ -4713,7 +4945,8 @@ ${message}` : message;
     if (!confirmed) {
       return;
     }
-    if (!operationLock.acquire("deleteCharacter")) {
+    const token = operationLock.acquire("deleteCharacter", 2e4);
+    if (!token) {
       showToast("\uB2E4\uB978 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.", "warning");
       return;
     }
@@ -4761,10 +4994,10 @@ ${message}` : message;
       console.error("[ChatHandlers] Failed to delete character:", error);
       showToast("\uCE90\uB9AD\uD130 \uC0AD\uC81C \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "error");
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
-  function hideLobbyUI() {
+  function closeLobbyKeepState() {
     const overlay = document.getElementById("chat-lobby-overlay");
     const container = document.getElementById("chat-lobby-container");
     const fab = document.getElementById("chat-lobby-fab");
@@ -4777,8 +5010,6 @@ ${message}` : message;
       icon?.classList.remove("openIcon");
       icon?.classList.add("closedIcon");
     }
-  }
-  function finalizeLobbyClose() {
     store.setLobbyOpen(false);
     closeChatPanel();
     startRecentDomObserver();
@@ -4876,7 +5107,7 @@ ${message}` : message;
   }
 
   // src/ui/tabView.js
-  var DEBUG = true;
+  var DEBUG = false;
   function log(...args) {
     if (DEBUG) console.debug("[TabView]", ...args);
   }
@@ -5021,15 +5252,20 @@ ${message}` : message;
     const searchSection = document.getElementById("chat-lobby-search");
     const tagBar = document.getElementById("chat-lobby-tag-bar");
     const collapseBtn = document.getElementById("chat-lobby-collapse-btn");
+    const heroCorner = document.getElementById("chat-lobby-hero");
     if (tabId === "characters") {
       [characterSection, personaBar, searchSection, tagBar, collapseBtn].forEach((el) => {
         if (el) el.style.display = "";
       });
       hideAllTabContents();
+      if (heroCorner) {
+        heroCorner.style.display = heroCorner.dataset.hasContent === "true" ? "" : "none";
+      }
     } else {
       [characterSection, personaBar, searchSection, tagBar, collapseBtn].forEach((el) => {
         if (el) el.style.display = "none";
       });
+      if (heroCorner) heroCorner.style.display = "none";
       showTabContent(tabId);
     }
     closeContextMenu();
@@ -5447,7 +5683,7 @@ ${message}` : message;
     const displayName = chat.chatName || chat.file?.replace(".jsonl", "") || "";
     const charName = chat.characterName || chat.avatar?.replace(/\.[^.]+$/, "") || "";
     const avatarSrc = chat.thumbnailSrc || (chat.avatar ? `/characters/${chat.avatar}` : "");
-    const avatarHTML = avatarSrc ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" data-fallback="emoji"></div>` : `<div class="chat-avatar-lg">\u{1F464}</div>`;
+    const avatarHTML = avatarSrc ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" onerror="this.parentElement.innerHTML='\u{1F464}'"></div>` : `<div class="chat-avatar-lg">\u{1F464}</div>`;
     const titleLine = displayName ? `${escapeHtml(charName)} - ${escapeHtml(displayName)}` : escapeHtml(charName);
     item.innerHTML = `
         <button class="chat-fav-btn" title="\uC990\uACA8\uCC3E\uAE30">${isFav ? "\u2605" : "\u2606"}</button>
@@ -5498,7 +5734,7 @@ ${message}` : message;
     const timeAgo = chat.lastChatTime ? getTimeAgo(chat.lastChatTime) : "";
     const preview = chat.preview || chat.lastMessage || "";
     const avatarSrc = chat.thumbnailSrc || (chat.avatar ? `/characters/${chat.avatar}` : "");
-    const avatarHTML = avatarSrc ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" data-fallback="emoji"></div>` : `<div class="chat-avatar-lg">\u{1F464}</div>`;
+    const avatarHTML = avatarSrc ? `<div class="chat-avatar-lg"><img src="${escapeHtml(avatarSrc)}" alt="" onerror="this.parentElement.innerHTML='\u{1F464}'"></div>` : `<div class="chat-avatar-lg">\u{1F464}</div>`;
     const titleLine = displayName ? `${escapeHtml(charName)} - ${escapeHtml(displayName)}` : escapeHtml(charName);
     const encodedPreview = preview ? safeBase64Encode(preview) : "";
     return `
@@ -5594,7 +5830,8 @@ ${message}` : message;
       true
     );
     if (!confirmed) return;
-    if (!operationLock.acquire("libraryBatchDelete")) {
+    const token = operationLock.acquire("libraryBatchDelete", Math.min(12e4, 1e4 + checked.length * 1500));
+    if (!token) {
       showToast("\uB2E4\uB978 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.", "warning");
       return;
     }
@@ -5643,7 +5880,7 @@ ${message}` : message;
       await loadLibrary();
       renderLibraryView();
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
   function libraryBatchShowMoveMenu(targetBtn) {
@@ -5718,7 +5955,7 @@ ${message}` : message;
       contextMenuCloseHandler = function(e) {
         if (!menu.contains(e.target)) closeContextMenu();
       };
-      document.addEventListener("click", contextMenuCloseHandler);
+      listeners.add("tabContextMenu", document, "click", contextMenuCloseHandler);
     }, 10);
   }
   async function handleDeleteChat(avatar, fileName, itemElement) {
@@ -5738,7 +5975,8 @@ ${message}` : message;
       true
     );
     if (!confirmed) return;
-    if (!operationLock.acquire("handleDeleteChat")) {
+    const token = operationLock.acquire("handleDeleteChat", 1e4);
+    if (!token) {
       showToast("\uB2E4\uB978 \uC791\uC5C5\uC774 \uC9C4\uD589 \uC911\uC785\uB2C8\uB2E4.", "warning");
       return;
     }
@@ -5770,46 +6008,50 @@ ${message}` : message;
       logError("Delete chat failed:", e);
       showToast("\uCC44\uD305 \uC0AD\uC81C \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.", "error");
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
   async function openRecentChat(chat, idx) {
-    if (!operationLock.acquire("openRecentChat")) return;
+    const token = operationLock.acquire("openRecentChat", 12e3);
+    if (!token) return;
     try {
       log("Opening recent chat:", chat.file, chat.avatar);
       window.dispatchEvent(new CustomEvent("chatlobby:close"));
-      stopRecentDomObserver();
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const selector = chat.isGroup ? `.recentChat[data-group="${chat.avatar}"]` : `.recentChat[data-file="${chat.file}"][data-avatar="${chat.avatar}"]`;
       const recentEl = document.querySelector(selector);
       if (recentEl) {
         log("Found element via selector, clicking");
-        const chatChangedPromise = waitForChatChanged(5e3);
+        const chatChangedPromise = waitForChatChanged(8e3);
         recentEl.click();
-        const changed = await chatChangedPromise;
-        if (!changed) {
-          log("CHAT_CHANGED timeout for recentChat click, using fallback delay");
-          await new Promise((r) => setTimeout(r, 500));
-        }
+        await chatChangedPromise;
       } else {
-        log("Element not found, using character select");
-        const chatChangedPromise = waitForChatChanged(5e3);
+        if (!chat.isGroup && chat.avatar && chat.file) {
+          log("Element not found, opening via openChat handler");
+          const context = api.getContext();
+          const charIndex = (context?.characters || []).findIndex((c) => c.avatar === chat.avatar);
+          if (charIndex !== -1) {
+            operationLock.release(token);
+            await openChat({
+              fileName: chat.file,
+              charAvatar: chat.avatar,
+              charIndex: String(charIndex)
+            });
+            return;
+          }
+        }
+        log("Falling back to character select event");
         const event = new CustomEvent("lobby:select-character", {
           detail: { avatar: chat.avatar }
         });
         document.dispatchEvent(event);
-        const changed = await chatChangedPromise;
-        if (!changed) {
-          await new Promise((r) => setTimeout(r, 500));
-        }
+        await new Promise((r) => setTimeout(r, 800));
       }
-      startRecentDomObserver();
     } catch (e) {
       logError("openRecentChat failed:", e);
       showToast("\uCC44\uD305\uC744 \uC5F4\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.", "error");
-      startRecentDomObserver();
     } finally {
-      operationLock.release();
+      operationLock.release(token);
     }
   }
   async function openLibraryChat(avatar, fileName) {
@@ -5836,10 +6078,8 @@ ${message}` : message;
       state.activeContextMenu.remove();
       state.activeContextMenu = null;
     }
-    if (contextMenuCloseHandler) {
-      document.removeEventListener("click", contextMenuCloseHandler);
-      contextMenuCloseHandler = null;
-    }
+    listeners.clear("tabContextMenu");
+    contextMenuCloseHandler = null;
   }
   function showFolderMenu(targetBtn, avatar, fileName) {
     closeContextMenu();
@@ -5906,7 +6146,7 @@ ${message}` : message;
           closeContextMenu();
         }
       };
-      document.addEventListener("click", contextMenuCloseHandler);
+      listeners.add("tabContextMenu", document, "click", contextMenuCloseHandler);
     }, 10);
   }
   function safeBase64Encode(str) {
@@ -5935,9 +6175,13 @@ ${message}` : message;
     return new Date(timestamp).toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
   }
   function bindTabEvents() {
-    log("Binding tab events");
-    document.querySelectorAll(".lobby-tab").forEach((tab) => {
-      tab.addEventListener("click", () => switchTab(tab.dataset.tab));
+    const tabBar = document.getElementById("chat-lobby-tabs");
+    if (!tabBar || tabBar.dataset.bound === "true") return;
+    tabBar.dataset.bound = "true";
+    log("Binding tab events (delegated)");
+    listeners.add("tabBar", tabBar, "click", (e) => {
+      const tab = e.target.closest(".lobby-tab");
+      if (tab?.dataset.tab) switchTab(tab.dataset.tab);
     });
   }
   function refreshCurrentTab() {
@@ -6159,21 +6403,207 @@ ${message}` : message;
 
   // src/ui/templates.js
   init_textUtils();
+
+  // src/data/uiPrefs.js
+  var STORAGE_KEY4 = "chatLobby_uiPrefs";
+  var DEFAULTS = {
+    theme: null,
+    // null = 레거시 키에서 마이그레이션
+    showHero: true,
+    // 최애 코너 (히어로 배너)
+    personaBadges: true,
+    // 캐릭터 카드 페르소나 배지
+    cardSize: 200,
+    // 캐릭터 카드 폭 (px)
+    badgeSize: 36
+    // 페르소나 배지 크기 (px)
+  };
+  var UiPrefs = class {
+    constructor() {
+      this._data = null;
+    }
+    _load() {
+      if (this._data) return this._data;
+      let saved = {};
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY4);
+        if (raw) saved = JSON.parse(raw) || {};
+      } catch (e) {
+        console.warn("[UiPrefs] Failed to load:", e);
+      }
+      this._data = { ...DEFAULTS, ...saved };
+      if (this._data.theme === null) {
+        const legacy = localStorage.getItem("chatlobby-theme");
+        this._data.theme = legacy === "light" ? "light" : "default";
+        this._save();
+      }
+      return this._data;
+    }
+    _save() {
+      try {
+        localStorage.setItem(STORAGE_KEY4, JSON.stringify(this._data));
+      } catch (e) {
+        console.warn("[UiPrefs] Failed to save:", e);
+      }
+    }
+    /**
+     * @param {string} key
+     * @returns {*}
+     */
+    get(key) {
+      return this._load()[key];
+    }
+    /**
+     * @param {string} key
+     * @param {*} value
+     */
+    set(key, value) {
+      this._load();
+      this._data[key] = value;
+      this._save();
+    }
+  };
+  var uiPrefs = new UiPrefs();
+
+  // src/ui/themeMenu.js
+  init_textUtils();
+  var THEMES = [
+    { id: "default", name: "\uC2DC\uB124\uB9C8 \uB2E4\uD06C", icon: "\u{1F3AC}", base: "dark", desc: "\uB137\uD50C\uB9AD\uC2A4 \uC2A4\uD0C0\uC77C" },
+    { id: "light", name: "\uBAA8\uB178 \uB77C\uC774\uD2B8", icon: "\u{1F90D}", base: "light", desc: "\uAE54\uB054\uD55C \uBB34\uCC44\uC0C9" },
+    { id: "glass", name: "\uAE00\uB798\uC2A4", icon: "\u{1FAE7}", base: "dark", desc: "\uBC18\uD22C\uBA85 \uBE14\uB7EC + \uAE00\uB85C\uC6B0" },
+    { id: "polaroid", name: "\uD3F4\uB77C\uB85C\uC774\uB4DC", icon: "\u{1F4F8}", base: "light", desc: "\uC0AC\uC9C4 \uC561\uC790 \uCEEC\uB809\uC158" },
+    { id: "messenger", name: "\uBC30\uB108 \uB9AC\uC2A4\uD2B8", icon: "\u{1F4AC}", base: "dark", desc: "\uC640\uC774\uB4DC \uBC30\uB108 \xB7 \uBAA8\uBC14\uC77C \uCD94\uCC9C" },
+    { id: "magazine", name: "\uB9E4\uAC70\uC9C4", icon: "\u{1F5DE}\uFE0F", base: "dark", desc: "\uC5D0\uB514\uD1A0\uB9AC\uC5BC \uD654\uBCF4 \uD0C0\uC774\uD3EC" }
+  ];
+  function getThemeById(id) {
+    return THEMES.find((t) => t.id === id) || THEMES[0];
+  }
+  function applyTheme(themeId) {
+    const container = document.getElementById("chat-lobby-container");
+    if (!container) return;
+    const theme = getThemeById(themeId);
+    container.classList.toggle("dark-mode", theme.base === "dark");
+    container.classList.toggle("light-mode", theme.base === "light");
+    container.dataset.lobbyTheme = theme.id;
+    uiPrefs.set("theme", theme.id);
+    const menu = document.getElementById("chat-lobby-theme-menu");
+    if (menu) {
+      menu.querySelectorAll(".theme-option").forEach((btn) => {
+        btn.classList.toggle("active", btn.dataset.theme === theme.id);
+      });
+    }
+  }
+  function createThemeMenuHTML() {
+    const currentTheme = getThemeById(uiPrefs.get("theme"));
+    const showHero = uiPrefs.get("showHero");
+    const personaBadges = uiPrefs.get("personaBadges");
+    const cardSize = uiPrefs.get("cardSize");
+    const badgeSize = uiPrefs.get("badgeSize");
+    return `
+    <div id="chat-lobby-theme-menu" style="display:none;">
+        <div class="theme-menu-section-title">\u{1F3A8} \uD14C\uB9C8</div>
+        <div class="theme-menu-grid">
+            ${THEMES.map((t) => `
+                <button class="theme-option ${t.id === currentTheme.id ? "active" : ""}"
+                        data-action="set-theme" data-theme="${t.id}" title="${escapeHtml(t.desc)}">
+                    <span class="theme-option-icon">${t.icon}</span>
+                    <span class="theme-option-name">${escapeHtml(t.name)}</span>
+                    <span class="theme-option-desc">${escapeHtml(t.desc)}</span>
+                </button>
+            `).join("")}
+        </div>
+        <div class="theme-menu-section-title">\u{1F4D0} \uD06C\uAE30</div>
+        <div class="theme-menu-slider">
+            <span class="slider-label">\uCE74\uB4DC \uD06C\uAE30</span>
+            <input type="range" id="pref-card-size" min="140" max="280" step="10" value="${cardSize}">
+            <span class="slider-value" id="pref-card-size-value">${cardSize}px</span>
+        </div>
+        <div class="theme-menu-slider">
+            <span class="slider-label">\uD398\uB974\uC18C\uB098 \uBC30\uC9C0</span>
+            <input type="range" id="pref-badge-size" min="24" max="64" step="2" value="${badgeSize}">
+            <span class="slider-value" id="pref-badge-size-value">${badgeSize}px</span>
+        </div>
+        <div class="theme-menu-section-title">\u{1F441}\uFE0F \uD45C\uC2DC</div>
+        <label class="theme-menu-check">
+            <input type="checkbox" id="pref-show-hero" ${showHero ? "checked" : ""}>
+            <span>\u2B50 \uCD5C\uC560 \uCF54\uB108 (\uC990\uACA8\uCC3E\uAE30 \uBC30\uB108)</span>
+        </label>
+        <label class="theme-menu-check">
+            <input type="checkbox" id="pref-persona-badges" ${personaBadges ? "checked" : ""}>
+            <span>\u{1F464} \uCE74\uB4DC\uC5D0 \uB9C8\uC9C0\uB9C9 \uD398\uB974\uC18C\uB098 \uBC30\uC9C0</span>
+        </label>
+    </div>
+    `;
+  }
+  function applySizePrefs() {
+    const container = document.getElementById("chat-lobby-container");
+    if (!container) return;
+    container.style.setProperty("--card-width", `${uiPrefs.get("cardSize")}px`);
+    container.style.setProperty("--persona-badge-size", `${uiPrefs.get("badgeSize")}px`);
+  }
+  function toggleThemeMenu() {
+    const menu = document.getElementById("chat-lobby-theme-menu");
+    if (!menu) return;
+    const isOpen = menu.style.display !== "none";
+    menu.style.display = isOpen ? "none" : "block";
+  }
+  function closeThemeMenu() {
+    const menu = document.getElementById("chat-lobby-theme-menu");
+    if (menu) menu.style.display = "none";
+  }
+  function isThemeMenuOpen() {
+    const menu = document.getElementById("chat-lobby-theme-menu");
+    return !!menu && menu.style.display !== "none";
+  }
+  function initThemeMenuEvents(onDisplayPrefChange) {
+    const heroCb = document.getElementById("pref-show-hero");
+    const badgeCb = document.getElementById("pref-persona-badges");
+    const cardSlider = document.getElementById("pref-card-size");
+    const badgeSlider = document.getElementById("pref-badge-size");
+    listeners.add("themeMenu", heroCb, "change", (e) => {
+      uiPrefs.set("showHero", e.target.checked);
+      onDisplayPrefChange?.();
+    });
+    listeners.add("themeMenu", badgeCb, "change", (e) => {
+      uiPrefs.set("personaBadges", e.target.checked);
+      onDisplayPrefChange?.();
+    });
+    listeners.add("themeMenu", cardSlider, "input", (e) => {
+      const v = parseInt(e.target.value, 10);
+      uiPrefs.set("cardSize", v);
+      applySizePrefs();
+      const label = document.getElementById("pref-card-size-value");
+      if (label) label.textContent = `${v}px`;
+    });
+    listeners.add("themeMenu", badgeSlider, "input", (e) => {
+      const v = parseInt(e.target.value, 10);
+      uiPrefs.set("badgeSize", v);
+      applySizePrefs();
+      const label = document.getElementById("pref-badge-size-value");
+      if (label) label.textContent = `${v}px`;
+    });
+    applySizePrefs();
+  }
+  function cleanupThemeMenu() {
+    listeners.clear("themeMenu");
+  }
+
+  // src/ui/templates.js
   function createLobbyHTML() {
-    const savedTheme = localStorage.getItem("chatlobby-theme") || "dark";
+    const theme = getThemeById(uiPrefs.get("theme"));
     const isCollapsed = localStorage.getItem("chatlobby-collapsed") === "true";
-    const themeClass = savedTheme === "light" ? "light-mode" : "dark-mode";
+    const themeClass = theme.base === "light" ? "light-mode" : "dark-mode";
     const collapsedClass = isCollapsed ? "collapsed" : "";
     return `
     <div id="chat-lobby-fab" data-action="open-lobby" title="Chat Lobby \uC5F4\uAE30">
         <div class="fab-preview">
-            <img class="fab-preview-avatar" src="" alt="" data-fallback="hide">
+            <img class="fab-preview-avatar" src="" alt="" onerror="this.style.display='none'">
             <span class="fab-streak"></span>
         </div>
         <span class="fab-icon">\u{1F4AC}</span>
     </div>
     <div id="chat-lobby-overlay" style="display: none;">
-        <div id="chat-lobby-container" class="${themeClass}">
+        <div id="chat-lobby-container" class="${themeClass}" data-lobby-theme="${theme.id}">
             <!-- \uD5E4\uB354 - \uD0ED \uD1B5\uD569 -->
             <header id="chat-lobby-header">
                 <div class="header-left">
@@ -6189,11 +6619,14 @@ ${message}` : message;
                         <button id="chat-lobby-import-char" data-action="import-char" title="\uCE90\uB9AD\uD130 \uAC00\uC838\uC624\uAE30">\u{1F4E5}</button>
                         <button id="chat-lobby-add-persona" data-action="add-persona" title="\uD398\uB974\uC18C\uB098 \uCD94\uAC00">\u{1F464}</button>
                         <button id="chat-lobby-refresh" data-action="refresh" title="\uC0C8\uB85C\uACE0\uCE68">\u{1F504}</button>
-                        <button id="chat-lobby-theme-toggle" data-action="toggle-theme" title="\uD14C\uB9C8 \uC804\uD658">${savedTheme === "light" ? "\u{1F319}" : "\u2600\uFE0F"}</button>
+                        <button id="chat-lobby-theme-toggle" data-action="open-theme-menu" title="\uD14C\uB9C8 / \uD45C\uC2DC \uC124\uC815">\u{1F3A8}</button>
                     </div>
                     <button id="chat-lobby-close" data-action="close-lobby" title="\uB2EB\uAE30">\u2715</button>
                 </div>
             </header>
+
+            <!-- \uD14C\uB9C8/\uD45C\uC2DC \uC124\uC815 \uD31D\uC624\uBC84 -->
+            ${createThemeMenuHTML()}
             
             <!-- \uBA54\uC778 \uCF58\uD150\uCE20 -->
             <main id="chat-lobby-main">
@@ -6225,7 +6658,10 @@ ${message}` : message;
                     <button id="chat-lobby-collapse-btn" data-action="toggle-collapse" title="\uC0C1\uB2E8 \uC601\uC5ED \uC811\uAE30/\uD3BC\uCE58\uAE30">
                         ${isCollapsed ? "\u25BC" : "\u25B2"}
                     </button>
-                    
+
+                    <!-- \uCD5C\uC560 \uCF54\uB108 (\uC990\uACA8\uCC3E\uAE30 \uD788\uC5B4\uB85C \uBC30\uB108) -->
+                    <div id="chat-lobby-hero" style="display:none;" data-has-content="false"></div>
+
                     <!-- \uCE90\uB9AD\uD130 \uADF8\uB9AC\uB4DC -->
                     <div id="chat-lobby-characters">
                         <div class="lobby-loading">\uCE90\uB9AD\uD130 \uB85C\uB529 \uC911...</div>
@@ -6262,7 +6698,7 @@ ${message}` : message;
                                 </select>
                             </div>
                             <div class="filter-group-buttons">
-                                <button id="chat-lobby-persona-quick" class="icon-btn persona-quick-btn" data-action="switch-persona" title="\uD035 \uD398\uB974\uC18C\uB098" style="display:none;"><img class="persona-quick-avatar" src="" alt="persona" data-fallback="hide" /></button>
+                                <button id="chat-lobby-persona-quick" class="icon-btn persona-quick-btn" data-action="switch-persona" title="\uD038 \uD398\uB974\uC18C\uB098" style="display:none;"><img class="persona-quick-avatar" src="" alt="persona" /></button>
                                 <button id="chat-lobby-branch-refresh" class="icon-btn" data-action="refresh-branches" title="\uBD84\uAE30 \uBD84\uC11D \uC0C8\uB85C\uACE0\uCE68" style="display:none;"><span class="icon">\u{1F50D}</span></button>
                                 <button id="chat-lobby-batch-mode" class="icon-btn" data-action="toggle-batch" title="\uBC30\uCE58 \uC120\uD0DD \uBAA8\uB4DC"><span class="icon">\u2611\uFE0F</span></button>
                                 <button id="chat-lobby-folder-manage" class="icon-btn" data-action="open-folder-modal" title="\uD3F4\uB354 \uAD00\uB9AC"><span class="icon">\u{1F4C1}</span></button>
@@ -6423,7 +6859,7 @@ ${message}` : message;
       html += `
         <div class="persona-item ${isSelected} ${favClass}" data-persona="${escapeHtml(persona.key)}" title="${escapeHtml(persona.name)}">
             <button class="persona-fav-btn" data-persona="${escapeHtml(persona.key)}" title="\uC990\uACA8\uCC3E\uAE30">${isFav ? "\u2605" : "\u2606"}</button>
-            <img class="persona-avatar" src="${avatarUrl}" alt="" data-fallback="persona">
+            <img class="persona-avatar" src="${avatarUrl}" alt="" onerror="this.outerHTML='<div class=persona-avatar>\u{1F464}</div>'">
             <span class="persona-name">${escapeHtml(persona.name)}</span>
             <button class="persona-delete-btn" data-persona="${escapeHtml(persona.key)}" title="\uD398\uB974\uC18C\uB098 \uC0AD\uC81C">\xD7</button>
         </div>`;
@@ -6446,7 +6882,7 @@ ${message}` : message;
           setTimeout(() => renderPersonaBar(), 300);
         }, { preventDefault: true, stopPropagation: true, debugName: `persona-fav-${index}` });
       }
-      const handleItemClick2 = async (e) => {
+      const handleItemClick = async (e) => {
         if (e.target.closest(".persona-delete-btn")) return;
         if (e.target.closest(".persona-fav-btn")) return;
         if (store.isProcessingPersona) return;
@@ -6456,7 +6892,7 @@ ${message}` : message;
           await selectPersona(container, item);
         }
       };
-      createTouchClickHandler(item, handleItemClick2, {
+      createTouchClickHandler(item, handleItemClick, {
         preventDefault: true,
         stopPropagation: false,
         scrollThreshold: 10,
@@ -6531,7 +6967,6 @@ ${message}` : message;
   }
 
   // src/ui/personaRadialMenu.js
-  init_textUtils();
   init_notifications();
   var state2 = {
     isOpen: false,
@@ -6614,8 +7049,6 @@ ${message}` : message;
       renderItems();
       renderPending = false;
     });
-  }
-  function showIndicator() {
   }
   function createMenuHTML() {
     return `
@@ -6704,28 +7137,35 @@ ${message}` : message;
       updateIndicator(0, 0);
       return;
     }
+    if (container.querySelector(".persona-arc-empty")) {
+      container.innerHTML = "";
+    }
     const maxScroll = getMaxScroll();
     state2.scrollIndex = Math.min(Math.max(0, state2.scrollIndex), maxScroll);
     const visibleCount_ = getVisibleCount();
     const visibleItems = items.slice(state2.scrollIndex, state2.scrollIndex + visibleCount_);
     updateCenterDisplay();
-    let html = "";
     const radius = getRadius();
     const itemSize = getItemSize();
     const yRatio = getYRatio();
     const itemCount = visibleItems.length;
-    const arcLength = radius * Math.PI;
-    const requiredSpace = itemCount * (itemSize + CONFIG2.ITEM_GAP);
     const paddingAngle = 0.15;
     const usableAngle = Math.PI - paddingAngle * 2;
+    while (container.children.length > itemCount) {
+      container.lastElementChild.remove();
+    }
+    while (container.children.length < itemCount) {
+      const btn = document.createElement("button");
+      btn.className = "persona-arc-item";
+      btn.innerHTML = `<img src="" alt="" draggable="false"><span class="persona-arc-fallback">\u{1F464}</span><span class="persona-arc-label"></span>`;
+      container.appendChild(btn);
+    }
     visibleItems.forEach((persona, i) => {
+      const btn = container.children[i];
       const progress = itemCount > 1 ? i / (itemCount - 1) : 0.5;
       const angle = Math.PI - paddingAngle - progress * usableAngle;
       const x = Math.cos(angle) * radius;
       const y = -Math.sin(angle) * radius * yRatio;
-      const avatarUrl = `/User Avatars/${encodeURIComponent(persona.key)}`;
-      const isFav = storage.isPersonaFavorite(persona.key) ? "is-fav" : "";
-      const isCurrent = persona.key === state2.currentPersona ? "is-current" : "";
       const displayName = persona.name || persona.key.replace(/\.[^.]+$/, "");
       const distFromCenter = Math.abs(i - Math.floor(itemCount / 2));
       const maxDist = Math.floor(itemCount / 2);
@@ -6733,30 +7173,29 @@ ${message}` : message;
       const scale = Math.max(0.8, 1 - normalizedDist * 0.15);
       const opacity = Math.max(0.6, 1 - normalizedDist * 0.25);
       const zIndex = itemCount - distFromCenter;
-      html += `
-            <button class="persona-arc-item ${isFav} ${isCurrent}"
-                    data-key="${escapeHtml(persona.key)}"
-                    data-name="${escapeHtml(displayName)}"
-                    style="--x:${x}px; --y:${y}px; --scale:${scale}; --opacity:${opacity}; --z:${zIndex}; --size:${itemSize}px;">
-                <img src="${avatarUrl}" alt="">
-                <span class="persona-arc-fallback">\u{1F464}</span>
-                <span class="persona-arc-label">${escapeHtml(displayName)}</span>
-            </button>
-        `;
-    });
-    container.innerHTML = html;
-    container.querySelectorAll(".persona-arc-item img").forEach((img) => {
-      img.addEventListener("error", () => {
-        img.style.display = "none";
-        const fallback = img.nextElementSibling;
-        if (fallback) fallback.style.display = "flex";
-      });
+      btn.dataset.key = persona.key;
+      btn.dataset.name = displayName;
+      btn.classList.toggle("is-fav", storage.isPersonaFavorite(persona.key));
+      btn.classList.toggle("is-current", persona.key === state2.currentPersona);
+      btn.style.setProperty("--x", `${x}px`);
+      btn.style.setProperty("--y", `${y}px`);
+      btn.style.setProperty("--scale", String(scale));
+      btn.style.setProperty("--opacity", String(opacity));
+      btn.style.setProperty("--z", String(zIndex));
+      btn.style.setProperty("--size", `${itemSize}px`);
+      const img = btn.querySelector("img");
+      const fallback = btn.querySelector(".persona-arc-fallback");
+      const newSrc = `/User Avatars/${encodeURIComponent(persona.key)}`;
+      if (img.dataset.src !== newSrc) {
+        img.dataset.src = newSrc;
+        img.style.display = "";
+        if (fallback) fallback.style.display = "";
+        img.src = newSrc;
+      }
+      const label = btn.querySelector(".persona-arc-label");
+      if (label.textContent !== displayName) label.textContent = displayName;
     });
     updateIndicator(items.length, maxScroll);
-    container.querySelectorAll(".persona-arc-item").forEach((item) => {
-      item.addEventListener("click", handleItemClick);
-      item.addEventListener("mouseenter", handleItemHover);
-    });
     preloadNearbyImages();
   }
   function updateIndicator(totalItems, maxScroll) {
@@ -6772,7 +7211,7 @@ ${message}` : message;
     }
   }
   function scrollToCurrentPersona() {
-    const items = state2.mode === "favorites" ? state2.favorites : state2.allPersonas;
+    const items = getCurrentItems();
     const idx = items.findIndex((p) => p.key === state2.currentPersona);
     if (idx >= 0) {
       state2.scrollIndex = Math.max(0, idx - Math.floor(getVisibleCount() / 2));
@@ -6816,7 +7255,7 @@ ${message}` : message;
     if (!arc || !fab) return;
     state2.isOpen = true;
     state2.scrollIndex = 0;
-    const items = state2.mode === "favorites" ? state2.favorites : state2.allPersonas;
+    const items = getCurrentItems();
     const idx = items.findIndex((p) => p.key === state2.currentPersona);
     if (idx >= 0) {
       state2.scrollIndex = Math.max(0, idx - Math.floor(getVisibleCount() / 2));
@@ -6843,44 +7282,52 @@ ${message}` : message;
     const next = state2.mode === "favorites" ? "recent" : state2.mode === "recent" ? "all" : "favorites";
     setMode(next);
   }
-  function scrollPrev() {
-    if (state2.scrollIndex > 0) {
-      state2.scrollIndex = Math.max(0, state2.scrollIndex - CONFIG2.SCROLL_STEP);
-      scheduleRender();
-      showIndicator();
+  function hapticTick() {
+    try {
+      if (navigator.vibrate) navigator.vibrate(5);
+    } catch (e) {
     }
   }
-  function scrollNext() {
+  function setScrollIndex(newIndex) {
     const maxScroll = getMaxScroll();
-    if (state2.scrollIndex < maxScroll) {
-      state2.scrollIndex = Math.min(maxScroll, state2.scrollIndex + CONFIG2.SCROLL_STEP);
-      scheduleRender();
-      showIndicator();
-    }
+    const clamped = Math.max(0, Math.min(maxScroll, newIndex));
+    if (clamped === state2.scrollIndex) return false;
+    state2.scrollIndex = clamped;
+    scheduleRender();
+    hapticTick();
+    return true;
+  }
+  function scrollPrev() {
+    setScrollIndex(state2.scrollIndex - CONFIG2.SCROLL_STEP);
+  }
+  function scrollNext() {
+    setScrollIndex(state2.scrollIndex + CONFIG2.SCROLL_STEP);
   }
   function handleFabClick(e) {
     e.preventDefault();
     e.stopPropagation();
-    if (!state2.isOpen) {
-      openMenu();
-    } else if (state2.mode === "favorites") {
-      setMode("recent");
-    } else if (state2.mode === "recent") {
-      setMode("all");
-    } else {
+    if (state2.isOpen) {
       closeMenu();
+    } else {
+      openMenu();
     }
   }
-  async function handleItemClick(e) {
+  async function handleItemsContainerClick(e) {
+    const item = e.target.closest(".persona-arc-item");
+    if (!item) return;
     e.preventDefault();
     e.stopPropagation();
     if (isDragging) return;
-    const item = e.currentTarget;
     const key = item.dataset.key;
     if (!key) return;
     await applyPersona(key);
   }
-  function handleItemHover(e) {
+  function handleItemsContainerError(e) {
+    const img = e.target;
+    if (img?.tagName !== "IMG") return;
+    img.style.display = "none";
+    const fallback = img.nextElementSibling;
+    if (fallback) fallback.style.display = "flex";
   }
   function updateCenterDisplay() {
     const centerName = document.getElementById("persona-center-name");
@@ -6962,13 +7409,7 @@ ${message}` : message;
     if (!state2.isOpen) return;
     e.preventDefault();
     const direction = e.deltaY > 0 ? 1 : -1;
-    const maxScroll = getMaxScroll();
-    const newIndex = Math.max(0, Math.min(maxScroll, state2.scrollIndex + direction));
-    if (newIndex !== state2.scrollIndex) {
-      state2.scrollIndex = newIndex;
-      scheduleRender();
-      showIndicator();
-    }
+    setScrollIndex(state2.scrollIndex + direction);
   }
   var touchStartX = 0;
   var touchMoved = false;
@@ -7002,19 +7443,11 @@ ${message}` : message;
     lastTouchX = currentX;
     lastTouchTime = currentTime;
     const threshold = 30;
-    const maxScroll = getMaxScroll();
     const accumulatedDelta = touchStartX - currentX;
     const steps = Math.floor(Math.abs(accumulatedDelta) / threshold);
     if (steps > 0) {
       const direction = accumulatedDelta > 0 ? 1 : -1;
-      const targetIndex = Math.max(0, Math.min(
-        maxScroll,
-        state2.scrollIndex + direction * steps
-      ));
-      if (targetIndex !== state2.scrollIndex) {
-        state2.scrollIndex = targetIndex;
-        scheduleRender();
-      }
+      setScrollIndex(state2.scrollIndex + direction * steps);
       touchStartX = currentX;
     }
   }
@@ -7044,11 +7477,8 @@ ${message}` : message;
       const threshold = 30;
       if (Math.abs(accumulated) >= threshold) {
         const direction = accumulated > 0 ? 1 : -1;
-        const newIndex = Math.max(0, Math.min(maxScroll, state2.scrollIndex + direction));
-        if (newIndex !== state2.scrollIndex) {
-          state2.scrollIndex = newIndex;
-          scheduleRender();
-        } else {
+        const moved = setScrollIndex(state2.scrollIndex + direction);
+        if (!moved) {
           momentumTimer = null;
           return;
         }
@@ -7075,14 +7505,9 @@ ${message}` : message;
     dragStartX = e.clientX;
     pcAccumulatedDrag += deltaX;
     const threshold = CONFIG2.ITEM_WIDTH;
-    const maxScroll = getMaxScroll();
     if (Math.abs(pcAccumulatedDrag) >= threshold) {
       const direction = pcAccumulatedDrag > 0 ? 1 : -1;
-      const newIndex = Math.max(0, Math.min(maxScroll, state2.scrollIndex + direction));
-      if (newIndex !== state2.scrollIndex) {
-        state2.scrollIndex = newIndex;
-        scheduleRender();
-      }
+      setScrollIndex(state2.scrollIndex + direction);
       pcAccumulatedDrag = 0;
     }
   }
@@ -7100,30 +7525,34 @@ ${message}` : message;
     const arc = document.getElementById("persona-menu-arc");
     const center = document.getElementById("persona-arc-center");
     const scrollBtn = document.getElementById("persona-scroll-to-current");
-    if (fab) fab.addEventListener("click", handleFabClick);
-    if (scrollBtn) scrollBtn.addEventListener("click", (e) => {
+    const itemsContainer = document.getElementById("persona-arc-items");
+    const G = "radialMenu";
+    listeners.add(G, fab, "click", handleFabClick);
+    listeners.add(G, itemsContainer, "click", handleItemsContainerClick);
+    listeners.add(G, itemsContainer, "error", handleItemsContainerError, true);
+    listeners.add(G, scrollBtn, "click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       scrollToCurrentPersona();
     });
     if (overlay) {
-      overlay.addEventListener("click", handleOverlayClick);
-      overlay.addEventListener("wheel", handleWheel, { passive: false });
-      overlay.addEventListener("touchstart", handleTouchStart, { passive: true });
-      overlay.addEventListener("touchmove", handleTouchMove, { passive: false });
-      overlay.addEventListener("touchend", handleTouchEnd, { passive: true });
-      overlay.addEventListener("mousedown", handleMouseDown);
+      listeners.add(G, overlay, "click", handleOverlayClick);
+      listeners.add(G, overlay, "wheel", handleWheel, { passive: false });
+      listeners.add(G, overlay, "touchstart", handleTouchStart, { passive: true });
+      listeners.add(G, overlay, "touchmove", handleTouchMove, { passive: false });
+      listeners.add(G, overlay, "touchend", handleTouchEnd, { passive: true });
+      listeners.add(G, overlay, "mousedown", handleMouseDown);
     }
-    if (center) center.addEventListener("click", handleCenterClick);
+    listeners.add(G, center, "click", handleCenterClick);
     if (arc) {
-      arc.addEventListener("wheel", handleWheel, { passive: false });
-      arc.addEventListener("touchstart", handleTouchStart, { passive: true });
-      arc.addEventListener("touchmove", handleTouchMove, { passive: false });
-      arc.addEventListener("touchend", handleTouchEnd, { passive: true });
-      arc.addEventListener("mousedown", handleMouseDown);
+      listeners.add(G, arc, "wheel", handleWheel, { passive: false });
+      listeners.add(G, arc, "touchstart", handleTouchStart, { passive: true });
+      listeners.add(G, arc, "touchmove", handleTouchMove, { passive: false });
+      listeners.add(G, arc, "touchend", handleTouchEnd, { passive: true });
+      listeners.add(G, arc, "mousedown", handleMouseDown);
     }
-    document.addEventListener("keydown", handleKeydown);
-    window.addEventListener("blur", handleWindowBlur);
+    listeners.add(G, document, "keydown", handleKeydown);
+    listeners.add(G, window, "blur", handleWindowBlur);
   }
   function handleWindowBlur() {
     if (isDragging) {
@@ -7148,10 +7577,10 @@ ${message}` : message;
     if (state2.isOpen) renderItems();
   }
   function cleanupPersonaRadialMenu() {
-    document.removeEventListener("keydown", handleKeydown);
+    listeners.clear("radialMenu");
     document.removeEventListener("mousemove", handleMouseMove);
     document.removeEventListener("mouseup", handleMouseUp);
-    window.removeEventListener("blur", handleWindowBlur);
+    isDragging = false;
     if (momentumTimer) {
       cancelAnimationFrame(momentumTimer);
       momentumTimer = null;
@@ -7169,15 +7598,11 @@ ${message}` : message;
   var isRendering = false;
   var pendingRender = null;
   var renderDebounceTimer = null;
+  var pendingRenderResolvers = [];
   var isSelectingCharacter = false;
-  var hasGroups = false;
-  var delegatedGridContainer = null;
-  var delegatedTagContainer = null;
-  var SCROLL_THRESHOLD = 10;
-  var DELEGATION_COOLDOWN = 300;
-  var lastDelegatedClickTime = 0;
-  var gridTouch = { startX: 0, startY: 0, isScrolling: false, handled: false };
-  var tagTouch = { startX: 0, startY: 0, isScrolling: false, handled: false };
+  var renderGeneration = 0;
+  var INITIAL_RENDER_COUNT = 40;
+  var RENDER_CHUNK_SIZE = 60;
   function resetCharacterSelectLock() {
     isSelectingCharacter = false;
   }
@@ -7187,15 +7612,21 @@ ${message}` : message;
   function setGroupSelectHandler(handler) {
     store.setGroupSelectHandler(handler);
   }
-  async function renderCharacterGrid(searchTerm = "", sortOverride = null) {
+  function renderCharacterGrid(searchTerm = "", sortOverride = null) {
     if (renderDebounceTimer) {
       clearTimeout(renderDebounceTimer);
     }
     return new Promise((resolve) => {
+      pendingRenderResolvers.push(resolve);
       renderDebounceTimer = setTimeout(async () => {
         renderDebounceTimer = null;
-        await _doRenderCharacterGrid(searchTerm, sortOverride);
-        resolve();
+        const resolvers = pendingRenderResolvers;
+        pendingRenderResolvers = [];
+        try {
+          await _doRenderCharacterGrid(searchTerm, sortOverride);
+        } finally {
+          resolvers.forEach((r) => r());
+        }
       }, 100);
     });
   }
@@ -7215,7 +7646,7 @@ ${message}` : message;
                 <div class="lobby-empty-state">
                     <i>\u{1F465}</i>
                     <div>\uCE90\uB9AD\uD130\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4</div>
-                    <button data-action="refresh" style="margin-top:10px;padding:8px 16px;cursor:pointer;">\uC0C8\uB85C\uACE0\uCE68</button>
+                    <button onclick="window.chatLobbyRefresh()" style="margin-top:10px;padding:8px 16px;cursor:pointer;">\uC0C8\uB85C\uACE0\uCE68</button>
                 </div>
             `;
         return;
@@ -7246,6 +7677,7 @@ ${message}` : message;
       });
     }
     renderTagBar(characters);
+    renderHeroCorner(characters);
     const sortOption = sortOverride || storage.getCharSortOption();
     const sortSelect = document.getElementById("chat-lobby-char-sort");
     if (sortSelect && sortSelect.value !== sortOption) {
@@ -7265,6 +7697,7 @@ ${message}` : message;
       console.warn("[CharacterGrid] Failed to load groups:", e);
     }
     if (filtered.length === 0 && groups.length === 0) {
+      renderGeneration++;
       container.innerHTML = `
             <div class="lobby-empty-state">
                 <i>\u{1F50D}</i>
@@ -7280,24 +7713,91 @@ ${message}` : message;
       ...groups.map((group) => ({ type: "group", data: group }))
     ];
     const sortedItems = await sortCharactersAndGroups(allItems, sortOption);
-    hasGroups = groups.length > 0;
-    const html = sortedItems.map((item, index) => {
-      if (item.type === "character") {
-        return renderCharacterCard(item.data, indexMap.get(item.data.avatar), sortOption);
-      } else {
-        return renderGroupCard(item.data, sortOption);
-      }
-    }).join("");
-    container.innerHTML = html;
-    setupGridDelegation(container);
-    restoreSelectedState(container);
-    loadChatCountsAsync(filtered, sortOption);
+    const showBadges = uiPrefs.get("personaBadges");
+    const renderItem = (item) => item.type === "character" ? renderCharacterCard(item.data, indexMap.get(item.data.avatar), sortOption, showBadges) : renderGroupCard(item.data, sortOption);
+    const gen = ++renderGeneration;
+    if (sortedItems.length <= INITIAL_RENDER_COUNT + 20) {
+      container.innerHTML = sortedItems.map(renderItem).join("");
+      loadChatCountsAsync(filtered, sortOption);
+    } else {
+      container.innerHTML = sortedItems.slice(0, INITIAL_RENDER_COUNT).map(renderItem).join("");
+      let offset = INITIAL_RENDER_COUNT;
+      const appendChunk = () => {
+        if (gen !== renderGeneration) return;
+        const chunk = sortedItems.slice(offset, offset + RENDER_CHUNK_SIZE);
+        container.insertAdjacentHTML("beforeend", chunk.map(renderItem).join(""));
+        offset += RENDER_CHUNK_SIZE;
+        if (offset < sortedItems.length) {
+          requestAnimationFrame(appendChunk);
+        } else {
+          loadChatCountsAsync(filtered, sortOption);
+        }
+      };
+      requestAnimationFrame(appendChunk);
+    }
+    ensureGridDelegation();
   }
-  function renderCharacterCard(char, index, sortOption = "recent") {
+  function renderHeroCorner(characters) {
+    const hero = document.getElementById("chat-lobby-hero");
+    if (!hero) return;
+    const enabled = uiPrefs.get("showHero");
+    const filterActive = !!store.searchTerm || !!store.selectedTag;
+    if (!enabled || filterActive) {
+      hero.style.display = "none";
+      hero.dataset.hasContent = "false";
+      return;
+    }
+    const favAvatars = storage.getCharacterFavorites();
+    const favChars = favAvatars.map((avatar) => characters.find((c) => c.avatar === avatar)).filter(Boolean).slice(0, 10);
+    if (favChars.length === 0) {
+      hero.style.display = "none";
+      hero.dataset.hasContent = "false";
+      return;
+    }
+    const indexMap = new Map(characters.map((c, i) => [c.avatar, i]));
+    hero.innerHTML = `
+        <div class="hero-title">\u2B50 \uCD5C\uC560 \uCF54\uB108</div>
+        <div class="hero-list">
+            ${favChars.map((char) => {
+      const avatarUrl = `/characters/${encodeURIComponent(char.avatar)}`;
+      const chatCount = cache.get("chatCounts", char.avatar);
+      const metaText = typeof chatCount === "number" && chatCount > 0 ? `\u{1F4AC} ${chatCount}\uAC1C \uCC44\uD305` : "";
+      return `
+                <div class="lobby-hero-card"
+                     data-char-index="${indexMap.get(char.avatar)}"
+                     data-char-avatar="${escapeHtml(char.avatar)}"
+                     data-char-name="${escapeHtml(char.name || "")}">
+                    <img src="${avatarUrl}" alt="" loading="lazy" decoding="async" draggable="false"
+                         onerror="this.src='/img/ai4.png'">
+                    <div class="hero-overlay">
+                        <span class="hero-name">${escapeHtml(char.name || "")}</span>
+                        ${metaText ? `<span class="hero-meta">${metaText}</span>` : ""}
+                    </div>
+                </div>`;
+    }).join("")}
+        </div>
+    `;
+    hero.style.display = "";
+    hero.dataset.hasContent = "true";
+    ensureHeroDelegation();
+  }
+  function renderCharacterCard(char, index, sortOption = "recent", showBadges = true) {
     const avatarUrl = char.avatar ? `/characters/${encodeURIComponent(char.avatar)}` : "/img/ai4.png";
     const name = char.name || "Unknown";
     const safeAvatar = escapeHtml(char.avatar || "");
     const isFav = isFavoriteChar(char);
+    let personaBadge = "";
+    if (showBadges) {
+      const lastPersona = lastChatCache.getPersona(char.avatar);
+      if (lastPersona) {
+        const personaName = lastPersona.replace(/\.[^.]+$/, "");
+        personaBadge = `<img class="char-persona-badge"
+                src="/User Avatars/${encodeURIComponent(lastPersona)}"
+                alt="" loading="lazy" decoding="async" draggable="false"
+                title="\uB9C8\uC9C0\uB9C9 \uD398\uB974\uC18C\uB098: ${escapeHtml(personaName)}"
+                onerror="this.remove()">`;
+      }
+    }
     let lastChatTimeStr = "";
     if (sortOption === "recent") {
       const lastChatTime = lastChatCache.getForSort(char);
@@ -7327,12 +7827,14 @@ ${message}` : message;
          data-is-fav="${isFav}"
          draggable="false">
         ${favBtn}
-        <img class="lobby-char-avatar" 
-             src="${avatarUrl}" 
-             alt="${escapeHtml(name)}" 
+        ${personaBadge}
+        <img class="lobby-char-avatar"
+             src="${avatarUrl}"
+             alt="${escapeHtml(name)}"
              loading="lazy"
+             decoding="async"
              draggable="false"
-             data-fallback="avatar">
+             onerror="this.src='/img/ai4.png'">
         <div class="lobby-char-name">
             <span class="char-name-text">${escapeHtml(name)}${lastChatTimeStr ? ` <span class="char-last-time">${lastChatTimeStr}</span>` : ""}</span>
             <div class="char-hover-info">
@@ -7353,16 +7855,9 @@ ${message}` : message;
   }
   async function loadChatCountsAsync(characters, sortOption = "recent") {
     const BATCH_SIZE = 5;
-    const charContainer = document.getElementById("chat-lobby-characters");
-    const cardMap = /* @__PURE__ */ new Map();
-    if (charContainer) {
-      charContainer.querySelectorAll(".lobby-char-card[data-char-avatar]").forEach((card) => {
-        cardMap.set(card.dataset.charAvatar, card);
-      });
-    }
     for (let i = 0; i < characters.length; i += BATCH_SIZE) {
       const batch = characters.slice(i, i + BATCH_SIZE);
-      await Promise.allSettled(batch.map(async (char) => {
+      await Promise.all(batch.map(async (char) => {
         const existingCount = cache.get("chatCounts", char.avatar);
         if (typeof existingCount === "number") return;
         try {
@@ -7374,7 +7869,7 @@ ${message}` : message;
           }, 0);
           cache.set("chatCounts", count, char.avatar);
           cache.set("messageCounts", messageCount, char.avatar);
-          const card = cardMap.get(char.avatar);
+          const card = document.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(char.avatar)}"]`);
           if (chatArray.length > 0) {
             await lastChatCache.refreshForCharacter(char.avatar, chatArray);
             if (sortOption === "recent" && card) {
@@ -7446,15 +7941,19 @@ ${message}` : message;
       const todayStart = /* @__PURE__ */ new Date();
       todayStart.setHours(0, 0, 0, 0);
       const todayStartMs = todayStart.getTime();
-      await Promise.allSettled(characters.map(async (char) => {
+      for (const char of characters) {
         let lastTime = lastChatCache.get(char.avatar);
         if (lastTime === 0) {
-          lastTime = await lastChatCache.refreshForCharacter(char.avatar);
+          const cachedChats = cache.get("chats", char.avatar);
+          if (Array.isArray(cachedChats) && cachedChats.length > 0) {
+            lastTime = lastChatCache.extractLastTime(cachedChats);
+            if (lastTime > 0) lastChatCache.set(char.avatar, lastTime);
+          }
         }
         if (lastTime >= todayStartMs) {
           lastChatTimes[char.avatar] = lastTime;
         }
-      }));
+      }
       const snapshots = loadSnapshots();
       let topChar = "";
       let maxIncrease = -Infinity;
@@ -7490,29 +7989,13 @@ ${message}` : message;
   function isFavoriteChar(char) {
     return storage.isCharacterFavorite(char.avatar);
   }
-  function restoreSelectedState(container) {
-    const currentChar = store.currentCharacter;
-    if (currentChar?.avatar) {
-      const selectedCard = container.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(currentChar.avatar)}"]`);
-      if (selectedCard) {
-        selectedCard.classList.add("selected");
-      }
-    }
-    const currentGroup = store.currentGroup;
-    if (currentGroup?.id) {
-      const selectedCard = container.querySelector(`.lobby-group-card[data-group-id="${CSS.escape(currentGroup.id)}"]`);
-      if (selectedCard) {
-        selectedCard.classList.add("selected");
-      }
-    }
-  }
   async function sortCharactersAndGroups(items, sortOption) {
     if (sortOption === "chats") {
       const BATCH_SIZE = 5;
       const results = [];
       for (let i = 0; i < items.length; i += BATCH_SIZE) {
         const batch = items.slice(i, i + BATCH_SIZE);
-        const batchSettled = await Promise.allSettled(
+        const batchResults = await Promise.all(
           batch.map(async (item) => {
             if (item.type === "group") {
               const chatCount = Array.isArray(item.data.chats) ? item.data.chats.length : 0;
@@ -7532,7 +8015,7 @@ ${message}` : message;
             return { item, count, isFav: isFavoriteChar(char) };
           })
         );
-        results.push(...batchSettled.filter((r) => r.status === "fulfilled").map((r) => r.value));
+        results.push(...batchResults);
       }
       results.sort((a, b) => {
         if (a.isFav !== b.isFav) {
@@ -7575,156 +8058,101 @@ ${message}` : message;
     });
     return sorted;
   }
-  function setupGridDelegation(container) {
-    if (delegatedGridContainer === container) return;
-    delegatedGridContainer = container;
-    container.addEventListener("touchstart", (e) => {
-      gridTouch.handled = false;
-      gridTouch.isScrolling = false;
-      gridTouch.startX = e.touches[0].clientX;
-      gridTouch.startY = e.touches[0].clientY;
-    }, { passive: true });
-    container.addEventListener("touchmove", (e) => {
-      const dx = Math.abs(e.touches[0].clientX - gridTouch.startX);
-      const dy = Math.abs(e.touches[0].clientY - gridTouch.startY);
-      if (dx > SCROLL_THRESHOLD || dy > SCROLL_THRESHOLD) {
-        gridTouch.isScrolling = true;
-      }
-    }, { passive: true });
-    container.addEventListener("touchend", (e) => {
-      if (!gridTouch.isScrolling) {
-        gridTouch.handled = true;
-        dispatchGridAction(e, container);
-      }
-      gridTouch.isScrolling = false;
-    });
-    container.addEventListener("click", (e) => {
-      if (!gridTouch.handled) {
-        dispatchGridAction(e, container);
-      }
-      gridTouch.handled = false;
+  function ensureGridDelegation() {
+    const grid = document.getElementById("chat-lobby-characters");
+    if (!grid || grid.dataset.delegated === "true") return;
+    grid.dataset.delegated = "true";
+    bindDelegatedTouchClick(grid, routeGridEvent, {
+      group: "characterGrid",
+      debugName: "character-grid"
     });
   }
-  function setupTagDelegation(container) {
-    if (delegatedTagContainer === container) return;
-    delegatedTagContainer = container;
-    container.addEventListener("touchstart", (e) => {
-      tagTouch.handled = false;
-      tagTouch.isScrolling = false;
-      tagTouch.startX = e.touches[0].clientX;
-      tagTouch.startY = e.touches[0].clientY;
-    }, { passive: true });
-    container.addEventListener("touchmove", (e) => {
-      const dx = Math.abs(e.touches[0].clientX - tagTouch.startX);
-      const dy = Math.abs(e.touches[0].clientY - tagTouch.startY);
-      if (dx > SCROLL_THRESHOLD || dy > SCROLL_THRESHOLD) {
-        tagTouch.isScrolling = true;
-      }
-    }, { passive: true });
-    container.addEventListener("touchend", (e) => {
-      if (!tagTouch.isScrolling) {
-        tagTouch.handled = true;
-        handleTagClick(e);
-      }
-      tagTouch.isScrolling = false;
-    });
-    container.addEventListener("click", (e) => {
-      if (!tagTouch.handled) {
-        handleTagClick(e);
-      }
-      tagTouch.handled = false;
+  function ensureHeroDelegation() {
+    const hero = document.getElementById("chat-lobby-hero");
+    if (!hero || hero.dataset.delegated === "true") return;
+    hero.dataset.delegated = "true";
+    bindDelegatedTouchClick(hero, routeGridEvent, {
+      group: "characterGrid",
+      debugName: "hero-corner"
     });
   }
-  function dispatchGridAction(e, container) {
-    const now = Date.now();
-    if (now - lastDelegatedClickTime < DELEGATION_COOLDOWN) return;
-    lastDelegatedClickTime = now;
-    const target = e.target;
-    const charFavBtn = target.closest(".char-fav-btn:not(.group-fav-btn)");
-    if (charFavBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      handleCharFavToggle(charFavBtn);
-      return;
+  function routeGridEvent(e) {
+    const favBtn = e.target.closest(".char-fav-btn");
+    if (favBtn) {
+      if (favBtn.classList.contains("group-fav-btn")) {
+        handleGroupFavClick(favBtn);
+      } else {
+        handleCharFavClick(favBtn);
+      }
+      return true;
     }
-    const groupFavBtn = target.closest(".group-fav-btn");
-    if (groupFavBtn) {
-      e.preventDefault();
-      e.stopPropagation();
-      handleGroupFavToggle(groupFavBtn);
-      return;
-    }
-    const groupCard = target.closest(".lobby-group-card");
+    const groupCard = e.target.closest(".lobby-group-card");
     if (groupCard) {
-      e.preventDefault();
-      e.stopPropagation();
-      handleGroupCardClick(groupCard, container);
-      return;
+      handleGroupCardClick(groupCard);
+      return true;
     }
-    const charCard = target.closest(".lobby-char-card");
+    const charCard = e.target.closest(".lobby-char-card, .lobby-hero-card");
     if (charCard) {
-      e.preventDefault();
-      e.stopPropagation();
-      handleCharCardClick(charCard, container);
-      return;
+      handleCharCardClick(charCard);
+      return true;
     }
+    return false;
   }
-  function handleCharFavToggle(favBtn) {
-    const charAvatar = favBtn.dataset.charAvatar;
-    if (!charAvatar) return;
+  function handleCharFavClick(favBtn) {
     const card = favBtn.closest(".lobby-char-card");
+    const charAvatar = favBtn.dataset.charAvatar || card?.dataset.charAvatar;
+    if (!charAvatar) return;
     const newFavState = storage.toggleCharacterFavorite(charAvatar);
-    favBtn.textContent = newFavState ? "\u2605" : "\u2606";
     if (card) {
+      favBtn.textContent = newFavState ? "\u2605" : "\u2606";
       card.dataset.isFav = newFavState.toString();
       card.classList.toggle("is-char-fav", newFavState);
     }
     showToast(newFavState ? "\uC990\uACA8\uCC3E\uAE30\uC5D0 \uCD94\uAC00\uB428" : "\uC990\uACA8\uCC3E\uAE30\uC5D0\uC11C \uC81C\uAC70\uB428", "success");
+    renderHeroCorner(api.getCharacters());
   }
-  function handleGroupFavToggle(favBtn) {
-    const groupId = favBtn.dataset.groupId;
-    if (!groupId) return;
+  function handleGroupFavClick(favBtn) {
     const card = favBtn.closest(".lobby-group-card");
+    const groupId = favBtn.dataset.groupId || card?.dataset.groupId;
+    if (!groupId) return;
     const newFavState = storage.toggleGroupFavorite(groupId);
-    favBtn.textContent = newFavState ? "\u2605" : "\u2606";
     if (card) {
+      favBtn.textContent = newFavState ? "\u2605" : "\u2606";
       card.dataset.isFav = newFavState.toString();
       card.classList.toggle("is-char-fav", newFavState);
     }
     showToast(newFavState ? "\uC990\uACA8\uCC3E\uAE30\uC5D0 \uCD94\uAC00\uB428" : "\uC990\uACA8\uCC3E\uAE30\uC5D0\uC11C \uC81C\uAC70\uB428", "success");
   }
-  async function handleCharCardClick(card, container) {
+  async function handleCharCardClick(card) {
     if (store.isLobbyLocked) return;
     if (isSelectingCharacter || isRendering) return;
-    isSelectingCharacter = true;
-    const selectSafetyTimer = setTimeout(() => {
-      if (isSelectingCharacter) {
-        console.warn("[CharacterGrid] isSelectingCharacter safety reset");
-        isSelectingCharacter = false;
-        store.setLobbyLocked(false);
-      }
-    }, 1e4);
-    store.setLobbyLocked(true);
     const charAvatar = card.dataset.charAvatar;
     const charName = card.dataset.charName || "Unknown";
+    if (!charAvatar) return;
+    isSelectingCharacter = true;
+    store.setLobbyLocked(true);
     try {
+      const gridContainer = document.getElementById("chat-lobby-characters");
       const chatsPanel = document.getElementById("chat-lobby-chats");
       const isPanelVisible = chatsPanel?.classList.contains("visible");
       const isSameCharacter = store.currentCharacter?.avatar === charAvatar;
       if (isPanelVisible && isSameCharacter) {
-        card.classList.remove("selected");
+        gridContainer?.querySelectorAll(".lobby-char-card.selected").forEach((el) => {
+          el.classList.remove("selected");
+        });
         closeChatPanel();
         return;
       }
-      container.querySelectorAll(".lobby-char-card.selected").forEach((el) => {
+      gridContainer?.querySelectorAll(".lobby-char-card.selected").forEach((el) => {
         el.classList.remove("selected");
       });
-      card.classList.add("selected");
+      const gridCard = card.classList.contains("lobby-hero-card") ? gridContainer?.querySelector(`.lobby-char-card[data-char-avatar="${CSS.escape(charAvatar)}"]`) : card;
+      gridCard?.classList.add("selected");
       const characterData = {
         index: card.dataset.charIndex,
         avatar: charAvatar,
         name: charName,
-        avatarSrc: card.querySelector(".lobby-char-avatar")?.src || ""
+        avatarSrc: card.querySelector(".lobby-char-avatar")?.src || `/characters/${encodeURIComponent(charAvatar)}`
       };
       const handler = store.onCharacterSelect;
       if (handler && typeof handler === "function") {
@@ -7735,18 +8163,18 @@ ${message}` : message;
     } catch (error) {
       console.error("[CharacterGrid] Handler error:", error);
     } finally {
-      clearTimeout(selectSafetyTimer);
       store.setLobbyLocked(false);
       setTimeout(() => {
         isSelectingCharacter = false;
       }, 300);
     }
   }
-  async function handleGroupCardClick(card, container) {
+  async function handleGroupCardClick(card) {
     const groupId = card.dataset.groupId;
     if (!groupId) return;
     store.setLobbyLocked(true);
     try {
+      const gridContainer = document.getElementById("chat-lobby-characters");
       const chatsPanel = document.getElementById("chat-lobby-chats");
       const isPanelVisible = chatsPanel?.classList.contains("visible");
       const isSameGroup = store.currentGroup?.id === groupId;
@@ -7759,7 +8187,7 @@ ${message}` : message;
         store.setCurrentGroup(null);
         store.setCurrentCharacter(null);
       }
-      container.querySelectorAll(".lobby-char-card.selected, .lobby-group-card.selected").forEach((el) => {
+      gridContainer?.querySelectorAll(".lobby-char-card.selected, .lobby-group-card.selected").forEach((el) => {
         el.classList.remove("selected");
       });
       card.classList.add("selected");
@@ -7776,18 +8204,6 @@ ${message}` : message;
     } finally {
       store.setLobbyLocked(false);
     }
-  }
-  function handleTagClick(e) {
-    const tagItem = e.target.closest(".lobby-tag-item");
-    if (!tagItem) return;
-    e.preventDefault();
-    const tag = tagItem.dataset.tag;
-    if (store.selectedTag === tag) {
-      store.setSelectedTag(null);
-    } else {
-      store.setSelectedTag(tag);
-    }
-    renderCharacterGrid(store.searchTerm);
   }
   var handleSearch = debounce((searchTerm) => {
     renderCharacterGrid(searchTerm);
@@ -7836,7 +8252,23 @@ ${message}` : message;
       const isActive = selectedTag === tag;
       return `<span class="lobby-tag-item ${isActive ? "active" : ""}" data-tag="${escapeHtml(tag)}">#${escapeHtml(tag)}<span class="lobby-tag-count">(${count})</span></span>`;
     }).join("");
-    setupTagDelegation(container);
+    ensureTagDelegation(container);
+  }
+  function ensureTagDelegation(container) {
+    if (container.dataset.delegated === "true") return;
+    container.dataset.delegated = "true";
+    bindDelegatedTouchClick(container, (e) => {
+      const item = e.target.closest(".lobby-tag-item");
+      if (!item) return false;
+      const tag = item.dataset.tag;
+      if (store.selectedTag === tag) {
+        store.setSelectedTag(null);
+      } else {
+        store.setSelectedTag(tag);
+      }
+      renderCharacterGrid(store.searchTerm);
+      return true;
+    }, { group: "characterGrid", debugName: "tag-bar" });
   }
   function renderGroupCard(group, sortOption = "recent") {
     const name = group.name || "Unknown Group";
@@ -7888,12 +8320,12 @@ ${message}` : message;
     if (count === 1) {
       const avatar = members[0];
       const avatarUrl = `/characters/${encodeURIComponent(avatar)}`;
-      return `<div class="grid-single"><img src="${avatarUrl}" alt="member" draggable="false" data-fallback="avatar"></div>`;
+      return `<div class="grid-single"><img src="${avatarUrl}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'"></div>`;
     }
     if (count === 2) {
       return `<div class="grid-two">${members.map((avatar) => {
         const avatarUrl = `/characters/${encodeURIComponent(avatar)}`;
-        return `<img src="${avatarUrl}" alt="member" draggable="false" data-fallback="avatar">`;
+        return `<img src="${avatarUrl}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">`;
       }).join("")}</div>`;
     }
     if (count === 3) {
@@ -7902,17 +8334,17 @@ ${message}` : message;
       const avatarUrl2 = `/characters/${encodeURIComponent(members[2])}`;
       return `
             <div class="grid-three">
-                <div class="grid-top"><img src="${avatarUrl0}" alt="member" draggable="false" data-fallback="avatar"></div>
+                <div class="grid-top"><img src="${avatarUrl0}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'"></div>
                 <div class="grid-bottom">
-                    <img src="${avatarUrl1}" alt="member" draggable="false" data-fallback="avatar">
-                    <img src="${avatarUrl2}" alt="member" draggable="false" data-fallback="avatar">
+                    <img src="${avatarUrl1}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">
+                    <img src="${avatarUrl2}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">
                 </div>
             </div>
         `;
     }
     return `<div class="grid-four">${members.slice(0, 4).map((avatar) => {
       const avatarUrl = `/characters/${encodeURIComponent(avatar)}`;
-      return `<img src="${avatarUrl}" alt="member" draggable="false" data-fallback="avatar">`;
+      return `<img src="${avatarUrl}" alt="member" draggable="false" onerror="this.src='/img/ai4.png'">`;
     }).join("")}</div>`;
   }
 
@@ -8154,7 +8586,7 @@ ${message}` : message;
     const results = [];
     for (let i = 0; i < characters.length; i += BATCH_SIZE) {
       const batch = characters.slice(i, i + BATCH_SIZE);
-      const batchSettled = await Promise.allSettled(
+      const batchResults = await Promise.all(
         batch.map(async (char) => {
           try {
             let chats = cache.get("chats", char.avatar);
@@ -8195,7 +8627,7 @@ ${message}` : message;
           }
         })
       );
-      results.push(...batchSettled.filter((r) => r.status === "fulfilled").map((r) => r.value));
+      results.push(...batchResults);
     }
     return results.sort((a, b) => {
       if (b.messageCount !== a.messageCount) return b.messageCount - a.messageCount;
@@ -8389,7 +8821,7 @@ ${message}` : message;
       const avatarUrl = char.avatar ? `/characters/${encodeURIComponent(char.avatar)}` : "/img/ai4.png";
       return `
                         <div class="quiz-option spin-animation" data-name="${escapeHtml(char.name)}" style="animation-delay: ${i * 0.2}s">
-                            <img src="${avatarUrl}" alt="${escapeHtml(char.name)}" data-fallback="avatar">
+                            <img src="${avatarUrl}" alt="${escapeHtml(char.name)}" onerror="this.src='/img/ai4.png'">
                             <span>${escapeHtml(char.name)}</span>
                         </div>
                     `;
@@ -8417,7 +8849,7 @@ ${message}` : message;
             <h2>${isCorrect ? "\uC815\uB2F5\uC774\uC5D0\uC694!" : "\uC544\uC26C\uC6CC\uC694!"}</h2>
             ${!isCorrect ? `<p class="wrapped-subtitle">\uC815\uB2F5\uC740 <strong>${escapeHtml(correct.name)}</strong> \uC774\uC5C8\uC5B4\uC694!</p>` : ""}
             <div class="result-avatar ${isCorrect ? "sparkle-animation" : ""}">
-                <img src="${avatarUrl}" alt="${escapeHtml(correct.name)}" data-fallback="avatar">
+                <img src="${avatarUrl}" alt="${escapeHtml(correct.name)}" onerror="this.src='/img/ai4.png'">
                 <span>${escapeHtml(correct.name)}</span>
             </div>
             <button class="wrapped-btn primary" data-action="next">\uB2E4\uC74C</button>
@@ -8599,7 +9031,7 @@ ${message}` : message;
       return `
             <div class="stats-rank-item ${i < 3 ? "top-3" : ""}" style="animation-delay: ${i * 0.05}s">
                 <span class="rank-medal">${medal}</span>
-                <img class="rank-avatar" src="${avatarUrl}" alt="${escapeHtml(r.name)}" data-fallback="avatar">
+                <img class="rank-avatar" src="${avatarUrl}" alt="${escapeHtml(r.name)}" onerror="this.src='/img/ai4.png'">
                 <div class="rank-info">
                     <div class="rank-name">${escapeHtml(r.name)}</div>
                     <div class="rank-stats">\uCC44\uD305 ${r.chatCount}\uAC1C | \uBA54\uC2DC\uC9C0 ${r.messageCount.toLocaleString()}\uAC1C</div>
@@ -8643,7 +9075,7 @@ ${message}` : message;
         <div class="stats-section stats-top-char">
             <h4>\u{1F3C6} ${escapeHtml(top.name)}\uC640\uC758 \uD1B5\uACC4</h4>
             <div class="top-char-card">
-                <img class="top-char-avatar" src="${topCharAvatarUrl}" alt="${escapeHtml(top.name)}" data-fallback="avatar">
+                <img class="top-char-avatar" src="${topCharAvatarUrl}" alt="${escapeHtml(top.name)}" onerror="this.src='/img/ai4.png'">
                 <div class="top-char-stats">
                     <div class="top-char-stat-item">
                         <span class="stat-label">\uCCAB \uB300\uD654\uC77C</span>
@@ -8956,7 +9388,7 @@ ${message}` : message;
     const rankings = [];
     for (let i = 0; i < characters.length; i += BATCH_SIZE) {
       const batch = characters.slice(i, i + BATCH_SIZE);
-      const batchSettled = await Promise.allSettled(
+      const batchResults = await Promise.all(
         batch.map(async (char) => {
           let chats;
           try {
@@ -8969,7 +9401,7 @@ ${message}` : message;
           return { avatar: char.avatar, chatCount, messageCount };
         })
       );
-      rankings.push(...batchSettled.filter((r) => r.status === "fulfilled").map((r) => r.value));
+      rankings.push(...batchResults);
       if (i + BATCH_SIZE < characters.length) {
         await new Promise((r) => setTimeout(r, 10));
       }
@@ -9052,7 +9484,7 @@ ${message}` : message;
         const charText = charIncrease >= 0 ? `+${charIncrease}` : `${charIncrease}`;
         const totalText = totalIncrease >= 0 ? `+${totalIncrease}` : `${totalIncrease}`;
         contentHtml = `
-                <img class="cal-card-avatar" src="${avatarUrl}" alt="" data-fallback="fade">
+                <img class="cal-card-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0'">
                 <div class="cal-card-day">${day}</div>
                 <div class="cal-card-gradient"></div>
                 <div class="cal-card-info">
@@ -9127,7 +9559,7 @@ ${message}` : message;
         const timeStr = char.lastChatTime > 0 ? formatLastChatTime(char.lastChatTime) : "-";
         cardsHtml += `
                 <div class="lastmsg-card">
-                    <img class="lastmsg-avatar" src="${avatarUrl}" alt="" data-fallback="fade">
+                    <img class="lastmsg-avatar" src="${avatarUrl}" alt="" onerror="this.style.opacity='0.3'">
                     <div class="lastmsg-name">${charName}</div>
                     <div class="lastmsg-stats">
                         <div class="lastmsg-label">Last Chat</div>
@@ -9359,6 +9791,7 @@ ${message}` : message;
     "use strict";
     let chatChangedCooldownTimer = null;
     let closeLobbyHandler = null;
+    let lastKnownPersona = null;
     let eventHandlers = null;
     let eventsRegistered = false;
     function getCurrentCharacterAvatar() {
@@ -9434,11 +9867,16 @@ ${message}` : message;
       }
       setupHandlers();
       setupEventDelegation();
+      initThemeMenuEvents(() => renderCharacterGrid(store.searchTerm));
       setupSillyTavernEvents();
       startBackgroundPreload();
       addLobbyToOptionsMenu();
       setTimeout(() => initCustomThemeIntegration(openLobby), CONFIG.timing.initDelay);
       updateFabPreview();
+      api.getCurrentPersona().then((p) => {
+        if (p) lastKnownPersona = p;
+      }).catch(() => {
+      });
     }
     function setupSillyTavernEvents() {
       const context = window.SillyTavern?.getContext?.();
@@ -9458,7 +9896,12 @@ ${message}` : message;
         }
         if (!isLobbyOpen()) {
           cache.invalidate("characters");
-          cache.invalidate("chats");
+          const changedAvatar = getCurrentCharacterAvatar();
+          if (changedAvatar) {
+            cache.invalidate("chats", changedAvatar);
+            cache.invalidate("chatCounts", changedAvatar);
+            cache.invalidate("messageCounts", changedAvatar);
+          }
           return;
         }
         if (!store.isLobbyLocked) {
@@ -9469,7 +9912,12 @@ ${message}` : message;
         }
         chatChangedCooldownTimer = setTimeout(async () => {
           cache.invalidate("characters");
-          cache.invalidate("chats");
+          const changedAvatar = getCurrentCharacterAvatar();
+          if (changedAvatar) {
+            cache.invalidate("chats", changedAvatar);
+            cache.invalidate("chatCounts", changedAvatar);
+            cache.invalidate("messageCounts", changedAvatar);
+          }
           await renderCharacterGrid(store.searchTerm);
           store.setLobbyLocked(false);
           chatChangedCooldownTimer = null;
@@ -9530,16 +9978,16 @@ ${message}` : message;
         },
         // 🔥 페르소나 변경 감지 (세팅 업데이트 시)
         onSettingsUpdated: async () => {
-          console.debug("[ChatLobby] Settings updated, refreshing persona FAB");
           try {
             const currentPersona = await api.getCurrentPersona();
-            if (currentPersona) {
-              storage.recordPersonaUsage(currentPersona);
-            }
+            if (!currentPersona || currentPersona === lastKnownPersona) return;
+            console.debug("[ChatLobby] Persona changed externally:", lastKnownPersona, "\u2192", currentPersona);
+            lastKnownPersona = currentPersona;
+            storage.recordPersonaUsage(currentPersona);
+            await refreshPersonaRadialMenu();
+            await renderPersonaBar();
           } catch (e) {
           }
-          await refreshPersonaRadialMenu();
-          await renderPersonaBar();
         }
       };
       eventSource.on(eventTypes.CHARACTER_DELETED, eventHandlers.onCharacterDeleted);
@@ -9653,11 +10101,6 @@ ${message}` : message;
       stopRecentDomObserver();
       await cacheRecentChatsBeforeOpen();
       loadRecentChats();
-      const currentCharBeforeOpen = getCurrentCharacterAvatar();
-      if (currentCharBeforeOpen) {
-        lastChatCache.updateNow(currentCharBeforeOpen);
-        console.debug("[ChatLobby] Updated lastChatCache for current chat:", currentCharBeforeOpen);
-      }
       store.setLobbyLocked(true);
       const overlay = document.getElementById("chat-lobby-overlay");
       const container = document.getElementById("chat-lobby-container");
@@ -9693,7 +10136,7 @@ ${message}` : message;
         storage.setFilterFolder("all");
         deactivateBatchMode();
         closeChatPanel();
-        await Promise.allSettled([
+        await Promise.all([
           renderPersonaBar(),
           renderCharacterGrid(),
           initPersonaRadialMenu()
@@ -9863,6 +10306,7 @@ ${message}` : message;
     }
     window.ChatLobby = window.ChatLobby || {};
     window._chatLobbyLastChatCache = lastChatCache;
+    window.ChatLobby.listenerStats = () => listeners.stats();
     function cleanup() {
       console.info("[ChatLobby] \u{1F9F9} Cleanup started");
       cleanupSillyTavernEvents();
@@ -9870,7 +10314,9 @@ ${message}` : message;
       cleanupCustomThemeIntegration();
       cleanupTooltip();
       cleanupPersonaRadialMenu();
+      cleanupThemeMenu();
       intervalManager.clearAll();
+      listeners.clearAll();
       if (chatChangedCooldownTimer) {
         clearTimeout(chatChangedCooldownTimer);
         chatChangedCooldownTimer = null;
@@ -9890,7 +10336,7 @@ ${message}` : message;
       if (typeof context?.getCharacters === "function") {
         await context.getCharacters();
       }
-      await Promise.allSettled([
+      await Promise.all([
         renderPersonaBar(),
         renderCharacterGrid(),
         refreshPersonaRadialMenu()
@@ -9899,54 +10345,21 @@ ${message}` : message;
     window.chatLobbyRefresh = window.ChatLobby.refresh;
     let eventsInitialized = false;
     let refreshGridHandler = null;
-    function handleImageError(e) {
-      if (e.target.tagName !== "IMG") return;
-      const img = e.target;
-      if (img.dataset.fallbackApplied) return;
-      img.dataset.fallbackApplied = "true";
-      const fallback = img.dataset.fallback;
-      switch (fallback) {
-        case "avatar":
-          img.src = "/img/ai4.png";
-          break;
-        case "emoji":
-          if (img.parentElement) img.parentElement.textContent = "\u{1F464}";
-          break;
-        case "persona":
-          if (img.parentElement) {
-            const div = document.createElement("div");
-            div.className = "persona-avatar";
-            div.textContent = "\u{1F464}";
-            img.replaceWith(div);
-          }
-          break;
-        case "fade":
-          img.style.opacity = "0";
-          break;
-        case "hide":
-        default:
-          img.style.display = "none";
-          break;
-      }
-    }
     function setupEventDelegation() {
       if (eventsInitialized) return;
       eventsInitialized = true;
-      document.body.addEventListener("click", handleBodyClick);
-      document.addEventListener("error", handleImageError, true);
-      document.addEventListener("keydown", handleKeydown2);
+      listeners.add("global", document.body, "click", handleBodyClick);
+      listeners.add("global", document, "keydown", handleKeydown2);
       const searchInput = document.getElementById("chat-lobby-search-input");
-      if (searchInput) {
-        searchInput.addEventListener("input", (e) => handleSearch(e.target.value));
-      }
+      listeners.add("global", searchInput, "input", (e) => handleSearch(e.target.value));
       bindDropdownEvents();
       refreshGridHandler = () => {
         renderCharacterGrid(store.searchTerm);
       };
-      window.addEventListener("chatlobby:refresh-grid", refreshGridHandler);
+      listeners.add("global", window, "chatlobby:refresh-grid", refreshGridHandler);
       closeLobbyHandler = () => closeLobby();
-      window.addEventListener("chatlobby:close", closeLobbyHandler);
-      document.addEventListener("lobby:select-character", async (e) => {
+      listeners.add("global", window, "chatlobby:close", closeLobbyHandler);
+      listeners.add("global", document, "lobby:select-character", async (e) => {
         const { avatar } = e.detail;
         if (!avatar) return;
         switchTab("characters");
@@ -9955,23 +10368,15 @@ ${message}` : message;
           charCard.click();
         }
       });
-      document.addEventListener("lobby:open-folder-modal", (e) => {
+      listeners.add("global", document, "lobby:open-folder-modal", () => {
         openFolderModal();
       });
     }
     function cleanupEventDelegation() {
       if (!eventsInitialized) return;
-      document.body.removeEventListener("click", handleBodyClick);
-      document.removeEventListener("keydown", handleKeydown2);
-      document.removeEventListener("error", handleImageError, true);
-      if (refreshGridHandler) {
-        window.removeEventListener("chatlobby:refresh-grid", refreshGridHandler);
-        refreshGridHandler = null;
-      }
-      if (closeLobbyHandler) {
-        window.removeEventListener("chatlobby:close", closeLobbyHandler);
-        closeLobbyHandler = null;
-      }
+      listeners.clear("global");
+      refreshGridHandler = null;
+      closeLobbyHandler = null;
       eventsInitialized = false;
     }
     function setupPersonaWheelScroll() {
@@ -9979,7 +10384,7 @@ ${message}` : message;
       if (!personaList) return;
       if (personaList.dataset.wheelBound) return;
       personaList.dataset.wheelBound = "true";
-      personaList.addEventListener("wheel", (e) => {
+      listeners.add("global", personaList, "wheel", (e) => {
         if (e.deltaY !== 0) {
           e.preventDefault();
           personaList.scrollLeft += e.deltaY;
@@ -9994,28 +10399,14 @@ ${message}` : message;
       collapseBtn.textContent = isCollapsed ? "\u25BC" : "\u25B2";
       localStorage.setItem("chatlobby-collapsed", isCollapsed.toString());
     }
-    function toggleTheme() {
-      const container = document.getElementById("chat-lobby-container");
-      const themeBtn = document.getElementById("chat-lobby-theme-toggle");
-      if (!container || !themeBtn) return;
-      const isCurrentlyDark = container.classList.contains("dark-mode");
-      if (isCurrentlyDark) {
-        container.classList.remove("dark-mode");
-        container.classList.add("light-mode");
-        themeBtn.textContent = "\u{1F319}";
-        localStorage.setItem("chatlobby-theme", "light");
-      } else {
-        container.classList.remove("light-mode");
-        container.classList.add("dark-mode");
-        themeBtn.textContent = "\u2600\uFE0F";
-        localStorage.setItem("chatlobby-theme", "dark");
-      }
-    }
     function handleBodyClick(e) {
       const target = e.target;
       if (target.id === "chat-lobby-fab" || target.closest("#chat-lobby-fab")) {
         openLobby();
         return;
+      }
+      if (isThemeMenuOpen() && !target.closest("#chat-lobby-theme-menu") && !target.closest("#chat-lobby-theme-toggle")) {
+        closeThemeMenu();
       }
       const lobbyContainer = target.closest("#chat-lobby-container");
       const folderModal = target.closest("#chat-lobby-folder-modal");
@@ -10090,8 +10481,12 @@ ${message}` : message;
         case "toggle-collapse":
           toggleCollapse();
           break;
+        case "open-theme-menu":
         case "toggle-theme":
-          toggleTheme();
+          toggleThemeMenu();
+          break;
+        case "set-theme":
+          applyTheme(el.dataset.theme);
           break;
         case "random-char":
           await handleRandomCharacter();
@@ -10150,16 +10545,16 @@ ${message}` : message;
       }
     }
     function bindDropdownEvents() {
-      document.getElementById("chat-lobby-char-sort")?.addEventListener("change", (e) => {
+      listeners.add("global", document.getElementById("chat-lobby-char-sort"), "change", (e) => {
         handleSortChange2(e.target.value);
       });
-      document.getElementById("chat-lobby-folder-filter")?.addEventListener("change", (e) => {
+      listeners.add("global", document.getElementById("chat-lobby-folder-filter"), "change", (e) => {
         handleFilterChange(e.target.value);
       });
-      document.getElementById("chat-lobby-chat-sort")?.addEventListener("change", (e) => {
+      listeners.add("global", document.getElementById("chat-lobby-chat-sort"), "change", (e) => {
         handleSortChange(e.target.value);
       });
-      document.getElementById("chat-lobby-chats-list")?.addEventListener("change", (e) => {
+      listeners.add("global", document.getElementById("chat-lobby-chats-list"), "change", (e) => {
         if (e.target.classList.contains("chat-select-cb")) {
           updateBatchCount();
         }
@@ -10169,7 +10564,7 @@ ${message}` : message;
       cache.invalidateAll();
       await api.fetchPersonas();
       await api.fetchCharacters(true);
-      await Promise.allSettled([
+      await Promise.all([
         renderPersonaBar(),
         renderCharacterGrid(),
         refreshPersonaRadialMenu()
@@ -10187,6 +10582,7 @@ ${message}` : message;
       const success = await api.setPersona(personaKey);
       if (success) {
         storage.recordPersonaUsage(personaKey);
+        lastKnownPersona = personaKey;
         const fabAvatar = document.getElementById("persona-fab-avatar");
         const fabIcon = document.getElementById("persona-fab-icon");
         if (fabAvatar && fabIcon) {
@@ -10364,9 +10760,8 @@ ${message}` : message;
       closeLobby();
       const isAlreadySelected = context.characterId === index;
       if (!isAlreadySelected) {
-        await api.selectCharacterById(index);
-        const charSelected = await waitForCharacterSelect(character.avatar, 2e3);
-        if (!charSelected) {
+        const selected = await selectCharacterLight(index, character.avatar);
+        if (!selected) {
           console.warn("[ChatLobby] Character selection timeout");
         }
       }

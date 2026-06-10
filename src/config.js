@@ -37,12 +37,15 @@ export const CONFIG = {
     storageKey: 'chatLobby_data',
     
     // 캐시 설정
+    // ⚠️ TTL을 짧게 잡으면 로비를 열 때마다 사실상 전체 재요청이 발생함 (렉의 주원인)
+    // 변경 감지는 이벤트(CHAT_CHANGED, CHARACTER_EDITED 등)가 스코프 무효화로 처리하므로
+    // TTL은 "이벤트를 놓쳤을 때의 안전망" 역할만 하면 됨 → 길게 설정
     cache: {
-        chatsDuration: 30000,       // 채팅 목록 캐시 30초
-        chatCountDuration: 60000,   // 채팅 수 캐시 1분
-        messageCountsDuration: 60000, // 메시지 수 캐시 1분
-        personasDuration: 60000,    // 페르소나 캐시 1분
-        charactersDuration: 30000,  // 캐릭터 캐시 30초
+        chatsDuration: 300000,        // 채팅 목록 캐시 5분
+        chatCountsDuration: 600000,   // 채팅 수 캐시 10분
+        messageCountsDuration: 600000, // 메시지 수 캐시 10분
+        personasDuration: 600000,     // 페르소나 캐시 10분
+        charactersDuration: 300000,   // 캐릭터 캐시 5분
     },
     
     // UI 설정

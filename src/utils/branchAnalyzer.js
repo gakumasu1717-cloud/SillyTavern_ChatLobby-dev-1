@@ -212,7 +212,7 @@ export async function ensureFingerprints(charAvatar, chats, onProgress = null, f
         
         const batch = needsUpdate.slice(i, i + BATCH_SIZE);
         
-        await Promise.allSettled(batch.map(async (chat) => {
+        await Promise.all(batch.map(async (chat) => {
             const fn = chat.file_name || '';
             const content = await loadChatContent(charAvatar, fn, ctx);
             
@@ -334,7 +334,7 @@ async function analyzeGroup(charAvatar, group, ctx = null) {
     const chatHashes = {};    // 해시 전처리된 데이터
     
     // 모든 채팅 내용 로드 + 해시 전처리
-    await Promise.allSettled(group.map(async (item) => {
+    await Promise.all(group.map(async (item) => {
         const content = await loadChatContent(charAvatar, item.fileName, ctx);
         if (content) {
             chatContents[item.fileName] = content;

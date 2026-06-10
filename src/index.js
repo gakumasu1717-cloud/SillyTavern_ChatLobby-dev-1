@@ -12,7 +12,7 @@ import { renderPersonaBar } from './ui/personaBar.js';
 import { initPersonaRadialMenu, refreshPersonaRadialMenu, cleanupPersonaRadialMenu } from './ui/personaRadialMenu.js';
 import { renderCharacterGrid, setCharacterSelectHandler, handleSearch, handleSortChange as handleCharSortChange, resetCharacterSelectLock, setGroupSelectHandler } from './ui/characterGrid.js';
 import { renderChatList, renderGroupChatList, setChatHandlers, handleFilterChange, handleSortChange as handleChatSortChange, toggleBatchMode, updateBatchCount, executeBatchDelete, batchSelectAll, closeChatPanel, deactivateBatchMode, cleanupTooltip, refreshCurrentChatList } from './ui/chatList.js';
-import { openChat, deleteChat, startNewChat, deleteCharacter } from './handlers/chatHandlers.js';
+import { openChat, deleteChat, startNewChat, deleteCharacter, selectCharacterLight } from './handlers/chatHandlers.js';
 import { openFolderModal, closeFolderModal, addFolder, updateFolderDropdowns } from './handlers/folderHandlers.js';
 import { showToast, showConfirm } from './ui/notifications.js';
 import { openStatsView, closeStatsView, isStatsViewOpen } from './ui/statsView.js';
@@ -21,10 +21,12 @@ import { bindTabEvents, switchTab, getCurrentTab, refreshCurrentTab, injectConte
 import { lastChatCache } from './data/lastChatCache.js';
 import { loadSnapshots as loadCalendarSnapshots, getLocalDateString } from './data/calendarStorage.js';
 import { debounce, isMobile } from './utils/eventHelpers.js';
-import { waitFor, waitForCharacterSelect, waitForElement } from './utils/waitFor.js';
+import { waitForElement } from './utils/waitFor.js';
 import { intervalManager } from './utils/intervalManager.js';
 import { openDrawerSafely } from './utils/drawerHelper.js';
 import { initCustomThemeIntegration, cleanupCustomThemeIntegration } from './integration/customTheme.js';
+import { listeners } from './utils/listenerManager.js';
+import { applyTheme, toggleThemeMenu, closeThemeMenu, isThemeMenuOpen, initThemeMenuEvents, cleanupThemeMenu } from './ui/themeMenu.js';
 import { escapeHtml } from './utils/textUtils.js';
 import { analyzeBranches } from './utils/branchAnalyzer.js';
 import { clearCharacterCache as clearBranchCache } from './data/branchCache.js';
@@ -36,6 +38,11 @@ import { operationLock } from './utils/operationLock.js';
     // CHAT_CHANGED cooldown 타이머 (모듈 스코프)
     let chatChangedCooldownTimer = null;
     let closeLobbyHandler = null;
+
+    // ★ 마지막으로 확인된 페르소나 (SETTINGS_UPDATED 오염 방지용)
+    // SETTINGS_UPDATED는 페르소나와 무관한 설정 변경에서도 발생하므로,
+    // 실제로 페르소나가 바뀌었을 때만 사용 기록을 남기기 위해 이전 값을 추적
+    let lastKnownPersona = null;
     
     // ============================================
     // 이벤트 핸들러 참조 저장 (cleanup용)
@@ -171,9 +178,12 @@ import { operationLock } from './utils/operationLock.js';
         
         // 핸들러 연결
         setupHandlers();
-        
+
         // 이벤트 위임 설정
         setupEventDelegation();
+
+        // 테마/표시 설정 메뉴 이벤트 (옵션 변경 시 그리드 리렌더)
+        initThemeMenuEvents(() => renderCharacterGrid(store.searchTerm));
         
         // SillyTavern 이벤트 리스닝
         setupSillyTavernEvents();
@@ -189,7 +199,9 @@ import { operationLock } from './utils/operationLock.js';
         
         // FAB 프리뷰 초기화
         updateFabPreview();
-        
+
+        // 현재 페르소나 추적 초기화 (SETTINGS_UPDATED 비교 기준)
+        api.getCurrentPersona().then(p => { if (p) lastKnownPersona = p; }).catch(() => {});
     }
     
     /**
@@ -221,9 +233,16 @@ import { operationLock } from './utils/operationLock.js';
             }
             
             // 로비 안 열려있으면 캐시만 무효화
+            // ⚠️ 전체 chats 캐시를 비우면 다음 로비 열기 때 모든 캐릭터를 재요청하게 됨
+            // → 채팅 변경은 현재 캐릭터에만 영향을 주므로 해당 캐릭터만 스코프 무효화
             if (!isLobbyOpen()) {
                 cache.invalidate('characters');
-                cache.invalidate('chats');
+                const changedAvatar = getCurrentCharacterAvatar();
+                if (changedAvatar) {
+                    cache.invalidate('chats', changedAvatar);
+                    cache.invalidate('chatCounts', changedAvatar);
+                    cache.invalidate('messageCounts', changedAvatar);
+                }
                 return;
             }
             
@@ -240,7 +259,13 @@ import { operationLock } from './utils/operationLock.js';
             // 마지막 CHAT_CHANGED 후 500ms 대기 → 렌더 + 락 해제
             chatChangedCooldownTimer = setTimeout(async () => {
                 cache.invalidate('characters');
-                cache.invalidate('chats');
+                // 변경된 캐릭터만 스코프 무효화 (전체 재요청 방지)
+                const changedAvatar = getCurrentCharacterAvatar();
+                if (changedAvatar) {
+                    cache.invalidate('chats', changedAvatar);
+                    cache.invalidate('chatCounts', changedAvatar);
+                    cache.invalidate('messageCounts', changedAvatar);
+                }
                 await renderCharacterGrid(store.searchTerm);
                 store.setLobbyLocked(false);
                 chatChangedCooldownTimer = null;
@@ -318,16 +343,18 @@ import { operationLock } from './utils/operationLock.js';
             },
             // 🔥 페르소나 변경 감지 (세팅 업데이트 시)
             onSettingsUpdated: async () => {
-                console.debug('[ChatLobby] Settings updated, refreshing persona FAB');
-                // 외부에서 페르소나 변경 시에도 사용 기록 저장
+                // ⚠️ SETTINGS_UPDATED는 모든 설정 저장에서 발생함
+                // 실제로 페르소나가 바뀐 경우에만 기록/리렌더 (큐 오염 + 불필요한 렌더 방지)
                 try {
                     const currentPersona = await api.getCurrentPersona();
-                    if (currentPersona) {
-                        storage.recordPersonaUsage(currentPersona);
-                    }
+                    if (!currentPersona || currentPersona === lastKnownPersona) return;
+
+                    console.debug('[ChatLobby] Persona changed externally:', lastKnownPersona, '→', currentPersona);
+                    lastKnownPersona = currentPersona;
+                    storage.recordPersonaUsage(currentPersona);
+                    await refreshPersonaRadialMenu();
+                    await renderPersonaBar();
                 } catch (e) { /* ignore */ }
-                await refreshPersonaRadialMenu();
-                await renderPersonaBar();
             }
         };
         
@@ -524,13 +551,11 @@ import { operationLock } from './utils/operationLock.js';
         
         // 🔥 캐싱 완료 후 바로 state.recentChats에 반영
         loadRecentChats();
-        
-        // 🔥 현재 채팅 중인 캐릭터를 lastChatCache에 즉시 갱신 (채팅 화면에서 로비 열 때)
-        const currentCharBeforeOpen = getCurrentCharacterAvatar();
-        if (currentCharBeforeOpen) {
-            lastChatCache.updateNow(currentCharBeforeOpen);
-            console.debug('[ChatLobby] Updated lastChatCache for current chat:', currentCharBeforeOpen);
-        }
+
+        // ★ 여기서 lastChatCache.updateNow()를 호출하지 않음!
+        // updateNow는 시간 + 현재 페르소나를 통째로 덮어쓰므로,
+        // "로비를 열기만 해도 기록되고 페르소나가 엉뚱하게 덮어씌워지는" 원인이었음.
+        // 갱신은 실제 메시지 송수신 시에만 (MESSAGE_SENT/RECEIVED 이벤트 핸들러에서 처리)
         store.setLobbyLocked(true);  // CHAT_CHANGED settle까지 유지
         
         const overlay = document.getElementById('chat-lobby-overlay');
@@ -586,7 +611,7 @@ import { operationLock } from './utils/operationLock.js';
             closeChatPanel();
             
             // 페르소나 바와 캐릭터 그리드를 동시에 렌더링 (한 번에 같이)
-            await Promise.allSettled([
+            await Promise.all([
                 renderPersonaBar(),
                 renderCharacterGrid(),
                 initPersonaRadialMenu()
@@ -833,6 +858,8 @@ import { operationLock } from './utils/operationLock.js';
     // 전역 API (네임스페이스 정리)
     window.ChatLobby = window.ChatLobby || {};
     window._chatLobbyLastChatCache = lastChatCache;
+    // 디버그: 그룹별 리스너 등록 현황 (콘솔에서 ChatLobby.listenerStats() 호출)
+    window.ChatLobby.listenerStats = () => listeners.stats();
     
     /**
      * 전역 정리 함수 (확장 재로드 시 호출)
@@ -847,7 +874,11 @@ import { operationLock } from './utils/operationLock.js';
         cleanupCustomThemeIntegration();
         cleanupTooltip();
         cleanupPersonaRadialMenu();
+        cleanupThemeMenu();
         intervalManager.clearAll();
+
+        // 🧹 남아있는 모든 그룹 리스너 일괄 해제 (안전망)
+        listeners.clearAll();
         
         // 타이머 정리
         if (chatChangedCooldownTimer) {
@@ -879,7 +910,7 @@ import { operationLock } from './utils/operationLock.js';
             await context.getCharacters();
         }
         
-        await Promise.allSettled([
+        await Promise.all([
             renderPersonaBar(),
             renderCharacterGrid(),
             refreshPersonaRadialMenu()
@@ -897,39 +928,6 @@ import { operationLock } from './utils/operationLock.js';
     // 이벤트 핸들러 참조 저장 (cleanup용)
     let refreshGridHandler = null;
     
-    // 🔥 전역 이미지 에러 핸들러 (inline onerror 대체 — CSP 호환)
-    function handleImageError(e) {
-        if (e.target.tagName !== 'IMG') return;
-        const img = e.target;
-        if (img.dataset.fallbackApplied) return; // 무한 루프 방지
-        img.dataset.fallbackApplied = 'true';
-        
-        const fallback = img.dataset.fallback;
-        switch (fallback) {
-            case 'avatar':
-                img.src = '/img/ai4.png';
-                break;
-            case 'emoji':
-                if (img.parentElement) img.parentElement.textContent = '👤';
-                break;
-            case 'persona':
-                if (img.parentElement) {
-                    const div = document.createElement('div');
-                    div.className = 'persona-avatar';
-                    div.textContent = '👤';
-                    img.replaceWith(div);
-                }
-                break;
-            case 'fade':
-                img.style.opacity = '0';
-                break;
-            case 'hide':
-            default:
-                img.style.display = 'none';
-                break;
-        }
-    }
-    
     /**
      * 이벤트 위임 설정
      * getElementById 대신 상위 컨테이너에서 이벤트를 위임 처리
@@ -937,76 +935,64 @@ import { operationLock } from './utils/operationLock.js';
     function setupEventDelegation() {
         if (eventsInitialized) return;
         eventsInitialized = true;
-        
+
+        // ★ 모든 전역(document/window/영속 요소) 리스너는 listenerManager의
+        // 'global' 그룹으로 등록 → cleanupEventDelegation에서 한 번에 해제
+
         // FAB 버튼 (document.body에 위임)
-        document.body.addEventListener('click', handleBodyClick);
-        
-        // 이미지 에러 핸들러 (capture 페이즈 — error 이벤트는 버블링 안 됨)
-        document.addEventListener('error', handleImageError, true);
-        
+        listeners.add('global', document.body, 'click', handleBodyClick);
+
         // 키보드 이벤트
-        document.addEventListener('keydown', handleKeydown);
-        
+        listeners.add('global', document, 'keydown', handleKeydown);
+
         // 검색 입력 (input 이벤트는 위임이 잘 안되므로 직접 바인딩)
         const searchInput = document.getElementById('chat-lobby-search-input');
-        if (searchInput) {
-            searchInput.addEventListener('input', (e) => handleSearch(e.target.value));
-        }
-        
+        listeners.add('global', searchInput, 'input', (e) => handleSearch(e.target.value));
+
         // 드롭다운 change 이벤트도 직접 바인딩
         bindDropdownEvents();
-        
+
         // 순환참조 방지용 이벤트 리스너
         refreshGridHandler = () => {
             renderCharacterGrid(store.searchTerm);
         };
-        window.addEventListener('chatlobby:refresh-grid', refreshGridHandler);
-        
+        listeners.add('global', window, 'chatlobby:refresh-grid', refreshGridHandler);
+
         // tabView 등 외부에서 closeLobby 호출용 이벤트
         closeLobbyHandler = () => closeLobby();
-        window.addEventListener('chatlobby:close', closeLobbyHandler);
-        
+        listeners.add('global', window, 'chatlobby:close', closeLobbyHandler);
+
         // 탭 뷰에서 캐릭터 선택 이벤트
-        document.addEventListener('lobby:select-character', async (e) => {
+        listeners.add('global', document, 'lobby:select-character', async (e) => {
             const { avatar } = e.detail;
             if (!avatar) return;
-            
+
             // 캐릭터 탭으로 전환
             switchTab('characters');
-            
+
             // 캐릭터 선택 시뮬레이션
             const charCard = document.querySelector(`.lobby-char-card[data-char-avatar="${avatar}"]`);
             if (charCard) {
                 charCard.click();
             }
         });
-        
+
         // 탭 뷰에서 폴더 관리 모달 열기 이벤트
-        document.addEventListener('lobby:open-folder-modal', (e) => {
+        listeners.add('global', document, 'lobby:open-folder-modal', () => {
             openFolderModal();
         });
     }
-    
+
     /**
      * 이벤트 위임 정리 (확장 재로드 대비)
      */
     function cleanupEventDelegation() {
         if (!eventsInitialized) return;
-        
-        document.body.removeEventListener('click', handleBodyClick);
-        document.removeEventListener('keydown', handleKeydown);
-        document.removeEventListener('error', handleImageError, true);
-        
-        if (refreshGridHandler) {
-            window.removeEventListener('chatlobby:refresh-grid', refreshGridHandler);
-            refreshGridHandler = null;
-        }
-        
-        if (closeLobbyHandler) {
-            window.removeEventListener('chatlobby:close', closeLobbyHandler);
-            closeLobbyHandler = null;
-        }
-        
+
+        listeners.clear('global');
+        refreshGridHandler = null;
+        closeLobbyHandler = null;
+
         eventsInitialized = false;
     }
     
@@ -1016,12 +1002,12 @@ import { operationLock } from './utils/operationLock.js';
     function setupPersonaWheelScroll() {
         const personaList = document.getElementById('chat-lobby-persona-list');
         if (!personaList) return;
-        
+
         // 이미 바인딩되어 있으면 스킵
         if (personaList.dataset.wheelBound) return;
         personaList.dataset.wheelBound = 'true';
-        
-        personaList.addEventListener('wheel', (e) => {
+
+        listeners.add('global', personaList, 'wheel', (e) => {
             if (e.deltaY !== 0) {
                 e.preventDefault();
                 personaList.scrollLeft += e.deltaY;
@@ -1045,45 +1031,29 @@ import { operationLock } from './utils/operationLock.js';
     }
     
     /**
-     * 테마 토글 (다크/라이트)
-     */
-    function toggleTheme() {
-        const container = document.getElementById('chat-lobby-container');
-        const themeBtn = document.getElementById('chat-lobby-theme-toggle');
-        if (!container || !themeBtn) return;
-        
-        const isCurrentlyDark = container.classList.contains('dark-mode');
-        
-        if (isCurrentlyDark) {
-            container.classList.remove('dark-mode');
-            container.classList.add('light-mode');
-            themeBtn.textContent = '🌙';
-            localStorage.setItem('chatlobby-theme', 'light');
-        } else {
-            container.classList.remove('light-mode');
-            container.classList.add('dark-mode');
-            themeBtn.textContent = '☀️';
-            localStorage.setItem('chatlobby-theme', 'dark');
-        }
-    }
-    
-    /**
      * body 클릭 이벤트 핸들러 (이벤트 위임)
      * @param {MouseEvent} e
      */
     function handleBodyClick(e) {
         const target = e.target;
-        
+
         // FAB 버튼은 로비 외부에 있으므로 별도 처리
         if (target.id === 'chat-lobby-fab' || target.closest('#chat-lobby-fab')) {
             openLobby();
             return;
         }
-        
+
+        // 테마 메뉴 외부 클릭 시 닫기 (토글 버튼 제외)
+        if (isThemeMenuOpen()
+            && !target.closest('#chat-lobby-theme-menu')
+            && !target.closest('#chat-lobby-theme-toggle')) {
+            closeThemeMenu();
+        }
+
         // 로비 컨테이너 내부 클릭만 처리
         const lobbyContainer = target.closest('#chat-lobby-container');
         const folderModal = target.closest('#chat-lobby-folder-modal');
-        
+
         if (!lobbyContainer && !folderModal) {
             // 로비 외부 클릭은 무시
             return;
@@ -1168,8 +1138,12 @@ import { operationLock } from './utils/operationLock.js';
             case 'toggle-collapse':
                 toggleCollapse();
                 break;
-            case 'toggle-theme':
-                toggleTheme();
+            case 'open-theme-menu':
+            case 'toggle-theme': // 하위 호환
+                toggleThemeMenu();
+                break;
+            case 'set-theme':
+                applyTheme(el.dataset.theme);
                 break;
             case 'random-char':
                 await handleRandomCharacter();
@@ -1248,22 +1222,22 @@ import { operationLock } from './utils/operationLock.js';
      */
     function bindDropdownEvents() {
         // 캐릭터 정렬
-        document.getElementById('chat-lobby-char-sort')?.addEventListener('change', (e) => {
+        listeners.add('global', document.getElementById('chat-lobby-char-sort'), 'change', (e) => {
             handleCharSortChange(e.target.value);
         });
-        
+
         // 채팅 필터
-        document.getElementById('chat-lobby-folder-filter')?.addEventListener('change', (e) => {
+        listeners.add('global', document.getElementById('chat-lobby-folder-filter'), 'change', (e) => {
             handleFilterChange(e.target.value);
         });
-        
+
         // 채팅 정렬
-        document.getElementById('chat-lobby-chat-sort')?.addEventListener('change', (e) => {
+        listeners.add('global', document.getElementById('chat-lobby-chat-sort'), 'change', (e) => {
             handleChatSortChange(e.target.value);
         });
-        
+
         // 배치 체크박스 변경 (위임)
-        document.getElementById('chat-lobby-chats-list')?.addEventListener('change', (e) => {
+        listeners.add('global', document.getElementById('chat-lobby-chats-list'), 'change', (e) => {
             if (e.target.classList.contains('chat-select-cb')) {
                 updateBatchCount();
             }
@@ -1284,7 +1258,7 @@ import { operationLock } from './utils/operationLock.js';
         await api.fetchPersonas();
         await api.fetchCharacters(true);
         
-        await Promise.allSettled([
+        await Promise.all([
             renderPersonaBar(),
             renderCharacterGrid(),
             refreshPersonaRadialMenu()
@@ -1313,6 +1287,8 @@ import { operationLock } from './utils/operationLock.js';
         if (success) {
             // 사용 기록 저장 (최근 사용순 정렬용)
             storage.recordPersonaUsage(personaKey);
+            // SETTINGS_UPDATED 핸들러의 이중 기록/리렌더 방지
+            lastKnownPersona = personaKey;
             // 🔥 FAB 아바타 직접 업데이트 (타이밍 문제 해결)
             const fabAvatar = document.getElementById('persona-fab-avatar');
             const fabIcon = document.getElementById('persona-fab-icon');
@@ -1579,21 +1555,19 @@ import { operationLock } from './utils/operationLock.js';
         
         // 로비 닫기 (상태 초기화)
         closeLobby();
-        
+
         // 이미 선택된 캐릭터인지 확인
         const isAlreadySelected = (context.characterId === index);
-        
+
         if (!isAlreadySelected) {
-            // 다른 캐릭터면 선택 먼저
-            await api.selectCharacterById(index);
-            
-            // 캐릭터 선택 완료 대기 (조건 확인 방식)
-            const charSelected = await waitForCharacterSelect(character.avatar, 2000);
-            if (!charSelected) {
+            // ★ 가벼운 채팅 경유 선택 - 봇카드 열람인데 무거운 최근 채팅을
+            // 강제로 로드하는 문제 회피 (가장 메시지 수 적은 채팅을 대신 로드)
+            const selected = await selectCharacterLight(index, character.avatar);
+            if (!selected) {
                 console.warn('[ChatLobby] Character selection timeout');
             }
         }
-        
+
         // 바로 드로어 열기 (CustomTheme 호환 - 클릭 대신 클래스 조작)
         if (!openDrawerSafely('rightNavHolder')) {
             // fallback: rightNavDrawerIcon 클릭 시도

@@ -1071,7 +1071,7 @@
     overflow-y: auto;
     overflow-x: clip;
     display: grid;
-    grid-template-columns: repeat(auto-fit, 200px);
+    grid-template-columns: repeat(auto-fit, var(--card-width, 200px));
     justify-content: center;
     gap: var(--card-gap);
     align-content: start;
@@ -4448,7 +4448,7 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 
 .virtual-scroll-content {
     display: grid;
-    grid-template-columns: repeat(auto-fit, 200px);
+    grid-template-columns: repeat(auto-fit, var(--card-width, 200px));
     justify-content: center;
     gap: var(--card-gap, 9px);
     align-content: start;
@@ -5478,4 +5478,816 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
         padding: 6px 12px;
         font-size: 12px;
     }
+}
+/* ============================================
+   ⚡ 모바일 렌더 최적화 (경량 가상 스크롤)
+   화면 밖 카드의 레이아웃/페인트를 브라우저가 통째로 스킵
+   ============================================ */
+@media (max-width: 900px), (pointer: coarse) {
+    .lobby-char-card {
+        content-visibility: auto;
+        contain-intrinsic-size: 160px 240px;
+    }
+}
+
+/* ============================================
+   👤 카드 페르소나 배지 (마지막 사용 페르소나)
+   ============================================ */
+.char-persona-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: var(--persona-badge-size, 36px);
+    height: var(--persona-badge-size, 36px);
+    border-radius: 50%;
+    object-fit: cover;
+    z-index: 10;
+    border: 2px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    background: #222;
+    pointer-events: none;
+}
+
+/* ============================================
+   ⭐ 최애 코너 (즐겨찾기 히어로 배너)
+   ============================================ */
+#chat-lobby-hero {
+    padding: 8px 14px 0;
+    flex-shrink: 0;
+}
+
+.hero-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--lobby-text, #fff);
+    letter-spacing: 0.3px;
+    margin-bottom: 6px;
+    user-select: none;
+}
+
+.hero-list {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 2px 2px 10px;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+}
+
+.hero-list::-webkit-scrollbar { height: 4px; }
+.hero-list::-webkit-scrollbar-thumb {
+    background: var(--lobby-bg-hover, #404040);
+    border-radius: 2px;
+}
+
+.lobby-hero-card {
+    position: relative;
+    flex: 0 0 auto;
+    width: 210px;
+    height: 120px;
+    border-radius: 14px;
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--lobby-bg-card, #222);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.lobby-hero-card img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center 20%;
+}
+
+.hero-overlay {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    padding: 26px 12px 10px;
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.88));
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.hero-name {
+    color: #fff;
+    font-weight: 700;
+    font-size: 14px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.hero-meta {
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 11px;
+}
+
+.lobby-hero-card:hover {
+    transform: translateY(-3px) scale(1.02);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+#chat-lobby-left.collapsed #chat-lobby-hero {
+    display: none !important;
+}
+
+@media (max-width: 768px) {
+    .lobby-hero-card { width: 170px; height: 100px; }
+    .hero-name { font-size: 13px; }
+}
+
+/* ============================================
+   🎨 테마 / 표시 설정 팝오버
+   ============================================ */
+#chat-lobby-theme-menu {
+    position: fixed;
+    top: 58px;
+    right: 20px;
+    z-index: var(--z-modal, 60000);
+    width: 280px;
+    background: var(--lobby-bg-light, #181818);
+    border: 1px solid var(--lobby-bg-hover, #404040);
+    border-radius: 14px;
+    box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55);
+    padding: 14px;
+}
+
+.theme-menu-section-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--lobby-text-secondary, #a3a3a3);
+    letter-spacing: 0.5px;
+    margin: 2px 2px 8px;
+    user-select: none;
+}
+
+.theme-menu-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+}
+
+.theme-option {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 10px;
+    border-radius: 10px;
+    border: 1.5px solid var(--lobby-bg-hover, #404040);
+    background: var(--lobby-bg-card, #2f2f2f);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+    text-align: left;
+}
+
+.theme-option:hover {
+    border-color: var(--lobby-accent, #e50914);
+    transform: translateY(-1px);
+}
+
+.theme-option.active {
+    border-color: var(--lobby-accent, #e50914);
+    box-shadow: 0 0 0 1px var(--lobby-accent, #e50914);
+}
+
+.theme-option-icon { font-size: 18px; line-height: 1.1; }
+.theme-option-name {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--lobby-text, #fff);
+}
+.theme-option-desc {
+    font-size: 10px;
+    color: var(--lobby-text-secondary, #999);
+}
+
+.theme-menu-check {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 4px;
+    font-size: 12.5px;
+    color: var(--lobby-text, #fff);
+    cursor: pointer;
+    border-radius: 8px;
+}
+.theme-menu-check:hover { background: var(--lobby-bg-card, #2f2f2f); }
+.theme-menu-check input {
+    accent-color: var(--lobby-accent, #e50914);
+    width: 16px;
+    height: 16px;
+    cursor: pointer;
+}
+
+@media (max-width: 600px) {
+    #chat-lobby-theme-menu {
+        right: 8px;
+        left: 8px;
+        width: auto;
+        top: 52px;
+    }
+}
+
+/* ============================================
+   🫧 테마: 글래스 (Glassmorphism)
+   반투명 블러 패널 + 네온 글로우, 부드러운 그라데이션 배경
+   ============================================ */
+#chat-lobby-container[data-lobby-theme="glass"] {
+    --lobby-bg: #0d0e1f;
+    --lobby-bg-light: rgba(255, 255, 255, 0.045);
+    --lobby-bg-card: rgba(255, 255, 255, 0.07);
+    --lobby-bg-hover: rgba(255, 255, 255, 0.14);
+    --lobby-accent: #818cf8;
+    --lobby-accent-hover: #a5b4fc;
+    --star-color: #fbbf24;
+    --star-glow: rgba(251, 191, 36, 0.5);
+    --card-hover-scale: 1.05;
+
+    background:
+        radial-gradient(1100px 750px at 88% -10%, rgba(99, 102, 241, 0.28), transparent 62%),
+        radial-gradient(950px 700px at -8% 112%, rgba(236, 72, 153, 0.16), transparent 60%),
+        radial-gradient(800px 500px at 50% 50%, rgba(56, 189, 248, 0.07), transparent 70%),
+        #0d0e1f;
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] #chat-lobby-header {
+    background: rgba(13, 14, 31, 0.55);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] #chat-lobby-chats {
+    background: rgba(18, 20, 40, 0.72);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] .lobby-char-card {
+    border-radius: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    background: rgba(255, 255, 255, 0.05);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] .lobby-char-avatar {
+    border-radius: 15px;
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] .lobby-char-name {
+    border-radius: 0 0 15px 15px;
+    background: linear-gradient(transparent, rgba(13, 14, 31, 0.96) 72%);
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] .lobby-char-card:hover {
+    transform: translateY(-6px) scale(1.04);
+    border-color: rgba(129, 140, 248, 0.65);
+    box-shadow:
+        0 0 0 1px rgba(129, 140, 248, 0.3),
+        0 14px 36px rgba(99, 102, 241, 0.35);
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] .lobby-char-card.selected {
+    border-color: rgba(129, 140, 248, 0.9);
+    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.5), 0 10px 28px rgba(99, 102, 241, 0.35);
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] .lobby-hero-card {
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 16px;
+}
+#chat-lobby-container[data-lobby-theme="glass"] .lobby-hero-card:hover {
+    box-shadow: 0 10px 30px rgba(99, 102, 241, 0.4);
+    border-color: rgba(129, 140, 248, 0.6);
+}
+
+#chat-lobby-container[data-lobby-theme="glass"] #chat-lobby-theme-menu,
+#chat-lobby-container[data-lobby-theme="glass"] .folder-modal-content {
+    background: rgba(20, 22, 44, 0.85);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* ============================================
+   📸 테마: 폴라로이드 (사진 액자 컬렉션)
+   따뜻한 종이 질감 배경 + 흰 액자 카드 + 살짝 기울어진 배치
+   ============================================ */
+#chat-lobby-container[data-lobby-theme="polaroid"] {
+    --lobby-bg: #f3ede1;
+    --lobby-bg-light: #fbf7ee;
+    --lobby-bg-card: #ffffff;
+    --lobby-bg-hover: #ece3d2;
+    --lobby-accent: #e07a5f;
+    --lobby-accent-hover: #d05a3f;
+    --lobby-text: #3d3528;
+    --lobby-text-secondary: #8a7d68;
+    --text-primary: #3d3528;
+    --text-secondary: #5a4f3e;
+    --text-muted: #8a7d68;
+    --star-color: #e9a23b;
+    --star-glow: rgba(233, 162, 59, 0.5);
+    --card-hover-scale: 1.06;
+
+    background:
+        repeating-linear-gradient(0deg, rgba(120, 90, 50, 0.02) 0 2px, transparent 2px 5px),
+        repeating-linear-gradient(90deg, rgba(120, 90, 50, 0.015) 0 2px, transparent 2px 5px),
+        #f3ede1;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] #chat-lobby-header {
+    background: rgba(251, 247, 238, 0.9);
+    border-bottom: 1px dashed #d8cbb2;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] #chat-lobby-characters {
+    gap: 18px;
+    padding-top: 24px;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-card {
+    background: #fff;
+    padding: 8px 8px 36px;
+    border-radius: 3px;
+    box-shadow: 0 3px 12px rgba(90, 70, 40, 0.22);
+    transform: rotate(-1.2deg);
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+    overflow: visible;
+}
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-card:nth-child(2n) {
+    transform: rotate(1.1deg);
+}
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-card:nth-child(3n) {
+    transform: rotate(0.4deg);
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-card:hover {
+    transform: rotate(0deg) scale(1.06);
+    box-shadow: 0 10px 28px rgba(90, 70, 40, 0.32);
+    z-index: 10;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-card.selected {
+    box-shadow: 0 0 0 3px var(--lobby-accent), 0 8px 22px rgba(90, 70, 40, 0.3);
+    transform: rotate(0deg);
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-avatar {
+    border-radius: 1px;
+}
+
+/* 폴라로이드 하단 여백에 이름 상시 표시 (라벨 느낌) */
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-name {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    bottom: 0;
+    height: 36px;
+    padding: 0;
+    background: none;
+    color: #4a4036;
+    opacity: 1;
+    transform: none;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    font-size: 13.5px;
+    font-weight: 600;
+    letter-spacing: 0.2px;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .char-name-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .char-last-time {
+    color: #b09a78;
+}
+
+/* 호버 정보는 사진 위 메모지 느낌으로 */
+#chat-lobby-container[data-lobby-theme="polaroid"] .char-hover-info {
+    display: none;
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 42px;
+    background: rgba(255, 253, 247, 0.94);
+    border: 1px solid #e3d7c0;
+    border-radius: 4px;
+    padding: 6px 8px;
+    margin: 0;
+    box-shadow: 0 3px 8px rgba(90, 70, 40, 0.18);
+}
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-char-card:hover .char-hover-info {
+    display: flex;
+}
+#chat-lobby-container[data-lobby-theme="polaroid"] .char-hover-info .info-row {
+    color: #6b5d4a;
+}
+#chat-lobby-container[data-lobby-theme="polaroid"] .char-hover-info .info-value {
+    color: #3d3528;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .char-persona-badge {
+    top: 14px;
+    right: 14px;
+    border-color: #fff;
+}
+
+#chat-lobby-container[data-lobby-theme="polaroid"] .lobby-hero-card {
+    border-radius: 3px;
+    box-shadow: 0 4px 14px rgba(90, 70, 40, 0.28);
+}
+
+/* ============================================
+   📐 크기 슬라이더 (테마 메뉴)
+   ============================================ */
+.theme-menu-slider {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 4px;
+    font-size: 12.5px;
+    color: var(--lobby-text, #fff);
+}
+
+.theme-menu-slider .slider-label {
+    flex: 0 0 84px;
+}
+
+.theme-menu-slider input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--lobby-accent, #e50914);
+    cursor: pointer;
+}
+
+.theme-menu-slider .slider-value {
+    flex: 0 0 44px;
+    text-align: right;
+    font-size: 11.5px;
+    color: var(--lobby-text-secondary, #999);
+    font-variant-numeric: tabular-nums;
+}
+
+/* ============================================
+   💬 테마: 배너 리스트 (v2)
+   왼쪽 30%만 카드 이미지 (얼굴 위주 크롭 + 오른쪽 페이드)
+   나머지는 카드 배경 + 이름/정보
+   ============================================ */
+#chat-lobby-container[data-lobby-theme="messenger"] {
+    --lobby-bg: #0e1621;
+    --lobby-bg-light: #17212b;
+    --lobby-bg-card: #17212b;
+    --lobby-bg-hover: #202b36;
+    --lobby-accent: #5eadf2;
+    --lobby-accent-hover: #7dbef5;
+    --star-color: #f5b942;
+    --star-glow: rgba(245, 185, 66, 0.5);
+    background: #0e1621;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] #chat-lobby-characters {
+    display: flex;
+    flex-direction: column;
+    /* 베이스 그리드의 justify-content:center 상속 시 위쪽이 잘림 - 반드시 재정의 */
+    justify-content: flex-start;
+    gap: 8px;
+    padding: 14px 14px 30px;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    aspect-ratio: auto;
+    height: 104px;
+    display: block;
+    position: relative;
+    padding: 0;
+    border-radius: 14px;
+    overflow: hidden;
+    background: var(--lobby-bg-card);
+    contain-intrinsic-size: auto 104px;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card:hover {
+    transform: none;
+    background: var(--lobby-bg-hover);
+    box-shadow: 0 0 0 1px rgba(94, 173, 242, 0.4);
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card.selected {
+    box-shadow: inset 0 0 0 3px var(--lobby-accent);
+}
+
+/* 이미지: 왼쪽 30%만, 얼굴(눈) 위주 크롭, 오른쪽 가장자리 페이드 */
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-avatar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    height: 100%;
+    border-radius: 0;
+    object-fit: cover;
+    object-position: center 15%;
+    -webkit-mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
+}
+
+/* 이름/정보: 이미지 오른쪽에 세로 중앙 정렬 */
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-name {
+    position: absolute;
+    left: calc(30% + 10px);
+    right: 48px;
+    top: 0;
+    bottom: 0;
+    padding: 0;
+    background: none;
+    opacity: 1;
+    transform: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--lobby-text);
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .char-name-text {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .char-last-time {
+    color: var(--lobby-accent);
+    font-size: 11px;
+    margin-left: 6px;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info {
+    flex-direction: row;
+    gap: 12px;
+    margin: 0;
+}
+#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info .info-row {
+    color: var(--lobby-text-secondary);
+    font-size: 11.5px;
+}
+#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info .info-value {
+    color: var(--lobby-text-secondary);
+}
+
+/* 즐겨찾기 별 - 우상단 상시 표시 */
+#chat-lobby-container[data-lobby-theme="messenger"] .char-fav-btn {
+    opacity: 1;
+    left: auto;
+    right: 8px;
+    top: 8px;
+    background: rgba(0, 0, 0, 0.35);
+}
+
+/* 그룹 카드 - 멤버 그리드가 왼쪽 30% 차지 */
+#chat-lobby-container[data-lobby-theme="messenger"] .group-avatar-grid {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    height: 100%;
+    border-radius: 0;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
+}
+#chat-lobby-container[data-lobby-theme="messenger"] .group-member-badge {
+    top: 8px;
+    left: 8px;
+    right: auto;
+    bottom: auto;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-hero-card {
+    width: 180px;
+    height: 96px;
+    border-radius: 14px;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] #chat-lobby-header {
+    background: #17212b;
+    border-bottom: 1px solid #0a121b;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] #chat-lobby-chats {
+    background: #17212b;
+    border-left: 1px solid #0a121b;
+}
+
+@media (max-width: 768px) {
+    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card {
+        height: 88px;
+        contain-intrinsic-size: auto 88px;
+    }
+    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-avatar,
+    #chat-lobby-container[data-lobby-theme="messenger"] .group-avatar-grid {
+        width: 34%;
+    }
+    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-name {
+        left: calc(34% + 10px);
+        font-size: 14px;
+    }
+}
+
+/* ============================================
+   🗞️ 테마: 매거진 (에디토리얼 화보)
+   순흑 배경 + 이미지 아래 타이포 라벨 + 가는 룰 라인
+   호버 시 채도 복원 (화보 → 컬러)
+   ============================================ */
+#chat-lobby-container[data-lobby-theme="magazine"] {
+    --lobby-bg: #0b0b0d;
+    --lobby-bg-light: #141417;
+    --lobby-bg-card: #141417;
+    --lobby-bg-hover: #1f1f24;
+    --lobby-accent: #d9d4cc;
+    --lobby-accent-hover: #f2efe9;
+    --star-color: #d4af37;
+    --star-glow: rgba(212, 175, 55, 0.5);
+    --card-hover-scale: 1.0;
+    background: #0b0b0d;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] #chat-lobby-header {
+    background: #0b0b0d;
+    border-bottom: 1px solid #2a2a30;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] #chat-lobby-title {
+    letter-spacing: 3px;
+    font-weight: 800;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] #chat-lobby-characters {
+    gap: 26px 16px;
+    padding-top: 28px;
+}
+
+/* 카드: 프레임 없음, 이미지 + 하단 타이포 라벨 */
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-char-card {
+    background: transparent;
+    border-radius: 0;
+    padding-bottom: 48px;
+    overflow: visible;
+    transition: transform 0.25s ease;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-char-avatar {
+    border-radius: 0;
+    filter: saturate(0.55) contrast(1.04);
+    transition: filter 0.3s ease, box-shadow 0.3s ease;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-char-card:hover {
+    transform: translateY(-5px);
+    box-shadow: none;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-char-card:hover .lobby-char-avatar {
+    filter: saturate(1.08) contrast(1.02);
+    box-shadow: 0 14px 34px rgba(0, 0, 0, 0.6);
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-char-card.selected .lobby-char-avatar {
+    filter: saturate(1.08);
+    box-shadow: 0 0 0 2px #f2efe9;
+}
+
+/* 이미지 아래 타이포 라벨 (룰 라인 + 볼드 대문자풍) */
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-char-name {
+    position: absolute;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 48px;
+    padding: 8px 2px 0;
+    background: none;
+    opacity: 1;
+    transform: none;
+    border-top: 1px solid rgba(255, 255, 255, 0.28);
+    color: #efece6;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    transition: border-color 0.25s ease;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-char-card:hover .lobby-char-name {
+    border-top-color: #f2efe9;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .char-name-text {
+    font-size: 14.5px;
+    font-weight: 800;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .char-last-time {
+    color: #8d8a84;
+    letter-spacing: 0;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .char-hover-info {
+    flex-direction: row;
+    gap: 10px;
+    margin: 0;
+}
+#chat-lobby-container[data-lobby-theme="magazine"] .char-hover-info .info-row {
+    color: #6f6c66;
+    font-size: 10px;
+    letter-spacing: 0.5px;
+}
+#chat-lobby-container[data-lobby-theme="magazine"] .char-hover-info .info-value {
+    color: #a8a49c;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] .char-fav-btn {
+    border-radius: 0;
+    background: rgba(0, 0, 0, 0.55);
+}
+
+/* 최애 코너 - 화보 배너 */
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-hero-card {
+    border-radius: 0;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+}
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-hero-card img {
+    filter: saturate(0.7);
+    transition: filter 0.3s ease;
+}
+#chat-lobby-container[data-lobby-theme="magazine"] .lobby-hero-card:hover img {
+    filter: saturate(1.05);
+}
+#chat-lobby-container[data-lobby-theme="magazine"] .hero-name {
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+}
+
+#chat-lobby-container[data-lobby-theme="magazine"] #chat-lobby-chats {
+    background: #111114;
+    border-left: 1px solid #2a2a30;
+}
+
+/* ============================================
+   👤 페르소나 배지 - 테마별 모양
+   기본(시네마/라이트): 원형 + 흰 테두리 (베이스 스타일)
+   ============================================ */
+
+/* 글래스: 인스타 스토리풍 그라데이션 링 */
+#chat-lobby-container[data-lobby-theme="glass"] .char-persona-badge {
+    border: none;
+    padding: 2px;
+    background: linear-gradient(135deg, #67e8f9, #a78bfa 55%, #f0abfc);
+    box-shadow: 0 0 10px rgba(167, 139, 250, 0.55);
+}
+
+/* 폴라로이드: 미니 폴라로이드 사각 사진 */
+#chat-lobby-container[data-lobby-theme="polaroid"] .char-persona-badge {
+    top: 14px;
+    right: 14px;
+    border-radius: 4px;
+    border: 3px solid #ffffff;
+    box-shadow: 0 2px 8px rgba(90, 70, 40, 0.4);
+}
+
+/* 배너 리스트: 액센트 링 + 글로우 (우하단) */
+#chat-lobby-container[data-lobby-theme="messenger"] .char-persona-badge {
+    top: auto;
+    left: auto;
+    right: 10px;
+    bottom: 8px;
+    border: 2px solid var(--lobby-accent);
+    box-shadow: 0 0 8px rgba(94, 173, 242, 0.5);
+}
+
+/* 매거진: 미니멀 사각 (이미지 우상단) */
+#chat-lobby-container[data-lobby-theme="magazine"] .char-persona-badge {
+    border-radius: 0;
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }

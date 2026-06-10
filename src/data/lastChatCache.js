@@ -28,24 +28,6 @@ class LastChatCache {
     }
 
     /**
-     * 엔트리 정규화 — 하위호환 타입 (숫자, 구버전 오브젝트)을 현재 형식으로 변환
-     * @param {any} value
-     * @returns {{ time: number, persona: string|null }}
-     */
-    _normalizeEntry(value) {
-        if (typeof value === 'number') {
-            return { time: value, persona: null };
-        }
-        if (value && typeof value === 'object') {
-            return {
-                time: value.time || value.timestamp || 0,
-                persona: value.persona || null
-            };
-        }
-        return { time: 0, persona: null };
-    }
-
-    /**
      * localStorage에서 캐시 복원 (하위 호환성 지원)
      */
     _loadFromStorage() {
@@ -54,22 +36,18 @@ class LastChatCache {
             if (stored) {
                 const data = JSON.parse(stored);
                 if (data && typeof data === 'object') {
-                    let migrated = false;
                     Object.entries(data).forEach(([avatar, value]) => {
-                        const normalized = this._normalizeEntry(value);
-                        this.lastChatTimes.set(avatar, normalized);
-                        // 하위호환 타입이 있었는지 확인
-                        if (typeof value === 'number' || (value && value.timestamp)) {
-                            migrated = true;
+                        // 하위 호환: 숫자면 객체로 변환
+                        if (typeof value === 'number') {
+                            this.lastChatTimes.set(avatar, { time: value, persona: null });
+                        } else if (value && typeof value === 'object') {
+                            this.lastChatTimes.set(avatar, {
+                                time: value.time || value.timestamp || 0,  // timestamp 하위 호환
+                                persona: value.persona || null
+                            });
                         }
                     });
                     console.debug('[LastChatCache] Restored', this.lastChatTimes.size, 'entries from storage');
-                    // 하위호환 데이터가 있었으면 정규화된 형식으로 저장
-                    if (migrated) {
-                        console.debug('[LastChatCache] Migrated legacy entries, saving normalized format');
-                        this._dirty = true;
-                        this._saveToStorage();
-                    }
                 }
             }
         } catch (e) {
@@ -241,8 +219,7 @@ class LastChatCache {
                     }
                     return 0;
                 });
-                const settled = await Promise.allSettled(fallbackPromises);
-                const times = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+                const times = await Promise.all(fallbackPromises);
                 lastTime = Math.max(...times, 0);
             }
             if (lastTime > 0) this.set(charAvatar, lastTime);
@@ -271,7 +248,7 @@ class LastChatCache {
         try {
             for (let i = 0; i < characters.length; i += batchSize) {
                 const batch = characters.slice(i, i + batchSize);
-                await Promise.allSettled(batch.map(async (char) => {
+                await Promise.all(batch.map(async (char) => {
                     const cached = this.get(char.avatar);
                     if (cached > 0) return;
                     if (char.date_last_chat) {
@@ -299,21 +276,6 @@ class LastChatCache {
         const cached = this.get(char.avatar);
         if (cached > 0) return cached;
         return char.date_last_chat || 0;
-    }
-
-    /**
-     * 채팅 열기 시 마지막 시간 갱신
-     */
-    markOpened(charAvatar) {
-        if (!charAvatar) return;
-        this.updateNow(charAvatar);
-    }
-
-    /**
-     * 채팅 열기만으로는 캐시를 갱신하지 않음
-     */
-    markViewed(charAvatar) {
-        console.debug('[LastChatCache] markViewed (no update):', charAvatar);
     }
 
     /**

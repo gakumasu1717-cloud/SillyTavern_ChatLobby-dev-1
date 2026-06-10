@@ -5,25 +5,27 @@
 import { storage } from '../data/storage.js';
 import { createTabBarHTML } from './tabView.js';
 import { escapeHtml } from '../utils/textUtils.js';
+import { uiPrefs } from '../data/uiPrefs.js';
+import { getThemeById, createThemeMenuHTML } from './themeMenu.js';
 
 // 메인 로비 HTML - 넷플릭스 스타일
 export function createLobbyHTML() {
     // 저장된 테마/접힘 상태 불러오기
-    const savedTheme = localStorage.getItem('chatlobby-theme') || 'dark';
+    const theme = getThemeById(uiPrefs.get('theme'));
     const isCollapsed = localStorage.getItem('chatlobby-collapsed') === 'true';
-    const themeClass = savedTheme === 'light' ? 'light-mode' : 'dark-mode';
+    const themeClass = theme.base === 'light' ? 'light-mode' : 'dark-mode';
     const collapsedClass = isCollapsed ? 'collapsed' : '';
-    
+
     return `
     <div id="chat-lobby-fab" data-action="open-lobby" title="Chat Lobby 열기">
         <div class="fab-preview">
-            <img class="fab-preview-avatar" src="" alt="" data-fallback="hide">
+            <img class="fab-preview-avatar" src="" alt="" onerror="this.style.display='none'">
             <span class="fab-streak"></span>
         </div>
         <span class="fab-icon">💬</span>
     </div>
     <div id="chat-lobby-overlay" style="display: none;">
-        <div id="chat-lobby-container" class="${themeClass}">
+        <div id="chat-lobby-container" class="${themeClass}" data-lobby-theme="${theme.id}">
             <!-- 헤더 - 탭 통합 -->
             <header id="chat-lobby-header">
                 <div class="header-left">
@@ -39,11 +41,14 @@ export function createLobbyHTML() {
                         <button id="chat-lobby-import-char" data-action="import-char" title="캐릭터 가져오기">📥</button>
                         <button id="chat-lobby-add-persona" data-action="add-persona" title="페르소나 추가">👤</button>
                         <button id="chat-lobby-refresh" data-action="refresh" title="새로고침">🔄</button>
-                        <button id="chat-lobby-theme-toggle" data-action="toggle-theme" title="테마 전환">${savedTheme === 'light' ? '🌙' : '☀️'}</button>
+                        <button id="chat-lobby-theme-toggle" data-action="open-theme-menu" title="테마 / 표시 설정">🎨</button>
                     </div>
                     <button id="chat-lobby-close" data-action="close-lobby" title="닫기">✕</button>
                 </div>
             </header>
+
+            <!-- 테마/표시 설정 팝오버 -->
+            ${createThemeMenuHTML()}
             
             <!-- 메인 콘텐츠 -->
             <main id="chat-lobby-main">
@@ -75,7 +80,10 @@ export function createLobbyHTML() {
                     <button id="chat-lobby-collapse-btn" data-action="toggle-collapse" title="상단 영역 접기/펼치기">
                         ${isCollapsed ? '▼' : '▲'}
                     </button>
-                    
+
+                    <!-- 최애 코너 (즐겨찾기 히어로 배너) -->
+                    <div id="chat-lobby-hero" style="display:none;" data-has-content="false"></div>
+
                     <!-- 캐릭터 그리드 -->
                     <div id="chat-lobby-characters">
                         <div class="lobby-loading">캐릭터 로딩 중...</div>
@@ -112,7 +120,7 @@ export function createLobbyHTML() {
                                 </select>
                             </div>
                             <div class="filter-group-buttons">
-                                <button id="chat-lobby-persona-quick" class="icon-btn persona-quick-btn" data-action="switch-persona" title="퀵 페르소나" style="display:none;"><img class="persona-quick-avatar" src="" alt="persona" data-fallback="hide" /></button>
+                                <button id="chat-lobby-persona-quick" class="icon-btn persona-quick-btn" data-action="switch-persona" title="퀸 페르소나" style="display:none;"><img class="persona-quick-avatar" src="" alt="persona" /></button>
                                 <button id="chat-lobby-branch-refresh" class="icon-btn" data-action="refresh-branches" title="분기 분석 새로고침" style="display:none;"><span class="icon">🔍</span></button>
                                 <button id="chat-lobby-batch-mode" class="icon-btn" data-action="toggle-batch" title="배치 선택 모드"><span class="icon">☑️</span></button>
                                 <button id="chat-lobby-folder-manage" class="icon-btn" data-action="open-folder-modal" title="폴더 관리"><span class="icon">📁</span></button>

@@ -6,8 +6,8 @@
 import { api } from '../api/sillyTavern.js';
 import { cache } from '../data/cache.js';
 import { storage } from '../data/storage.js';
-import { escapeHtml } from '../utils/textUtils.js';
 import { showToast } from './notifications.js';
+import { listeners } from '../utils/listenerManager.js';
 
 // ============================================
 // 상태 관리
@@ -103,12 +103,6 @@ function scheduleRender() {
         renderItems();
         renderPending = false;
     });
-}
-
-// 인디케이터는 이제 center-mode에 통합됨 - 레거시 호환용 빈 함수
-function showIndicator() {
-    // NOTE: updateIndicator()가 renderItems에서 호출되어 center-mode에 표시됨
-    // scrollPrev/scrollNext에서 호출하지만 실제 동작은 scheduleRender에서 처리
 }
 
 // ============================================
@@ -219,69 +213,83 @@ async function updateFabAvatar() {
 // ============================================
 
 /**
- * 단일 반원 형태로 아이템 배치 (아이템 간 최소 20px 갭)
+ * 단일 반원 형태로 아이템 배치
+ *
+ * ★ 성능/디자인: 전체 innerHTML 재생성 대신 노드 풀(in-place) 갱신 방식.
+ * - 스크롤 한 칸마다 DOM 파괴/재생성 + 리스너 재바인딩하던 비용 제거
+ * - 기존 노드의 CSS 변수(--x/--y/--scale)만 바뀌므로
+ *   CSS transition이 살아나 아이템이 부드럽게 미끄러짐
+ * - 클릭은 컨테이너에 위임(bindEvents에서 1회 등록)
  */
 function renderItems() {
     const container = document.getElementById('persona-arc-items');
     if (!container) return;
-    
+
     // 모드별 아이템 결정 (헬퍼 함수 사용)
     let items = getCurrentItems();
-    
+
     // 즐겨찾기 없으면 자동으로 최근 사용순 모드로 전환
     if (items.length === 0 && state.mode === 'favorites') {
         state.mode = 'recent';
         items = getCurrentItems();
         updateMode();
     }
-    
+
     if (items.length === 0) {
         container.innerHTML = `<div class="persona-arc-empty">페르소나 없음</div>`;
         updateCenterDisplay();
         updateIndicator(0, 0);
         return;
     }
-    
+
+    // 빈 상태 표시가 남아있으면 제거 (노드 풀 시작점 정리)
+    if (container.querySelector('.persona-arc-empty')) {
+        container.innerHTML = '';
+    }
+
     // 스크롤 인덱스 정규화 (마지막에서 visibleCount만큼 보이게)
     const maxScroll = getMaxScroll();
     state.scrollIndex = Math.min(Math.max(0, state.scrollIndex), maxScroll);
-    
+
     // 보이는 아이템 계산
     const visibleCount_ = getVisibleCount();
     const visibleItems = items.slice(state.scrollIndex, state.scrollIndex + visibleCount_);
-    
+
     // 중앙에는 항상 현재 선택된 페르소나 표시
     updateCenterDisplay();
-    
-    let html = '';
+
     const radius = getRadius();
     const itemSize = getItemSize();
     const yRatio = getYRatio(); // 화면 폭에 따라 동적 계산
     const itemCount = visibleItems.length;
-    
-    // 아이템 간 최소 갭 20px 보장을 위한 각도 계산
-    // 호 길이 = radius * π (반원)
-    // 필요한 호 길이 = itemCount * (itemSize + gap)
-    const arcLength = radius * Math.PI;
-    const requiredSpace = itemCount * (itemSize + CONFIG.ITEM_GAP);
-    
+
     // 사용 가능한 각도 범위 (패딩 고려)
     const paddingAngle = 0.15; // 양쪽 끝 패딩
     const usableAngle = Math.PI - paddingAngle * 2;
-    
+
+    // 노드 풀 크기 맞추기
+    while (container.children.length > itemCount) {
+        container.lastElementChild.remove();
+    }
+    while (container.children.length < itemCount) {
+        const btn = document.createElement('button');
+        btn.className = 'persona-arc-item';
+        btn.innerHTML = `<img src="" alt="" draggable="false"><span class="persona-arc-fallback">👤</span><span class="persona-arc-label"></span>`;
+        container.appendChild(btn);
+    }
+
     visibleItems.forEach((persona, i) => {
+        const btn = container.children[i];
+
         // 균등 배치 (양쪽 패딩 포함)
         const progress = itemCount > 1 ? i / (itemCount - 1) : 0.5;
         const angle = Math.PI - paddingAngle - progress * usableAngle;
-        
+
         const x = Math.cos(angle) * radius;
         const y = -Math.sin(angle) * radius * yRatio;
-        
-        const avatarUrl = `/User Avatars/${encodeURIComponent(persona.key)}`;
-        const isFav = storage.isPersonaFavorite(persona.key) ? 'is-fav' : '';
-        const isCurrent = persona.key === state.currentPersona ? 'is-current' : '';
+
         const displayName = persona.name || persona.key.replace(/\.[^.]+$/, '');
-        
+
         // 중앙 거리 기반 스케일/투명도
         const distFromCenter = Math.abs(i - Math.floor(itemCount / 2));
         const maxDist = Math.floor(itemCount / 2);
@@ -289,39 +297,37 @@ function renderItems() {
         const scale = Math.max(0.8, 1 - normalizedDist * 0.15);
         const opacity = Math.max(0.6, 1 - normalizedDist * 0.25);
         const zIndex = itemCount - distFromCenter;
-        
-        html += `
-            <button class="persona-arc-item ${isFav} ${isCurrent}"
-                    data-key="${escapeHtml(persona.key)}"
-                    data-name="${escapeHtml(displayName)}"
-                    style="--x:${x}px; --y:${y}px; --scale:${scale}; --opacity:${opacity}; --z:${zIndex}; --size:${itemSize}px;">
-                <img src="${avatarUrl}" alt="">
-                <span class="persona-arc-fallback">👤</span>
-                <span class="persona-arc-label">${escapeHtml(displayName)}</span>
-            </button>
-        `;
+
+        btn.dataset.key = persona.key;
+        btn.dataset.name = displayName;
+        btn.classList.toggle('is-fav', storage.isPersonaFavorite(persona.key));
+        btn.classList.toggle('is-current', persona.key === state.currentPersona);
+        btn.style.setProperty('--x', `${x}px`);
+        btn.style.setProperty('--y', `${y}px`);
+        btn.style.setProperty('--scale', String(scale));
+        btn.style.setProperty('--opacity', String(opacity));
+        btn.style.setProperty('--z', String(zIndex));
+        btn.style.setProperty('--size', `${itemSize}px`);
+
+        // 이미지는 src가 바뀔 때만 갱신 (불필요한 재로드 방지)
+        const img = btn.querySelector('img');
+        const fallback = btn.querySelector('.persona-arc-fallback');
+        const newSrc = `/User Avatars/${encodeURIComponent(persona.key)}`;
+        if (img.dataset.src !== newSrc) {
+            img.dataset.src = newSrc;
+            // 노드 재사용 시 이전 페르소나의 에러 상태 리셋
+            img.style.display = '';
+            if (fallback) fallback.style.display = '';
+            img.src = newSrc;
+        }
+
+        const label = btn.querySelector('.persona-arc-label');
+        if (label.textContent !== displayName) label.textContent = displayName;
     });
-    
-    container.innerHTML = html;
-    
-    // 이미지 로드 실패 시 fallback 표시 (inline onerror 대신)
-    container.querySelectorAll('.persona-arc-item img').forEach(img => {
-        img.addEventListener('error', () => {
-            img.style.display = 'none';
-            const fallback = img.nextElementSibling;
-            if (fallback) fallback.style.display = 'flex';
-        });
-    });
-    
-    // SVG 인디케이터 업데이트
+
+    // 인디케이터 업데이트
     updateIndicator(items.length, maxScroll);
-    
-    // 이벤트 바인딩
-    container.querySelectorAll('.persona-arc-item').forEach(item => {
-        item.addEventListener('click', handleItemClick);
-        item.addEventListener('mouseenter', handleItemHover);
-    });
-    
+
     // 앞뒤 이미지 프리로딩
     preloadNearbyImages();
 }
@@ -347,7 +353,9 @@ function updateIndicator(totalItems, maxScroll) {
 
 // 현재 페르소나로 스크롤
 function scrollToCurrentPersona() {
-    const items = state.mode === 'favorites' ? state.favorites : state.allPersonas;
+    // ⚠️ getCurrentItems() 사용 - recent 모드의 정렬 순서를 반영해야
+    // 올바른 인덱스로 스크롤됨 (이전에는 recent 모드에서 엉뚱한 위치로 이동)
+    const items = getCurrentItems();
     const idx = items.findIndex(p => p.key === state.currentPersona);
     if (idx >= 0) {
         state.scrollIndex = Math.max(0, idx - Math.floor(getVisibleCount() / 2));
@@ -406,9 +414,9 @@ function openMenu() {
     
     state.isOpen = true;
     state.scrollIndex = 0;
-    
-    // 현재 페르소나 근처로 스크롤
-    const items = state.mode === 'favorites' ? state.favorites : state.allPersonas;
+
+    // 현재 페르소나 근처로 스크롤 (모드별 정렬 순서 반영)
+    const items = getCurrentItems();
     const idx = items.findIndex(p => p.key === state.currentPersona);
     if (idx >= 0) {
         state.scrollIndex = Math.max(0, idx - Math.floor(getVisibleCount() / 2));
@@ -448,60 +456,88 @@ function toggleMode() {
 // 네비게이션
 // ============================================
 
+/**
+ * 햅틱 피드백 (모바일) - 다이얼이 한 칸 이동할 때마다 짧은 진동
+ */
+function hapticTick() {
+    try {
+        if (navigator.vibrate) navigator.vibrate(5);
+    } catch (e) { /* ignore */ }
+}
+
+/**
+ * 스크롤 인덱스 변경 (공통 진입점) - 변경 시 렌더 + 햅틱
+ * @param {number} newIndex
+ * @returns {boolean} - 실제로 변경됐는지
+ */
+function setScrollIndex(newIndex) {
+    const maxScroll = getMaxScroll();
+    const clamped = Math.max(0, Math.min(maxScroll, newIndex));
+    if (clamped === state.scrollIndex) return false;
+    state.scrollIndex = clamped;
+    scheduleRender();
+    hapticTick();
+    return true;
+}
+
 function scrollPrev() {
-    if (state.scrollIndex > 0) {
-        state.scrollIndex = Math.max(0, state.scrollIndex - CONFIG.SCROLL_STEP);
-        scheduleRender();
-        showIndicator();
-    }
+    setScrollIndex(state.scrollIndex - CONFIG.SCROLL_STEP);
 }
 
 function scrollNext() {
-    const maxScroll = getMaxScroll();
-    if (state.scrollIndex < maxScroll) {
-        state.scrollIndex = Math.min(maxScroll, state.scrollIndex + CONFIG.SCROLL_STEP);
-        scheduleRender();
-        showIndicator();
-    }
+    setScrollIndex(state.scrollIndex + CONFIG.SCROLL_STEP);
 }
 
 // ============================================
 // 이벤트 핸들러
 // ============================================
 
+/**
+ * FAB = 열기/닫기 토글 (모드 순환은 중앙 버튼의 역할)
+ * 이전에는 FAB 재클릭이 모드를 순환시켜 "다시 누르면 닫힐 것"이라는
+ * 일반적인 기대와 어긋났음
+ */
 function handleFabClick(e) {
     e.preventDefault();
     e.stopPropagation();
-    
-    if (!state.isOpen) {
-        openMenu();
-    } else if (state.mode === 'favorites') {
-        setMode('recent');
-    } else if (state.mode === 'recent') {
-        setMode('all');
-    } else {
+
+    if (state.isOpen) {
         closeMenu();
+    } else {
+        openMenu();
     }
 }
 
-async function handleItemClick(e) {
+/**
+ * 아이템 클릭 (컨테이너 위임)
+ */
+async function handleItemsContainerClick(e) {
+    const item = e.target.closest('.persona-arc-item');
+    if (!item) return;
+
     e.preventDefault();
     e.stopPropagation();
-    
+
     // 드래그 중이면 무시
     if (isDragging) return;
-    
-    const item = e.currentTarget;
+
     const key = item.dataset.key;
-    
     if (!key) return;
-    
+
     // 클릭 = 바로 적용
     await applyPersona(key);
 }
 
-// handleItemHover: 의도적으로 비움 - 중앙에는 현재 선택된 페르소나만 표시
-function handleItemHover(e) { }
+/**
+ * 아이템 이미지 로드 실패 폴백 (capture 단계 위임)
+ */
+function handleItemsContainerError(e) {
+    const img = e.target;
+    if (img?.tagName !== 'IMG') return;
+    img.style.display = 'none';
+    const fallback = img.nextElementSibling;
+    if (fallback) fallback.style.display = 'flex';
+}
 
 function updateCenterDisplay() {
     const centerName = document.getElementById('persona-center-name');
@@ -593,17 +629,10 @@ function handleKeydown(e) {
 function handleWheel(e) {
     if (!state.isOpen) return;
     e.preventDefault();
-    
+
     // 쿨다운 없이 바로 스크롤 (촤르륵)
     const direction = e.deltaY > 0 ? 1 : -1;
-    const maxScroll = getMaxScroll();
-    
-    const newIndex = Math.max(0, Math.min(maxScroll, state.scrollIndex + direction));
-    if (newIndex !== state.scrollIndex) {
-        state.scrollIndex = newIndex;
-        scheduleRender();
-        showIndicator();
-    }
+    setScrollIndex(state.scrollIndex + direction);
 }
 
 // 터치 스와이프 (수평) - 관성 스크롤 포함
@@ -650,22 +679,15 @@ function handleTouchMove(e) {
     
     // 드래그 중 즉시 인덱스 이동 (감도 향상: 30px)
     const threshold = 30;
-    const maxScroll = getMaxScroll();
-    
+
     const accumulatedDelta = touchStartX - currentX;
     const steps = Math.floor(Math.abs(accumulatedDelta) / threshold);
-    
+
     // steps만큼 한번에 이동 (빠른 스와이프 대응)
     if (steps > 0) {
         const direction = accumulatedDelta > 0 ? 1 : -1;
-        const targetIndex = Math.max(0, Math.min(maxScroll, 
-            state.scrollIndex + direction * steps));
-        
-        if (targetIndex !== state.scrollIndex) {
-            state.scrollIndex = targetIndex;
-            scheduleRender();
-        }
-        
+        setScrollIndex(state.scrollIndex + direction * steps);
+
         // 시작점 재설정
         touchStartX = currentX;
     }
@@ -706,17 +728,14 @@ function startMomentumScroll() {
         
         if (Math.abs(accumulated) >= threshold) {
             const direction = accumulated > 0 ? 1 : -1;
-            const newIndex = Math.max(0, Math.min(maxScroll, state.scrollIndex + direction));
-            
-            if (newIndex !== state.scrollIndex) {
-                state.scrollIndex = newIndex;
-                scheduleRender();
-            } else {
+            const moved = setScrollIndex(state.scrollIndex + direction);
+
+            if (!moved) {
                 // 끝에 도달하면 멈춤
                 momentumTimer = null;
                 return;
             }
-            
+
             accumulated = 0;
         }
         
@@ -752,17 +771,10 @@ function handleMouseMove(e) {
     
     // 일정 거리 누적되면 인덱스 이동
     const threshold = CONFIG.ITEM_WIDTH;
-    const maxScroll = getMaxScroll();
-    
+
     if (Math.abs(pcAccumulatedDrag) >= threshold) {
         const direction = pcAccumulatedDrag > 0 ? 1 : -1;
-        const newIndex = Math.max(0, Math.min(maxScroll, state.scrollIndex + direction));
-        
-        if (newIndex !== state.scrollIndex) {
-            state.scrollIndex = newIndex;
-            scheduleRender();
-        }
-        
+        setScrollIndex(state.scrollIndex + direction);
         pcAccumulatedDrag = 0;
     }
 }
@@ -784,42 +796,53 @@ function bindEvents() {
     const arc = document.getElementById('persona-menu-arc');
     const center = document.getElementById('persona-arc-center');
     const scrollBtn = document.getElementById('persona-scroll-to-current');
-    
-    if (fab) fab.addEventListener('click', handleFabClick);
-    if (scrollBtn) scrollBtn.addEventListener('click', (e) => {
+    const itemsContainer = document.getElementById('persona-arc-items');
+
+    // ★ 전부 'radialMenu' 그룹으로 등록 → cleanup에서 한 번에 해제
+    const G = 'radialMenu';
+
+    listeners.add(G, fab, 'click', handleFabClick);
+
+    // 아이템 클릭/이미지 에러는 컨테이너 위임 (노드 풀 갱신 방식과 호환)
+    listeners.add(G, itemsContainer, 'click', handleItemsContainerClick);
+    listeners.add(G, itemsContainer, 'error', handleItemsContainerError, true);
+
+    listeners.add(G, scrollBtn, 'click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         scrollToCurrentPersona();
     });
+
     if (overlay) {
-        overlay.addEventListener('click', handleOverlayClick);
+        listeners.add(G, overlay, 'click', handleOverlayClick);
         // 오버레이에서도 스크롤 가능하게!
-        overlay.addEventListener('wheel', handleWheel, { passive: false });
-        overlay.addEventListener('touchstart', handleTouchStart, { passive: true });
-        overlay.addEventListener('touchmove', handleTouchMove, { passive: false });
-        overlay.addEventListener('touchend', handleTouchEnd, { passive: true });
-        overlay.addEventListener('mousedown', handleMouseDown);
+        listeners.add(G, overlay, 'wheel', handleWheel, { passive: false });
+        listeners.add(G, overlay, 'touchstart', handleTouchStart, { passive: true });
+        listeners.add(G, overlay, 'touchmove', handleTouchMove, { passive: false });
+        listeners.add(G, overlay, 'touchend', handleTouchEnd, { passive: true });
+        listeners.add(G, overlay, 'mousedown', handleMouseDown);
     }
-    if (center) center.addEventListener('click', handleCenterClick);
-    
+
+    listeners.add(G, center, 'click', handleCenterClick);
+
     if (arc) {
         // 휠 스크롤
-        arc.addEventListener('wheel', handleWheel, { passive: false });
-        
+        listeners.add(G, arc, 'wheel', handleWheel, { passive: false });
+
         // 터치 스와이프 (수평)
-        arc.addEventListener('touchstart', handleTouchStart, { passive: true });
-        arc.addEventListener('touchmove', handleTouchMove, { passive: false });
-        arc.addEventListener('touchend', handleTouchEnd, { passive: true });
-        
+        listeners.add(G, arc, 'touchstart', handleTouchStart, { passive: true });
+        listeners.add(G, arc, 'touchmove', handleTouchMove, { passive: false });
+        listeners.add(G, arc, 'touchend', handleTouchEnd, { passive: true });
+
         // PC 드래그
-        arc.addEventListener('mousedown', handleMouseDown);
+        listeners.add(G, arc, 'mousedown', handleMouseDown);
     }
-    
+
     // 글로벌 키보드 이벤트
-    document.addEventListener('keydown', handleKeydown);
-    
+    listeners.add(G, document, 'keydown', handleKeydown);
+
     // blur 시 드래그 리스너 정리 (탭 전환 등에서 mouseup 누락 방지)
-    window.addEventListener('blur', handleWindowBlur);
+    listeners.add(G, window, 'blur', handleWindowBlur);
 }
 
 // 창 포커스 해제 시 드래그 상태 정리
@@ -854,20 +877,23 @@ export async function refreshPersonaRadialMenu() {
 }
 
 export function cleanupPersonaRadialMenu() {
-    document.removeEventListener('keydown', handleKeydown);
+    // 그룹 일괄 해제 (bindEvents에서 등록한 전체)
+    listeners.clear('radialMenu');
+
+    // 드래그 중 동적으로 추가된 transient 리스너 정리
     document.removeEventListener('mousemove', handleMouseMove);
     document.removeEventListener('mouseup', handleMouseUp);
-    window.removeEventListener('blur', handleWindowBlur);
-    
+    isDragging = false;
+
     // 관성 스크롤 정지
     if (momentumTimer) {
         cancelAnimationFrame(momentumTimer);
         momentumTimer = null;
     }
-    
+
     // 프리로드 캐시 정리
     preloadedUrls.clear();
-    
+
     const container = document.getElementById('persona-radial-container');
     if (container) container.remove();
     state.isInitialized = false;

@@ -327,6 +327,33 @@ class StorageManager {
     }
     
     /**
+     * 채팅 이름 변경 시 로컬 데이터 키 마이그레이션
+     * (폴더 배정 + 즐겨찾기가 채팅 키에 묶여 있으므로 함께 이동)
+     * @param {string} charAvatar
+     * @param {string} oldFileName
+     * @param {string} newFileName
+     */
+    renameChatKey(charAvatar, oldFileName, newFileName) {
+        this.update((data) => {
+            const oldKey = this.getChatKey(charAvatar, oldFileName);
+            const newKey = this.getChatKey(charAvatar, newFileName);
+            if (oldKey === newKey) return;
+
+            // 폴더 배정 이동
+            if (data.chatAssignments[oldKey] !== undefined) {
+                data.chatAssignments[newKey] = data.chatAssignments[oldKey];
+                delete data.chatAssignments[oldKey];
+            }
+
+            // 즐겨찾기 이동
+            const favIndex = data.favorites.indexOf(oldKey);
+            if (favIndex > -1) {
+                data.favorites[favIndex] = newKey;
+            }
+        });
+    }
+
+    /**
      * 채팅이 속한 폴더 가져오기
      * @param {string} charAvatar
      * @param {string} chatFileName
@@ -585,6 +612,11 @@ class StorageManager {
      */
     recordPersonaUsage(personaKey) {
         if (!personaKey) return;
+
+        // 이미 맨 앞이면 쓰기 생략 (이중 기록 호출 시 불필요한 직렬화/저장 방지)
+        const current = this.load().personaRecentUsage;
+        if (Array.isArray(current) && current[0] === personaKey) return;
+
         this.update((data) => {
             if (!Array.isArray(data.personaRecentUsage)) data.personaRecentUsage = [];
             const idx = data.personaRecentUsage.indexOf(personaKey);

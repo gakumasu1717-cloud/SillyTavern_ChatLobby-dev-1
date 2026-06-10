@@ -81,7 +81,7 @@ async function renderPersonaList(container, personas) {
         html += `
         <div class="persona-item ${isSelected} ${favClass}" data-persona="${escapeHtml(persona.key)}" title="${escapeHtml(persona.name)}">
             <button class="persona-fav-btn" data-persona="${escapeHtml(persona.key)}" title="즐겨찾기">${isFav ? '★' : '☆'}</button>
-            <img class="persona-avatar" src="${avatarUrl}" alt="" data-fallback="persona">
+            <img class="persona-avatar" src="${avatarUrl}" alt="" onerror="this.outerHTML='<div class=persona-avatar>👤</div>'">
             <span class="persona-name">${escapeHtml(persona.name)}</span>
             <button class="persona-delete-btn" data-persona="${escapeHtml(persona.key)}" title="페르소나 삭제">×</button>
         </div>`;
