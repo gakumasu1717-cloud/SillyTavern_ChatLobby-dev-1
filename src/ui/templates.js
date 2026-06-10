@@ -148,6 +148,9 @@ export function createLobbyHTML() {
                     </div>
                 </aside>
             </main>
+
+            <!-- 리마인드 뷰어 (채팅 패널과 동일: 고정 요소 + .visible 클래스 토글) -->
+            <div id="chat-lobby-remind-viewer"></div>
         </div>
     </div>
     

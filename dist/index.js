@@ -5758,12 +5758,15 @@ ${message}` : message;
       return;
     }
     closeRemindViewer();
+    const overlay = document.getElementById("chat-lobby-remind-viewer");
+    if (!overlay) {
+      showToast("\uBDF0\uC5B4\uB97C \uC5F4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB85C\uBE44\uB97C \uB2E4\uC2DC \uC5F4\uC5B4\uC8FC\uC138\uC694.", "error");
+      return;
+    }
     currentRemind = remind;
     currentMessages = null;
     regexEnabled = true;
     const rangeText = remind.start !== null || remind.end !== null ? `#${remind.start ?? 0} ~ ${remind.end !== null ? "#" + remind.end : "\uB05D"}` : "\uC804\uCCB4";
-    const overlay = document.createElement("div");
-    overlay.id = "chat-lobby-remind-viewer";
     overlay.innerHTML = `
         <div class="remind-viewer-panel">
             <header class="remind-viewer-header">
@@ -5791,7 +5794,7 @@ ${message}` : message;
             </div>
         </div>
     `;
-    document.body.appendChild(overlay);
+    overlay.classList.add("visible");
     isViewerOpen = true;
     listeners.add("remindViewer", overlay.querySelector(".remind-viewer-close"), "click", closeRemindViewer);
     listeners.add("remindViewer", overlay.querySelector("#remind-viewer-regex"), "click", toggleRegex);
@@ -5844,11 +5847,24 @@ ${message}` : message;
   }
   function closeRemindViewer() {
     const overlay = document.getElementById("chat-lobby-remind-viewer");
-    if (overlay) overlay.remove();
+    if (overlay) {
+      overlay.classList.remove("visible");
+      overlay.innerHTML = "";
+    }
     listeners.clear("remindViewer");
     isViewerOpen = false;
     currentRemind = null;
     currentMessages = null;
+  }
+  function closeTopRemindLayer() {
+    if (!isViewerOpen) return false;
+    const lb = document.getElementById("remind-lightbox");
+    if (lb?.classList.contains("active")) {
+      closeLightbox();
+      return true;
+    }
+    closeRemindViewer();
+    return true;
   }
   function handleViewerKeydown(e) {
     if (e.key === "Escape" && isViewerOpen) {
@@ -7778,6 +7794,9 @@ ${message}` : message;
                     </div>
                 </aside>
             </main>
+
+            <!-- \uB9AC\uB9C8\uC778\uB4DC \uBDF0\uC5B4 (\uCC44\uD305 \uD328\uB110\uACFC \uB3D9\uC77C: \uACE0\uC815 \uC694\uC18C + .visible \uD074\uB798\uC2A4 \uD1A0\uAE00) -->
+            <div id="chat-lobby-remind-viewer"></div>
         </div>
     </div>
     
@@ -11541,6 +11560,9 @@ ${message}` : message;
     }
     function handleKeydown2(e) {
       if (e.key === "Escape") {
+        if (closeTopRemindLayer()) {
+          return;
+        }
         if (isDebugPanelOpen) {
           closeDebugModal();
           return;

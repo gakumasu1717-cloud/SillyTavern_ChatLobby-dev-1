@@ -6577,17 +6577,30 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 /* ============================================
    🔖 리마인드 뷰어 (소설 읽기 모드)
    ============================================ */
+/* ⚠️ 채팅 패널(#chat-lobby-chats)의 모바일 메커니즘을 그대로 복제:
+   템플릿에 고정 존재하는 요소 + display:none 기본 + .visible 클래스로 표시.
+   position/크기 선언도 채팅 패널과 동일 (top/left/right/bottom + 100vw/100vh !important) */
 #chat-lobby-remind-viewer {
     position: fixed;
-    inset: 0;
-    /* body 직속 + 최상위 (커스텀 테마의 어떤 레이어보다 위) */
-    z-index: 2147483000;
-    background: rgba(0, 0, 0, 0.72);
-    display: flex;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    height: 100vh !important;
+    z-index: 10000;
+    display: none;
     align-items: center;
     justify-content: center;
     padding: 24px;
+    box-sizing: border-box;
+    background: rgba(0, 0, 0, 0.82);
     font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+#chat-lobby-remind-viewer.visible {
+    display: flex;
 }
 
 .remind-viewer-panel {
@@ -6786,8 +6799,9 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
         padding: 0;
     }
     .remind-viewer-panel {
-        height: 100dvh;
-        max-height: 100dvh;
+        width: 100%;
+        height: 100%;
+        max-height: 100%;
         border-radius: 0;
         border: none;
     }
@@ -6839,7 +6853,10 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 .remind-lightbox {
     display: none;
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     z-index: 10;
     align-items: center;
     justify-content: center;
@@ -6851,7 +6868,10 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 
 .remind-lightbox-backdrop {
     position: absolute;
-    inset: 0;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     background: rgba(0, 0, 0, 0.85);
     cursor: zoom-out;
 }
@@ -6996,7 +7016,8 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
    ============================================ */
 #chat-lobby-container[data-badge-pos="bottom"]:not([data-lobby-theme="messenger"]) .char-persona-badge {
     top: auto;
-    bottom: 8px;
+    /* 카드 하단 이름 줄(폰트 한 칸)을 가리지 않도록 그 위에 배치 */
+    bottom: 38px;
 }
 
 /* 폴라로이드/매거진은 하단에 이름 라벨이 있어 그 위로 배치 */

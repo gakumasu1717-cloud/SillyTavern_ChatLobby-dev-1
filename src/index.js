@@ -28,6 +28,7 @@ import { initCustomThemeIntegration, cleanupCustomThemeIntegration } from './int
 import { listeners } from './utils/listenerManager.js';
 import { applyTheme, toggleThemeMenu, closeThemeMenu, isThemeMenuOpen, initThemeMenuEvents, cleanupThemeMenu, renderStDock } from './ui/themeMenu.js';
 import { remindStore } from './data/remindStore.js';
+import { closeTopRemindLayer } from './ui/remindViewer.js';
 import { escapeHtml } from './utils/textUtils.js';
 import { analyzeBranches } from './utils/branchAnalyzer.js';
 import { clearCharacterCache as clearBranchCache } from './data/branchCache.js';
@@ -1196,6 +1197,13 @@ import { operationLock } from './utils/operationLock.js';
      */
     function handleKeydown(e) {
         if (e.key === 'Escape') {
+            // 리마인드 뷰어(라이트박스 포함)가 열려있으면 그것부터 닫기
+            // (이 핸들러가 뷰어 자체 핸들러보다 먼저 실행되므로 여기서 분기해야
+            //  ESC가 로비를 통째로 닫아버리는 사고를 막을 수 있음)
+            if (closeTopRemindLayer()) {
+                return;
+            }
+
             // 디버그 패널 열려있으면 먼저 닫기
             if (isDebugPanelOpen) {
                 closeDebugModal();

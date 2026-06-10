@@ -35,6 +35,15 @@ export async function openRemindViewer(remindId) {
 
     closeRemindViewer(); // 기존 뷰어 정리
 
+    // ⚠️ 채팅 패널(#chat-lobby-chats)과 완전히 동일한 메커니즘:
+    // 템플릿에 고정으로 존재하는 호스트 요소를 .visible 클래스로 열고 닫는다.
+    // (동적 생성 + body append 방식은 모바일 커스텀 테마 환경에서 표시 실패)
+    const overlay = document.getElementById('chat-lobby-remind-viewer');
+    if (!overlay) {
+        showToast('뷰어를 열 수 없습니다. 로비를 다시 열어주세요.', 'error');
+        return;
+    }
+
     currentRemind = remind;
     currentMessages = null;
     regexEnabled = true;
@@ -43,8 +52,6 @@ export async function openRemindViewer(remindId) {
         ? `#${remind.start ?? 0} ~ ${remind.end !== null ? '#' + remind.end : '끝'}`
         : '전체';
 
-    const overlay = document.createElement('div');
-    overlay.id = 'chat-lobby-remind-viewer';
     overlay.innerHTML = `
         <div class="remind-viewer-panel">
             <header class="remind-viewer-header">
@@ -73,11 +80,8 @@ export async function openRemindViewer(remindId) {
         </div>
     `;
 
-    // ⚠️ 반드시 document.body 직속으로 마운트할 것!
-    // 로비 컨테이너 안에 넣으면 조상의 transform/filter/backdrop-filter가
-    // position:fixed의 기준점(containing block)을 바꿔버려
-    // 모바일(특히 커스텀 테마 환경)에서 뷰어가 화면 밖으로 날아가거나 클리핑됨
-    document.body.appendChild(overlay);
+    // 채팅 패널과 동일하게 .visible 클래스로 표시
+    overlay.classList.add('visible');
     isViewerOpen = true;
 
     listeners.add('remindViewer', overlay.querySelector('.remind-viewer-close'), 'click', closeRemindViewer);
@@ -145,11 +149,32 @@ export async function openRemindViewer(remindId) {
  */
 export function closeRemindViewer() {
     const overlay = document.getElementById('chat-lobby-remind-viewer');
-    if (overlay) overlay.remove();
+    if (overlay) {
+        // 채팅 패널과 동일: 클래스 제거 + 내용 비우기 (요소 자체는 유지)
+        overlay.classList.remove('visible');
+        overlay.innerHTML = '';
+    }
     listeners.clear('remindViewer');
     isViewerOpen = false;
     currentRemind = null;
     currentMessages = null;
+}
+
+/**
+ * ESC 처리용: 최상위 레이어(라이트박스 → 뷰어) 하나만 닫기
+ * index.js의 전역 keydown에서 호출
+ * @returns {boolean} 닫은 게 있으면 true (이벤트 소비)
+ */
+export function closeTopRemindLayer() {
+    if (!isViewerOpen) return false;
+
+    const lb = document.getElementById('remind-lightbox');
+    if (lb?.classList.contains('active')) {
+        closeLightbox();
+        return true;
+    }
+    closeRemindViewer();
+    return true;
 }
 
 export function isRemindViewerOpen() {
