@@ -5499,11 +5499,12 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
     right: 8px;
     width: var(--persona-badge-size, 36px);
     height: var(--persona-badge-size, 36px);
-    border-radius: 50%;
+    border-radius: 10px;
     object-fit: cover;
     z-index: 10;
-    border: 2px solid rgba(255, 255, 255, 0.85);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    /* 테두리 없는 깔끔한 네모 */
+    border: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
     background: #222;
     pointer-events: none;
 }
@@ -5940,178 +5941,6 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 }
 
 /* ============================================
-   💬 테마: 배너 리스트 (v2)
-   왼쪽 30%만 카드 이미지 (얼굴 위주 크롭 + 오른쪽 페이드)
-   나머지는 카드 배경 + 이름/정보
-   ============================================ */
-#chat-lobby-container[data-lobby-theme="messenger"] {
-    --lobby-bg: #0e1621;
-    --lobby-bg-light: #17212b;
-    --lobby-bg-card: #17212b;
-    --lobby-bg-hover: #202b36;
-    --lobby-accent: #5eadf2;
-    --lobby-accent-hover: #7dbef5;
-    --star-color: #f5b942;
-    --star-glow: rgba(245, 185, 66, 0.5);
-    background: #0e1621;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] #chat-lobby-characters {
-    display: flex;
-    flex-direction: column;
-    /* 베이스 그리드의 justify-content:center 상속 시 위쪽이 잘림 - 반드시 재정의 */
-    justify-content: flex-start;
-    gap: 8px;
-    padding: 14px 14px 30px;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card {
-    width: 100%;
-    max-width: 900px;
-    margin: 0 auto;
-    aspect-ratio: auto;
-    height: 104px;
-    display: block;
-    position: relative;
-    padding: 0;
-    border-radius: 14px;
-    overflow: hidden;
-    background: var(--lobby-bg-card);
-    contain-intrinsic-size: auto 104px;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card:hover {
-    transform: none;
-    background: var(--lobby-bg-hover);
-    box-shadow: 0 0 0 1px rgba(94, 173, 242, 0.4);
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card.selected {
-    box-shadow: inset 0 0 0 3px var(--lobby-accent);
-}
-
-/* 이미지: 왼쪽 30%만, 얼굴(눈) 위주 크롭, 오른쪽 가장자리 페이드 */
-#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-avatar {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 30%;
-    height: 100%;
-    border-radius: 0;
-    object-fit: cover;
-    object-position: center 15%;
-    -webkit-mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
-    mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
-}
-
-/* 이름/정보: 이미지 오른쪽에 세로 중앙 정렬 */
-#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-name {
-    position: absolute;
-    left: calc(30% + 10px);
-    right: 48px;
-    top: 0;
-    bottom: 0;
-    padding: 0;
-    background: none;
-    opacity: 1;
-    transform: none;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 3px;
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--lobby-text);
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] .char-name-text {
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] .char-last-time {
-    color: var(--lobby-accent);
-    font-size: 11px;
-    margin-left: 6px;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info {
-    flex-direction: row;
-    gap: 12px;
-    margin: 0;
-}
-#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info .info-row {
-    color: var(--lobby-text-secondary);
-    font-size: 11.5px;
-}
-#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info .info-value {
-    color: var(--lobby-text-secondary);
-}
-
-/* 즐겨찾기 별 - 우상단 상시 표시 */
-#chat-lobby-container[data-lobby-theme="messenger"] .char-fav-btn {
-    opacity: 1;
-    left: auto;
-    right: 8px;
-    top: 8px;
-    background: rgba(0, 0, 0, 0.35);
-}
-
-/* 그룹 카드 - 멤버 그리드가 왼쪽 30% 차지 */
-#chat-lobby-container[data-lobby-theme="messenger"] .group-avatar-grid {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 30%;
-    height: 100%;
-    border-radius: 0;
-    overflow: hidden;
-    -webkit-mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
-    mask-image: linear-gradient(90deg, #000 62%, transparent 100%);
-}
-#chat-lobby-container[data-lobby-theme="messenger"] .group-member-badge {
-    top: 8px;
-    left: 8px;
-    right: auto;
-    bottom: auto;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] .lobby-hero-card {
-    width: 180px;
-    height: 96px;
-    border-radius: 14px;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] #chat-lobby-header {
-    background: #17212b;
-    border-bottom: 1px solid #0a121b;
-}
-
-#chat-lobby-container[data-lobby-theme="messenger"] #chat-lobby-chats {
-    background: #17212b;
-    border-left: 1px solid #0a121b;
-}
-
-@media (max-width: 768px) {
-    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card {
-        height: 88px;
-        contain-intrinsic-size: auto 88px;
-    }
-    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-avatar,
-    #chat-lobby-container[data-lobby-theme="messenger"] .group-avatar-grid {
-        width: 34%;
-    }
-    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-name {
-        left: calc(34% + 10px);
-        font-size: 14px;
-    }
-}
-
-/* ============================================
    🗞️ 테마: 매거진 (에디토리얼 화보)
    순흑 배경 + 이미지 아래 타이포 라벨 + 가는 룰 라인
    호버 시 채도 복원 (화보 → 컬러)
@@ -6260,23 +6089,29 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 
 /* 글래스: 인스타 스토리풍 그라데이션 링 */
 #chat-lobby-container[data-lobby-theme="glass"] .char-persona-badge {
+    border-radius: 50%;
     border: none;
     padding: 2px;
     background: linear-gradient(135deg, #67e8f9, #a78bfa 55%, #f0abfc);
     box-shadow: 0 0 10px rgba(167, 139, 250, 0.55);
 }
 
-/* 폴라로이드: 미니 폴라로이드 사각 사진 */
+/* 폴라로이드: 원형 + 두꺼운 흰 테두리 */
 #chat-lobby-container[data-lobby-theme="polaroid"] .char-persona-badge {
     top: 14px;
     right: 14px;
-    border-radius: 4px;
+    border-radius: 50%;
+    padding: 0;
+    background: #2a2a2a;
     border: 3px solid #ffffff;
     box-shadow: 0 2px 8px rgba(90, 70, 40, 0.4);
 }
 
-/* 배너 리스트: 액센트 링 + 글로우 (우하단) */
+/* 배너 리스트: 원형 + 액센트 링 + 글로우 (우하단) */
 #chat-lobby-container[data-lobby-theme="messenger"] .char-persona-badge {
+    border-radius: 50%;
+    padding: 0;
+    background: #1a1a1a;
     top: auto;
     left: auto;
     right: 10px;
@@ -6288,6 +6123,870 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 /* 매거진: 미니멀 사각 (이미지 우상단) */
 #chat-lobby-container[data-lobby-theme="magazine"] .char-persona-badge {
     border-radius: 0;
+    padding: 0;
+    background: #1a1a1a;
     border: 1px solid rgba(255, 255, 255, 0.85);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================
+   📱 모바일 그리드 - 화면 비 적응형 (카드 튀어나감 수정)
+   고정 px 트랙 대신 뷰포트에 절대 넘치지 않는 fluid 컬럼.
+   슬라이더 값(--card-width)을 존중하되 화면의 1/3을 넘지 않음
+   ============================================ */
+@media (max-width: 768px) {
+    #chat-lobby-container:not([data-lobby-theme="messenger"]) #chat-lobby-characters {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(min(var(--card-width, 200px), 31%), 1fr));
+        justify-content: stretch;
+        gap: 8px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+}
+
+/* ============================================
+   💬 테마: 배너 리스트 (v3)
+   넷플릭스(시네마 다크) 색감 + 높이 증가 + 이미지 고정폭
+   왼쪽 200px만 카드 이미지 (얼굴 위주 크롭 + 페이드)
+   ============================================ */
+#chat-lobby-container[data-lobby-theme="messenger"] {
+    /* 색감은 시네마 다크(넷플릭스) 팔레트를 그대로 상속 */
+    --star-color: #E50914;
+    --star-glow: rgba(229, 9, 20, 0.55);
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] #chat-lobby-characters {
+    display: flex;
+    flex-direction: column;
+    /* 베이스 그리드의 justify-content:center 상속 시 위쪽이 잘림 - 반드시 재정의 */
+    justify-content: flex-start;
+    gap: 9px;
+    padding: 16px 16px 30px;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+    aspect-ratio: auto;
+    /* ⚠️ flex column 컨테이너에서 행이 넘치면 flex-shrink가 height를 무시하고
+       모든 행을 압축해버림 → 반드시 shrink 차단 (행 높이 짜부라짐 버그의 원인) */
+    flex: 0 0 auto;
+    height: 136px;
+    min-height: 136px;
+    display: block;
+    position: relative;
+    padding: 0;
+    border-radius: 12px;
+    overflow: hidden;
+    background: var(--lobby-bg-card, #2f2f2f);
+    contain-intrinsic-size: auto 136px;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card:hover {
+    transform: none;
+    background: var(--lobby-bg-hover, #404040);
+    box-shadow: 0 0 0 1px rgba(229, 9, 20, 0.55);
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card.selected {
+    box-shadow: inset 0 0 0 3px var(--lobby-accent, #E50914);
+}
+
+/* 이미지: 행 폭(최대 900px)의 30% - 화면 비를 따라 자연스럽게 스케일 */
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-avatar {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    height: 100%;
+    border-radius: 0;
+    object-fit: cover;
+    object-position: center 12%;
+    -webkit-mask-image: linear-gradient(90deg, #000 65%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 65%, transparent 100%);
+    transition: transform 0.25s ease;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card:hover .lobby-char-avatar {
+    transform: scale(1.04);
+}
+
+/* 이름/정보: 이미지 오른쪽 세로 중앙 */
+#chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-name {
+    position: absolute;
+    left: calc(30% + 14px);
+    right: 50px;
+    top: 0;
+    bottom: 0;
+    padding: 0;
+    background: none;
+    opacity: 1;
+    transform: none;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 4px;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--lobby-text, #fff);
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .char-name-text {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .char-last-time {
+    color: var(--lobby-accent, #E50914);
+    font-size: 11.5px;
+    margin-left: 6px;
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info {
+    flex-direction: row;
+    gap: 14px;
+    margin: 0;
+}
+#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info .info-row {
+    color: var(--lobby-text-secondary, #a3a3a3);
+    font-size: 12px;
+}
+#chat-lobby-container[data-lobby-theme="messenger"] .char-hover-info .info-value {
+    color: var(--lobby-text-secondary, #a3a3a3);
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .char-fav-btn {
+    opacity: 1;
+    left: auto;
+    right: 10px;
+    top: 10px;
+    background: rgba(0, 0, 0, 0.4);
+}
+
+#chat-lobby-container[data-lobby-theme="messenger"] .group-avatar-grid {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 30%;
+    height: 100%;
+    border-radius: 0;
+    overflow: hidden;
+    -webkit-mask-image: linear-gradient(90deg, #000 65%, transparent 100%);
+    mask-image: linear-gradient(90deg, #000 65%, transparent 100%);
+}
+#chat-lobby-container[data-lobby-theme="messenger"] .group-member-badge {
+    top: 10px;
+    left: 10px;
+    right: auto;
+    bottom: auto;
+}
+
+@media (max-width: 768px) {
+    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-card {
+        height: 108px;
+        min-height: 108px;
+        contain-intrinsic-size: auto 108px;
+    }
+    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-avatar,
+    #chat-lobby-container[data-lobby-theme="messenger"] .group-avatar-grid {
+        width: 34%;
+    }
+    #chat-lobby-container[data-lobby-theme="messenger"] .lobby-char-name {
+        left: calc(34% + 12px);
+        right: 46px;
+        font-size: 14.5px;
+    }
+}
+
+/* ============================================
+   🛰️ 테마: 콘솔 (실리 메뉴 도크 내장 · 실험적)
+   좌측 세로 도크에서 ST 기본 메뉴로 바로 점프
+   ============================================ */
+
+/* 도크는 기본적으로 숨김 (콘솔 테마에서만 표시) */
+#chat-lobby-st-dock {
+    display: none;
+}
+
+#chat-lobby-container[data-lobby-theme="console"] {
+    --lobby-bg: #0c1117;
+    --lobby-bg-light: #11181f;
+    --lobby-bg-card: #151d26;
+    --lobby-bg-hover: #1e2a36;
+    --lobby-accent: #4ade80;
+    --lobby-accent-hover: #86efac;
+    --star-color: #facc15;
+    --star-glow: rgba(250, 204, 21, 0.5);
+    --card-hover-scale: 1.03;
+    background: #0c1117;
+}
+
+#chat-lobby-container[data-lobby-theme="console"] #chat-lobby-header {
+    background: #0c1117;
+    border-bottom: 1px solid #1e2a36;
+}
+
+#chat-lobby-container[data-lobby-theme="console"] #chat-lobby-title {
+    color: #4ade80;
+    text-shadow: 0 0 8px rgba(74, 222, 128, 0.4);
+}
+
+/* 좌측 세로 도크 */
+#chat-lobby-container[data-lobby-theme="console"] #chat-lobby-st-dock {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 64px;
+    padding: 10px 4px;
+    background: #0a0e13;
+    border-right: 1px solid #1e2a36;
+    overflow-y: auto;
+    scrollbar-width: none;
+}
+#chat-lobby-container[data-lobby-theme="console"] #chat-lobby-st-dock::-webkit-scrollbar {
+    display: none;
+}
+
+.st-dock-title {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    color: #4ade80;
+    padding: 2px 0 6px;
+    border-bottom: 1px solid #1e2a36;
+    width: 100%;
+    text-align: center;
+    margin-bottom: 4px;
+    user-select: none;
+}
+
+.st-dock-btn {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    width: 56px;
+    padding: 7px 2px;
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.st-dock-btn:hover {
+    background: #151d26;
+    border-color: rgba(74, 222, 128, 0.45);
+}
+
+.st-dock-icon {
+    font-size: 17px;
+    line-height: 1.1;
+}
+
+.st-dock-label {
+    font-size: 9px;
+    color: #7e8b99;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 54px;
+}
+
+.st-dock-btn:hover .st-dock-label {
+    color: #c9d4de;
+}
+
+/* 콘솔 카드: 각진 터미널 패널 느낌 */
+#chat-lobby-container[data-lobby-theme="console"] .lobby-char-card {
+    border-radius: 6px;
+    border: 1px solid #1e2a36;
+    background: #11181f;
+}
+#chat-lobby-container[data-lobby-theme="console"] .lobby-char-avatar {
+    border-radius: 5px;
+}
+#chat-lobby-container[data-lobby-theme="console"] .lobby-char-card:hover {
+    transform: scale(1.03);
+    border-color: rgba(74, 222, 128, 0.7);
+    box-shadow: 0 0 14px rgba(74, 222, 128, 0.2);
+}
+#chat-lobby-container[data-lobby-theme="console"] .lobby-char-card.selected {
+    border-color: #4ade80;
+    box-shadow: 0 0 0 1px #4ade80, 0 0 16px rgba(74, 222, 128, 0.3);
+}
+#chat-lobby-container[data-lobby-theme="console"] .lobby-char-name {
+    background: linear-gradient(transparent, rgba(10, 14, 19, 0.95) 72%);
+    border-left: 2px solid #4ade80;
+}
+#chat-lobby-container[data-lobby-theme="console"] .char-last-time {
+    color: #4ade80;
+}
+#chat-lobby-container[data-lobby-theme="console"] #chat-lobby-chats {
+    background: #11181f;
+    border-left: 1px solid #1e2a36;
+}
+#chat-lobby-container[data-lobby-theme="console"] .char-persona-badge {
+    border-radius: 6px;
+}
+
+/* 모바일: 도크를 좌측 고정 레일로 유지 (하단 배치는 페르소나 FAB와 겹침) */
+@media (max-width: 768px) {
+    /* 베이스 모바일 룰이 main을 column으로 바꾸므로 콘솔에서는 row 강제 */
+    #chat-lobby-container[data-lobby-theme="console"] #chat-lobby-main {
+        flex-direction: row;
+    }
+    #chat-lobby-container[data-lobby-theme="console"] #chat-lobby-st-dock {
+        flex: 0 0 50px;
+        padding: 8px 2px;
+    }
+    #chat-lobby-container[data-lobby-theme="console"] #chat-lobby-left {
+        min-width: 0;
+    }
+    .st-dock-btn {
+        width: 44px;
+        padding: 6px 1px;
+    }
+    .st-dock-icon {
+        font-size: 15px;
+    }
+    .st-dock-label {
+        font-size: 8px;
+        max-width: 42px;
+    }
+}
+
+/* ============================================
+   🔖 리마인드 목록 (보관함 탭)
+   ============================================ */
+.remind-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px;
+}
+
+.remind-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: var(--lobby-bg-card, #2f2f2f);
+    border: 1px solid var(--lobby-border, #404040);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.remind-item:hover {
+    background: var(--lobby-bg-hover, #404040);
+    border-color: var(--lobby-accent, #e50914);
+}
+
+.remind-item-avatar {
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+    overflow: hidden;
+    flex-shrink: 0;
+    background: var(--lobby-bg-hover, #404040);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+}
+
+.remind-item-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.remind-item-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.remind-item-title {
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--lobby-text, #fff);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.remind-item-range {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--lobby-accent, #e50914);
+    margin-left: 6px;
+}
+
+.remind-item-file {
+    font-size: 11px;
+    color: var(--lobby-text-secondary, #999);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 2px;
+}
+
+.remind-item-note {
+    font-size: 12px;
+    color: var(--lobby-text, #ddd);
+    opacity: 0.85;
+    margin-top: 4px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
+.remind-item-side {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.remind-item-date {
+    font-size: 10px;
+    color: var(--lobby-text-secondary, #888);
+}
+
+.remind-item-delete {
+    background: var(--lobby-bg-hover, #404040);
+    border: 1px solid var(--lobby-border, #555);
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    padding: 5px 7px;
+    transition: all 0.15s;
+}
+
+.remind-item-delete:hover {
+    color: #ff6b6b;
+    border-color: #ff6b6b;
+}
+
+/* ============================================
+   🔖 리마인드 뷰어 (소설 읽기 모드)
+   ============================================ */
+#chat-lobby-remind-viewer {
+    position: fixed;
+    inset: 0;
+    z-index: 70000;
+    background: rgba(0, 0, 0, 0.72);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+}
+
+.remind-viewer-panel {
+    width: 100%;
+    max-width: 820px;
+    height: 100%;
+    max-height: 92vh;
+    background: var(--lobby-bg, #141414);
+    border: 1px solid var(--lobby-bg-hover, #404040);
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+
+.remind-viewer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--lobby-bg-hover, #333);
+    background: var(--lobby-bg-light, #181818);
+    flex-shrink: 0;
+}
+
+.remind-viewer-title {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.remind-viewer-char {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--lobby-text, #fff);
+}
+
+.remind-viewer-file {
+    font-size: 11px;
+    color: var(--lobby-text-secondary, #999);
+}
+
+.remind-viewer-note {
+    font-size: 12px;
+    color: var(--lobby-accent, #e50914);
+    margin-top: 2px;
+}
+
+.remind-viewer-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.remind-viewer-btn {
+    background: var(--lobby-bg-card, #2f2f2f);
+    border: 1px solid var(--lobby-bg-hover, #444);
+    border-radius: 8px;
+    color: var(--lobby-text, #fff);
+    font-size: 11.5px;
+    padding: 6px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+}
+
+.remind-viewer-btn:hover {
+    border-color: var(--lobby-accent, #e50914);
+}
+
+.remind-viewer-btn.off {
+    opacity: 0.55;
+}
+
+.remind-viewer-close {
+    background: none;
+    border: none;
+    color: var(--lobby-text, #fff);
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px 8px;
+    opacity: 0.7;
+}
+.remind-viewer-close:hover { opacity: 1; }
+
+.remind-viewer-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 26px 40px;
+    scrollbar-width: thin;
+    line-height: 1.75;
+}
+
+.remind-viewer-loading {
+    text-align: center;
+    color: var(--lobby-text-secondary, #999);
+    padding: 60px 20px;
+    font-size: 14px;
+}
+
+/* 메시지 단락 */
+.remind-msg {
+    margin-bottom: 26px;
+}
+
+.remind-msg-meta {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.remind-msg-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--lobby-accent, #e50914);
+}
+
+.remind-msg.is-user .remind-msg-name {
+    color: #6ab0f3;
+}
+
+.remind-msg.is-system .remind-msg-name {
+    color: var(--lobby-text-secondary, #888);
+}
+
+.remind-msg-id {
+    font-size: 10px;
+    color: var(--lobby-text-secondary, #777);
+    font-variant-numeric: tabular-nums;
+}
+
+.remind-msg-body {
+    font-size: 14.5px;
+    color: var(--lobby-text, #e8e8e8);
+    word-break: break-word;
+}
+
+.remind-msg-body p {
+    margin: 0 0 10px;
+}
+
+.remind-msg.is-user .remind-msg-body {
+    opacity: 0.92;
+}
+
+/* 대사 하이라이트 */
+.remind-dialogue {
+    color: #ffd9a0;
+}
+
+.remind-msg.is-user .remind-dialogue {
+    color: #a8d4ff;
+}
+
+/* 마크다운 요소 */
+.remind-h {
+    margin: 14px 0 8px;
+    color: var(--lobby-text, #fff);
+}
+
+.remind-code {
+    background: rgba(0, 0, 0, 0.35);
+    border: 1px solid var(--lobby-bg-hover, #333);
+    border-radius: 8px;
+    padding: 10px 12px;
+    overflow-x: auto;
+    font-size: 12.5px;
+    margin: 8px 0;
+}
+
+.remind-inline-code {
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.9em;
+}
+
+.remind-html-notice {
+    background: var(--lobby-bg-card, #2a2a2a);
+    border: 1px dashed var(--lobby-bg-hover, #555);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--lobby-text-secondary, #999);
+    margin: 8px 0;
+}
+
+/* 모바일 뷰어 */
+@media (max-width: 768px) {
+    #chat-lobby-remind-viewer {
+        padding: 0;
+    }
+    .remind-viewer-panel {
+        max-height: 100%;
+        border-radius: 0;
+        border: none;
+    }
+    .remind-viewer-body {
+        padding: 16px 14px 40px;
+    }
+    .remind-viewer-btn {
+        font-size: 10.5px;
+        padding: 5px 7px;
+    }
+}
+
+/* ============================================
+   🔖 리마인드 뷰어 - 이미지 / 라이트박스 / 선택지 / 마크다운 확장
+   (CHATNOVEL 뷰어 스타일 포팅)
+   ============================================ */
+
+/* 본문 이미지 */
+.remind-image-container {
+    margin: 12px 0;
+    text-align: center;
+}
+
+.remind-image {
+    max-width: 100%;
+    max-height: 60vh;
+    border-radius: 10px;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    cursor: zoom-in;
+}
+
+.remind-image-fallback {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 10px 16px;
+    background: var(--lobby-bg-card, #2a2a2a);
+    border: 1px dashed var(--lobby-bg-hover, #555);
+    border-radius: 8px;
+    font-size: 12px;
+    color: var(--lobby-text-secondary, #999);
+}
+
+.remind-extra-images {
+    margin-top: 10px;
+}
+
+/* 라이트박스 */
+.remind-lightbox {
+    display: none;
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    align-items: center;
+    justify-content: center;
+}
+
+.remind-lightbox.active {
+    display: flex;
+}
+
+.remind-lightbox-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.85);
+    cursor: zoom-out;
+}
+
+.remind-lightbox-content {
+    position: relative;
+    z-index: 1;
+    max-width: 92%;
+    max-height: 92%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+}
+
+.remind-lightbox-img {
+    max-width: 100%;
+    max-height: 80vh;
+    border-radius: 8px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.7);
+}
+
+.remind-lightbox-caption {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.75);
+    text-align: center;
+    max-width: 90%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.remind-lightbox-close {
+    position: absolute;
+    top: -36px;
+    right: 0;
+    background: rgba(255, 255, 255, 0.12);
+    border: none;
+    border-radius: 50%;
+    width: 30px;
+    height: 30px;
+    color: #fff;
+    font-size: 14px;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+/* 선택지 카드 */
+.remind-choices {
+    margin: 12px 0;
+    border: 1px solid var(--lobby-bg-hover, #444);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.remind-choices-header {
+    padding: 7px 12px;
+    background: var(--lobby-bg-card, #2a2a2a);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--lobby-text-secondary, #999);
+    border-bottom: 1px solid var(--lobby-bg-hover, #444);
+}
+
+.remind-choice-card {
+    display: flex;
+    gap: 8px;
+    padding: 9px 12px;
+    font-size: 13.5px;
+    color: var(--lobby-text, #e8e8e8);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.remind-choice-card:last-child {
+    border-bottom: none;
+}
+
+.remind-choice-num {
+    color: var(--lobby-accent, #e50914);
+    font-weight: 700;
+    flex-shrink: 0;
+}
+
+/* 마크다운 확장 요소 */
+.remind-hr {
+    border: none;
+    border-top: 1px solid var(--lobby-bg-hover, #444);
+    margin: 16px 0;
+}
+
+.remind-quote {
+    margin: 8px 0;
+    padding: 6px 14px;
+    border-left: 3px solid var(--lobby-accent, #e50914);
+    background: rgba(255, 255, 255, 0.04);
+    border-radius: 0 8px 8px 0;
+    color: var(--lobby-text-secondary, #bbb);
+}
+
+.remind-list-md {
+    margin: 8px 0;
+    padding-left: 22px;
+}
+
+.remind-list-md li {
+    margin-bottom: 4px;
+}
+
+.remind-msg-body a {
+    color: var(--lobby-accent, #e50914);
+}
+
+.remind-msg-body table {
+    border-collapse: collapse;
+    margin: 10px 0;
+    font-size: 13px;
+}
+
+.remind-msg-body table td,
+.remind-msg-body table th {
+    border: 1px solid var(--lobby-bg-hover, #444);
+    padding: 5px 10px;
+}
+
+/* 정규식 iframe (리마인드 뷰어 - 상태창 등 통짜 HTML 렌더링) */
+.remind-regex-iframe {
+    display: block;
+    width: 100%;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
+    margin: 10px 0;
+    min-height: 60px;
+    overflow: hidden;
 }

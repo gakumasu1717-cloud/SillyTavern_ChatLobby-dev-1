@@ -466,6 +466,39 @@ class SillyTavernAPI {
     }
 
     /**
+     * 채팅 메시지 전체 가져오기 (리마인드 뷰어용)
+     * @param {string} characterAvatar - 캐릭터 아바타
+     * @param {string} fileName - 채팅 파일명 (.jsonl 유무 무관)
+     * @returns {Promise<Array|null>} - 메시지 배열 (메타데이터 라인 제외), 실패 시 null
+     */
+    async getChatMessages(characterAvatar, fileName) {
+        try {
+            const charDir = characterAvatar.replace(/\.(png|jpg|webp)$/i, '');
+
+            const response = await this.fetchWithRetry('/api/chats/get', {
+                method: 'POST',
+                headers: this.getRequestHeaders(),
+                body: JSON.stringify({
+                    ch_name: charDir,
+                    file_name: fileName.replace(/\.jsonl$/i, ''),
+                    avatar_url: characterAvatar,
+                }),
+            });
+
+            if (!response.ok) return null;
+
+            const data = await response.json();
+            if (!Array.isArray(data) || data.length === 0) return null;
+
+            // [0]은 메타데이터 라인, [1]부터 실제 메시지 (mesid 0 = data[1])
+            return data.slice(1);
+        } catch (error) {
+            console.error('[API] Failed to get chat messages:', error);
+            return null;
+        }
+    }
+
+    /**
      * 채팅 이름 변경
      * @param {string} charAvatar - 캐릭터 아바타
      * @param {string} oldFileName - 기존 파일명 (.jsonl 유무 무관)

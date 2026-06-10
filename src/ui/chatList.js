@@ -21,6 +21,7 @@ import {
     needsBranchAnalysis 
 } from '../utils/branchAnalyzer.js';
 import { getAllBranches, getAllFingerprints } from '../data/branchCache.js';
+import { remindStore } from '../data/remindStore.js';
 
 // ============================================
 // 툴팁 관련 변수
@@ -1182,6 +1183,9 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
         <div class="folder-menu-item rename-chat-item">
             ✏️ 이름 바꾸기
         </div>
+        <div class="folder-menu-item remind-add-item">
+            🔖 리마인드 추가
+        </div>
         <div class="folder-menu-title">폴더 이동</div>
         <div class="folder-menu-item ${!currentFolderId || currentFolderId === 'uncategorized' ? 'active' : ''}" data-folder-id="">
             📤 폴더에서 제거
@@ -1220,8 +1224,14 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
         await renameChatPrompt(charAvatar, fileName);
     });
 
+    // 리마인드 추가
+    menu.querySelector('.remind-add-item')?.addEventListener('click', async () => {
+        closeChatFolderMenu();
+        await addRemindPrompt(charAvatar, fileName);
+    });
+
     // 폴더 이동
-    menu.querySelectorAll('.folder-menu-item:not(.rename-chat-item)').forEach(item => {
+    menu.querySelectorAll('.folder-menu-item:not(.rename-chat-item):not(.remind-add-item)').forEach(item => {
         item.addEventListener('click', async () => {
             const folderId = item.dataset.folderId;
             if (folderId) {
@@ -1255,6 +1265,64 @@ function closeChatFolderMenu() {
         activeFolderMenu = null;
     }
     listeners.clear('chatFolderMenu');
+}
+
+// ============================================
+// 리마인드 추가
+// ============================================
+
+/**
+ * 리마인드 추가 (범위 + 메모 입력)
+ * "이 채팅의 120~130 서사가 좋았으니 나중에 다시 봐야지" 용도
+ * @param {string} charAvatar
+ * @param {string} fileName
+ */
+async function addRemindPrompt(charAvatar, fileName) {
+    const cleanName = fileName.replace(/\.jsonl$/i, '');
+
+    // 범위 입력 (mesid 기준, 비우면 전체)
+    const rangeInput = await showPrompt(
+        '저장할 메시지 범위를 입력하세요. (메시지 번호 기준)\n예: 120-130 / 120 (한 메시지) / 비우면 전체',
+        '🔖 리마인드 추가',
+        ''
+    );
+    if (rangeInput === null) return; // 취소
+
+    let start = null;
+    let end = null;
+    const trimmed = rangeInput.trim();
+    if (trimmed) {
+        const match = trimmed.match(/^(\d+)\s*[-~]\s*(\d+)$/) || trimmed.match(/^(\d+)$/);
+        if (!match) {
+            showToast('범위 형식이 올바르지 않습니다. 예: 120-130', 'error');
+            return;
+        }
+        start = parseInt(match[1], 10);
+        end = match[2] !== undefined ? parseInt(match[2], 10) : start;
+        if (end < start) [start, end] = [end, start];
+    }
+
+    const note = await showPrompt(
+        '메모를 남겨주세요. (왜 좋았는지, 어떤 장면인지)',
+        '🔖 리마인드 메모',
+        ''
+    );
+    if (note === null) return; // 취소
+
+    const context = api.getContext();
+    const char = (context?.characters || []).find(c => c.avatar === charAvatar);
+
+    remindStore.add({
+        avatar: charAvatar,
+        charName: char?.name || charAvatar.replace(/\.[^.]+$/, ''),
+        fileName: cleanName,
+        start,
+        end,
+        note: note.trim(),
+    });
+
+    const rangeText = start !== null ? ` (#${start}~#${end})` : '';
+    showToast(`🔖 리마인드 저장됨${rangeText}\n보관함 탭에서 다시 볼 수 있어요.`, 'success');
 }
 
 // ============================================
@@ -1306,8 +1374,9 @@ async function renameChatPrompt(charAvatar, fileName) {
     try {
         const success = await api.renameChat(charAvatar, currentName, newName);
         if (success) {
-            // 폴더 배정/즐겨찾기 키 함께 이동
+            // 폴더 배정/즐겨찾기/리마인드 키 함께 이동
             storage.renameChatKey(charAvatar, currentName, newName);
+            remindStore.renameChat(charAvatar, currentName, newName);
             showToast(`이름 변경: "${newName}"`, 'success');
             await refreshCurrentChatList(true);
         } else {

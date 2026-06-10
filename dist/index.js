@@ -1595,6 +1595,33 @@ ${message}` : message;
       }
     }
     /**
+     * 채팅 메시지 전체 가져오기 (리마인드 뷰어용)
+     * @param {string} characterAvatar - 캐릭터 아바타
+     * @param {string} fileName - 채팅 파일명 (.jsonl 유무 무관)
+     * @returns {Promise<Array|null>} - 메시지 배열 (메타데이터 라인 제외), 실패 시 null
+     */
+    async getChatMessages(characterAvatar, fileName) {
+      try {
+        const charDir = characterAvatar.replace(/\.(png|jpg|webp)$/i, "");
+        const response = await this.fetchWithRetry("/api/chats/get", {
+          method: "POST",
+          headers: this.getRequestHeaders(),
+          body: JSON.stringify({
+            ch_name: charDir,
+            file_name: fileName.replace(/\.jsonl$/i, ""),
+            avatar_url: characterAvatar
+          })
+        });
+        if (!response.ok) return null;
+        const data = await response.json();
+        if (!Array.isArray(data) || data.length === 0) return null;
+        return data.slice(1);
+      } catch (error) {
+        console.error("[API] Failed to get chat messages:", error);
+        return null;
+      }
+    }
+    /**
      * 채팅 이름 변경
      * @param {string} charAvatar - 캐릭터 아바타
      * @param {string} oldFileName - 기존 파일명 (.jsonl 유무 무관)
@@ -3233,6 +3260,107 @@ ${message}` : message;
     return false;
   }
 
+  // src/data/remindStore.js
+  var STORAGE_KEY3 = "chatLobby_reminds";
+  var RemindStore = class {
+    constructor() {
+      this._data = null;
+    }
+    /** @returns {Remind[]} */
+    _load() {
+      if (this._data) return this._data;
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY3);
+        this._data = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(this._data)) this._data = [];
+      } catch (e) {
+        console.warn("[RemindStore] Failed to load:", e);
+        this._data = [];
+      }
+      return this._data;
+    }
+    _save() {
+      try {
+        localStorage.setItem(STORAGE_KEY3, JSON.stringify(this._data));
+      } catch (e) {
+        console.warn("[RemindStore] Failed to save:", e);
+      }
+    }
+    /**
+     * 전체 목록 (최신순)
+     * @returns {Remind[]}
+     */
+    getAll() {
+      return [...this._load()].sort((a, b) => b.createdAt - a.createdAt);
+    }
+    /**
+     * 리마인드 추가
+     * @param {Omit<Remind, 'id'|'createdAt'>} remind
+     * @returns {Remind}
+     */
+    add(remind) {
+      const data = this._load();
+      const entry = {
+        ...remind,
+        id: "rm_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        createdAt: Date.now()
+      };
+      data.push(entry);
+      this._save();
+      return entry;
+    }
+    /**
+     * 리마인드 삭제
+     * @param {string} id
+     * @returns {boolean}
+     */
+    remove(id) {
+      const data = this._load();
+      const idx = data.findIndex((r) => r.id === id);
+      if (idx === -1) return false;
+      data.splice(idx, 1);
+      this._save();
+      return true;
+    }
+    /**
+     * ID로 조회
+     * @param {string} id
+     * @returns {Remind|null}
+     */
+    get(id) {
+      return this._load().find((r) => r.id === id) || null;
+    }
+    /**
+     * 채팅 이름 변경 시 동기화
+     * @param {string} avatar
+     * @param {string} oldFileName
+     * @param {string} newFileName
+     */
+    renameChat(avatar, oldFileName, newFileName) {
+      const oldName = (oldFileName || "").replace(/\.jsonl$/i, "");
+      const newName = (newFileName || "").replace(/\.jsonl$/i, "");
+      let changed = false;
+      for (const r of this._load()) {
+        if (r.avatar === avatar && r.fileName === oldName) {
+          r.fileName = newName;
+          changed = true;
+        }
+      }
+      if (changed) this._save();
+    }
+    /**
+     * 캐릭터 삭제 시 정리
+     * @param {string} avatar
+     */
+    removeByAvatar(avatar) {
+      const data = this._load();
+      const before = data.length;
+      this._data = data.filter((r) => r.avatar !== avatar);
+      if (this._data.length !== before) this._save();
+    }
+  };
+  var remindStore = new RemindStore();
+
   // src/ui/chatList.js
   var tooltipElement = null;
   var tooltipTimeout = null;
@@ -3933,6 +4061,9 @@ ${message}` : message;
         <div class="folder-menu-item rename-chat-item">
             \u270F\uFE0F \uC774\uB984 \uBC14\uAFB8\uAE30
         </div>
+        <div class="folder-menu-item remind-add-item">
+            \u{1F516} \uB9AC\uB9C8\uC778\uB4DC \uCD94\uAC00
+        </div>
         <div class="folder-menu-title">\uD3F4\uB354 \uC774\uB3D9</div>
         <div class="folder-menu-item ${!currentFolderId || currentFolderId === "uncategorized" ? "active" : ""}" data-folder-id="">
             \u{1F4E4} \uD3F4\uB354\uC5D0\uC11C \uC81C\uAC70
@@ -3964,7 +4095,11 @@ ${message}` : message;
       closeChatFolderMenu();
       await renameChatPrompt(charAvatar, fileName);
     });
-    menu.querySelectorAll(".folder-menu-item:not(.rename-chat-item)").forEach((item) => {
+    menu.querySelector(".remind-add-item")?.addEventListener("click", async () => {
+      closeChatFolderMenu();
+      await addRemindPrompt(charAvatar, fileName);
+    });
+    menu.querySelectorAll(".folder-menu-item:not(.rename-chat-item):not(.remind-add-item)").forEach((item) => {
       item.addEventListener("click", async () => {
         const folderId = item.dataset.folderId;
         if (folderId) {
@@ -3994,6 +4129,47 @@ ${message}` : message;
       activeFolderMenu = null;
     }
     listeners.clear("chatFolderMenu");
+  }
+  async function addRemindPrompt(charAvatar, fileName) {
+    const cleanName = fileName.replace(/\.jsonl$/i, "");
+    const rangeInput = await showPrompt(
+      "\uC800\uC7A5\uD560 \uBA54\uC2DC\uC9C0 \uBC94\uC704\uB97C \uC785\uB825\uD558\uC138\uC694. (\uBA54\uC2DC\uC9C0 \uBC88\uD638 \uAE30\uC900)\n\uC608: 120-130 / 120 (\uD55C \uBA54\uC2DC\uC9C0) / \uBE44\uC6B0\uBA74 \uC804\uCCB4",
+      "\u{1F516} \uB9AC\uB9C8\uC778\uB4DC \uCD94\uAC00",
+      ""
+    );
+    if (rangeInput === null) return;
+    let start = null;
+    let end = null;
+    const trimmed = rangeInput.trim();
+    if (trimmed) {
+      const match = trimmed.match(/^(\d+)\s*[-~]\s*(\d+)$/) || trimmed.match(/^(\d+)$/);
+      if (!match) {
+        showToast("\uBC94\uC704 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC608: 120-130", "error");
+        return;
+      }
+      start = parseInt(match[1], 10);
+      end = match[2] !== void 0 ? parseInt(match[2], 10) : start;
+      if (end < start) [start, end] = [end, start];
+    }
+    const note = await showPrompt(
+      "\uBA54\uBAA8\uB97C \uB0A8\uACA8\uC8FC\uC138\uC694. (\uC65C \uC88B\uC558\uB294\uC9C0, \uC5B4\uB5A4 \uC7A5\uBA74\uC778\uC9C0)",
+      "\u{1F516} \uB9AC\uB9C8\uC778\uB4DC \uBA54\uBAA8",
+      ""
+    );
+    if (note === null) return;
+    const context = api.getContext();
+    const char = (context?.characters || []).find((c) => c.avatar === charAvatar);
+    remindStore.add({
+      avatar: charAvatar,
+      charName: char?.name || charAvatar.replace(/\.[^.]+$/, ""),
+      fileName: cleanName,
+      start,
+      end,
+      note: note.trim()
+    });
+    const rangeText = start !== null ? ` (#${start}~#${end})` : "";
+    showToast(`\u{1F516} \uB9AC\uB9C8\uC778\uB4DC \uC800\uC7A5\uB428${rangeText}
+\uBCF4\uAD00\uD568 \uD0ED\uC5D0\uC11C \uB2E4\uC2DC \uBCFC \uC218 \uC788\uC5B4\uC694.`, "success");
   }
   async function renameChatPrompt(charAvatar, fileName) {
     const currentName = fileName.replace(/\.jsonl$/i, "");
@@ -4025,6 +4201,7 @@ ${message}` : message;
       const success = await api.renameChat(charAvatar, currentName, newName);
       if (success) {
         storage.renameChatKey(charAvatar, currentName, newName);
+        remindStore.renameChat(charAvatar, currentName, newName);
         showToast(`\uC774\uB984 \uBCC0\uACBD: "${newName}"`, "success");
         await refreshCurrentChatList(true);
       } else {
@@ -5016,7 +5193,7 @@ ${message}` : message;
   }
 
   // src/data/calendarStorage.js
-  var STORAGE_KEY3 = "chatLobby_calendar";
+  var STORAGE_KEY4 = "chatLobby_calendar";
   var CURRENT_VERSION = 1;
   var _snapshotsCache = null;
   function getLocalDateString(date = /* @__PURE__ */ new Date()) {
@@ -5027,14 +5204,14 @@ ${message}` : message;
       return _snapshotsCache;
     }
     try {
-      const data = localStorage.getItem(STORAGE_KEY3);
+      const data = localStorage.getItem(STORAGE_KEY4);
       if (data) {
         const parsed = JSON.parse(data);
         const version = parsed.version || 0;
         if (version < CURRENT_VERSION) {
           console.debug("[Calendar] Migrating data from version", version, "to", CURRENT_VERSION);
           const migrated = { version: CURRENT_VERSION, snapshots: parsed.snapshots || {} };
-          localStorage.setItem(STORAGE_KEY3, JSON.stringify(migrated));
+          localStorage.setItem(STORAGE_KEY4, JSON.stringify(migrated));
         }
         _snapshotsCache = parsed.snapshots || {};
         return _snapshotsCache;
@@ -5064,7 +5241,7 @@ ${message}` : message;
     }
     if (deleted > 0) {
       console.debug("[Calendar] Deleted", deleted, "old snapshots (2+ years)");
-      localStorage.setItem(STORAGE_KEY3, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+      localStorage.setItem(STORAGE_KEY4, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
     }
   }
   function saveSnapshot(date, total, topChar, byChar = {}, lastChatTimes = {}, isBaseline = false) {
@@ -5077,7 +5254,7 @@ ${message}` : message;
       const existingTimes = snapshots[date]?.lastChatTimes || {};
       const mergedLastChatTimes = { ...existingTimes, ...lastChatTimes };
       snapshots[date] = { total, topChar, byChar, lastChatTimes: mergedLastChatTimes };
-      localStorage.setItem(STORAGE_KEY3, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+      localStorage.setItem(STORAGE_KEY4, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
       console.debug("[Calendar] saveSnapshot:", date, "| total:", total, "| topChar:", topChar, "| lastChatTimes count:", Object.keys(mergedLastChatTimes).length);
     } catch (e) {
       if (e.name === "QuotaExceededError") {
@@ -5088,7 +5265,7 @@ ${message}` : message;
           const existingTimes = snapshots[date]?.lastChatTimes || {};
           const mergedLastChatTimes = { ...existingTimes, ...lastChatTimes };
           snapshots[date] = { total, topChar, byChar, lastChatTimes: mergedLastChatTimes };
-          localStorage.setItem(STORAGE_KEY3, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+          localStorage.setItem(STORAGE_KEY4, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
         } catch (e2) {
           console.error("[Calendar] Still failed after cleanup:", e2);
         }
@@ -5100,10 +5277,718 @@ ${message}` : message;
   function clearAllSnapshots() {
     try {
       _snapshotsCache = null;
-      localStorage.removeItem(STORAGE_KEY3);
+      localStorage.removeItem(STORAGE_KEY4);
     } catch (e) {
       console.error("[Calendar] Failed to clear snapshots:", e);
     }
+  }
+
+  // src/utils/chatTextFormatter.js
+  init_textUtils();
+  function getScriptFlags(script) {
+    switch (script?.substituteRegex) {
+      case 1:
+        return "g";
+      case 2:
+        return "i";
+      case 3:
+        return "";
+      default:
+        return "gi";
+    }
+  }
+  function regexFromString(regexStr, script) {
+    if (!regexStr) return null;
+    const slashForm = regexStr.match(/^\/(.*?)\/([gimsuy]*)$/);
+    try {
+      if (slashForm) return new RegExp(slashForm[1], slashForm[2]);
+      return new RegExp(regexStr, getScriptFlags(script));
+    } catch (e) {
+      console.warn("[ChatFormatter] Invalid regex:", regexStr, e.message);
+      return null;
+    }
+  }
+  function collectRegexScripts(context, charAvatar) {
+    const scripts = [];
+    const ext = context?.extensionSettings || {};
+    if (Array.isArray(ext.regex)) scripts.push(...ext.regex);
+    else if (Array.isArray(ext.regex?.scripts)) scripts.push(...ext.regex.scripts);
+    if (Array.isArray(ext.regex_scripts)) scripts.push(...ext.regex_scripts);
+    try {
+      const char = (context?.characters || []).find((c) => c.avatar === charAvatar);
+      const embedded = char?.data?.extensions?.regex_scripts;
+      if (Array.isArray(embedded)) scripts.push(...embedded);
+    } catch (e) {
+    }
+    return scripts;
+  }
+  function applyRegexScript(script, text, options) {
+    if (!script?.findRegex || !text) return text;
+    const findRegex = regexFromString(script.findRegex, script);
+    if (!findRegex) return text;
+    const replaceTemplate = (script.replaceString || "").replace(/\{\{match\}\}/gi, "$0");
+    const trimStrings = Array.isArray(script.trimStrings) ? script.trimStrings.filter(Boolean) : [];
+    try {
+      return text.replace(findRegex, function() {
+        const args = [...arguments];
+        let output = replaceTemplate.replace(/\$(\d+)|\$<([^>]+)>/g, (_, num, groupName) => {
+          let groupMatch;
+          if (num !== void 0) {
+            groupMatch = args[Number(num)];
+          } else if (groupName) {
+            const groups = args[args.length - 1];
+            groupMatch = groups && typeof groups === "object" ? groups[groupName] : void 0;
+          }
+          if (!groupMatch) return "";
+          for (const trimStr of trimStrings) {
+            groupMatch = groupMatch.replaceAll(trimStr, "");
+          }
+          return groupMatch;
+        });
+        if (options.characterName) {
+          output = output.replace(/\{\{charkey\}\}/gi, options.characterName);
+          output = output.replace(/\{\{char\}\}/gi, options.characterName);
+        }
+        if (options.userName) {
+          output = output.replace(/\{\{user\}\}/gi, options.userName);
+        }
+        return output;
+      });
+    } catch (e) {
+      console.warn("[ChatFormatter] Regex script failed:", script.scriptName, e);
+      return text;
+    }
+  }
+  function applyStRegexScripts(text, options) {
+    if (!text) return text;
+    try {
+      const context = window.SillyTavern?.getContext?.();
+      if (!context) return text;
+      const scripts = collectRegexScripts(context, options.charAvatar);
+      let result = text;
+      for (const script of scripts) {
+        if (script.disabled) continue;
+        if (script.promptOnly) continue;
+        if (Array.isArray(script.placement) && script.placement.length > 0) {
+          const forAi = script.placement.includes(2);
+          const forUser = script.placement.includes(1);
+          const forDisplay = script.placement.includes(0);
+          if (options.isUser && !forUser && !forDisplay) continue;
+          if (!options.isUser && !forAi && !forDisplay) continue;
+        }
+        result = applyRegexScript(script, result, options);
+      }
+      return result;
+    } catch (e) {
+      console.warn("[ChatFormatter] applyStRegexScripts error:", e);
+      return text;
+    }
+  }
+  function escapeAttr(str) {
+    if (!str) return "";
+    return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function resolveImagePath(filename, characterName) {
+    if (!filename) return "";
+    if (filename.startsWith("http://") || filename.startsWith("https://") || filename.startsWith("data:")) {
+      return filename;
+    }
+    if (filename.startsWith("/")) return filename;
+    return `/characters/${encodeURIComponent(characterName || "Unknown")}/${encodeURIComponent(filename)}`;
+  }
+  function createImageHtml(src, alt) {
+    return `<div class="remind-image-container"><img class="remind-image" src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" title="${escapeAttr(alt)}" loading="lazy" decoding="async"></div>`;
+  }
+  function processImages(text, characterName) {
+    if (!text) return text;
+    return text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
+      const trimmed = filename.trim();
+      return createImageHtml(resolveImagePath(trimmed, characterName), trimmed);
+    });
+  }
+  function renderExtraImagesHtml(message) {
+    if (!message?.extra) return "";
+    const images = [];
+    const extra = Object.assign({}, message.extra);
+    if (Array.isArray(extra.media)) {
+      for (const media of extra.media) {
+        if (media && media.url && (!media.type || media.type === "image")) {
+          images.push({ src: media.url, alt: media.title || "" });
+        }
+      }
+    }
+    if (images.length === 0 && extra.image) {
+      images.push({ src: extra.image, alt: extra.title || "" });
+    }
+    if (images.length === 0 && Array.isArray(extra.image_swipes)) {
+      const idx = extra.media_index ?? extra.image_swipes.length - 1;
+      const url = extra.image_swipes[idx] || extra.image_swipes[extra.image_swipes.length - 1];
+      if (url) images.push({ src: url, alt: extra.title || "" });
+    }
+    if (images.length === 0) return "";
+    return '<div class="remind-extra-images">' + images.map((img) => createImageHtml(img.src, img.alt)).join("") + "</div>";
+  }
+  function unwrapPreviousInfoBlocks(text) {
+    if (!text) return text;
+    text = text.replace(/<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/gi, "");
+    let openCount = (text.match(/<details\b/gi) || []).length;
+    let closeCount = (text.match(/<\/details\s*>/gi) || []).length;
+    while (closeCount > openCount) {
+      text = text.replace(/<\/details\s*>/, "");
+      closeCount--;
+    }
+    return text;
+  }
+  function removeCursorMarkers(text) {
+    if (!text) return text;
+    text = text.replace(/^\s*\|\s*$/gm, "");
+    text = text.replace(/<cursor\s*\/?>/gi, "");
+    text = text.replace(/\{\{cursor\}\}/gi, "");
+    text = text.replace(/\n{3,}/g, "\n\n");
+    return text;
+  }
+  var IFRAME_OVERRIDE_CSS = "<style>html,body{margin:0!important;padding:0!important;background:transparent;}html{scrollbar-width:none!important;}::-webkit-scrollbar{display:none!important;}</style>";
+  var IFRAME_RESIZE_SCRIPT = `<script>
+(function(){
+  document.addEventListener('DOMContentLoaded',function(){
+    if(document.getElementById('rm-wrap'))return;
+    var w=document.createElement('div');
+    w.id='rm-wrap';
+    while(document.body.firstChild)w.appendChild(document.body.firstChild);
+    document.body.appendChild(w);
+    init();
+  });
+  function init(){
+    var w=document.getElementById('rm-wrap');
+    if(!w)return;
+    var timer=null;
+    function sendH(){
+      if(timer)return;
+      timer=setTimeout(function(){
+        timer=null;
+        var orig=w.style.height;
+        var origOv=w.style.overflow;
+        w.style.overflow='auto';
+        w.style.height='0';
+        var h=w.scrollHeight;
+        w.style.height=orig||'';
+        w.style.overflow=origOv||'';
+        if(h>0){
+          window.parent.postMessage({type:'remind-iframe-resize',height:h},'*');
+        }
+      },0);
+    }
+    sendH();
+    document.querySelectorAll('details').forEach(function(d){
+      d.addEventListener('toggle',function(){
+        sendH();
+        setTimeout(sendH,100);
+        setTimeout(sendH,300);
+      });
+    });
+    new MutationObserver(function(){sendH();}).observe(w,{childList:true,subtree:true,attributes:true});
+    [100,300,600,1500,3000].forEach(function(d){setTimeout(sendH,d);});
+  }
+})();
+<\/script>`;
+  function convertHtmlDocsToIframes(text) {
+    const iframePlaceholders = [];
+    if (!text) return { text, iframePlaceholders };
+    const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
+    const processed = text.replace(htmlDocPattern, (match) => {
+      let modified = match.replace(/^\s*\[/, "").replace(/\]\s*$/, "");
+      if (modified.includes("</head>")) {
+        modified = modified.replace("</head>", IFRAME_OVERRIDE_CSS + "</head>");
+      } else if (modified.includes("<body")) {
+        modified = modified.replace("<body", IFRAME_OVERRIDE_CSS + "<body");
+      } else {
+        modified = IFRAME_OVERRIDE_CSS + modified;
+      }
+      if (modified.includes("</body>")) {
+        modified = modified.replace("</body>", IFRAME_RESIZE_SCRIPT + "</body>");
+      } else {
+        modified += IFRAME_RESIZE_SCRIPT;
+      }
+      const b64 = btoa(unescape(encodeURIComponent(modified)));
+      const iframe = `<iframe class="remind-regex-iframe" data-remind-html="${b64}" sandbox="allow-scripts" frameborder="0" scrolling="no"></iframe>`;
+      const index = iframePlaceholders.length;
+      iframePlaceholders.push(iframe);
+      return `
+%%%RM_IFRAME_${index}%%%
+`;
+    });
+    return { text: processed, iframePlaceholders };
+  }
+  function restoreIframePlaceholders(html, iframePlaceholders) {
+    if (!iframePlaceholders || iframePlaceholders.length === 0) return html;
+    return html.replace(
+      /(?:<br\s*\/?>)?\s*(?:<pre[^>]*>)?\s*(?:<code[^>]*>)?\s*(?:<p[^>]*>)?\s*%%%RM_IFRAME_(\d+)%%%\s*(?:<\/p>)?\s*(?:<\/code>)?\s*(?:<\/pre>)?\s*(?:<br\s*\/?>)?/g,
+      (match, index) => iframePlaceholders[parseInt(index, 10)] || match
+    );
+  }
+  function processChoices(text) {
+    if (!text) return text;
+    return text.replace(/<choices>([\s\S]*?)<\/choices>/gi, (match, content) => {
+      const lines = content.trim().split("\n").filter((l) => l.trim());
+      if (lines.length === 0) return match;
+      let html = '<div class="remind-choices"><div class="remind-choices-header">\uC120\uD0DD\uC9C0</div>';
+      lines.forEach((line, i) => {
+        const cleanLine = line.replace(/^\d+[.)\-]\s*/, "").trim();
+        if (cleanLine) {
+          html += `<div class="remind-choice-card"><span class="remind-choice-num">${i + 1}.</span><span>${escapeHtml(cleanLine)}</span></div>`;
+        }
+      });
+      html += "</div>";
+      return html;
+    });
+  }
+  function processInlineMarkdown(text) {
+    if (!text) return "";
+    text = text.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
+    text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    text = text.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    text = text.replace(/~~(.+?)~~/g, "<del>$1</del>");
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return text;
+  }
+  function renderMarkdown(text) {
+    if (!text) return "";
+    const protectedBlocks = [];
+    function protectBlock(match) {
+      const idx = protectedBlocks.length;
+      protectedBlocks.push(match);
+      return `\0HTMLBLOCK${idx}\0`;
+    }
+    const codeBlocks = [];
+    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+      const idx = codeBlocks.length;
+      codeBlocks.push(`<pre class="remind-code"><code>${escapeHtml(code.trim())}</code></pre>`);
+      return `\0CODEBLOCK${idx}\0`;
+    });
+    const inlineCodes = [];
+    text = text.replace(/`([^`]+)`/g, (match, code) => {
+      const idx = inlineCodes.length;
+      inlineCodes.push(`<code class="remind-inline-code">${escapeHtml(code)}</code>`);
+      return `\0INLINECODE${idx}\0`;
+    });
+    text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, protectBlock);
+    text = text.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, protectBlock);
+    text = text.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, protectBlock);
+    const blockOpenRe = /<(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|pre|dl)\b/gi;
+    const blockCloseRe = /<\/(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|pre|dl)\s*>/gi;
+    const countOpens = (str) => (str.match(blockOpenRe) || []).length;
+    const countCloses = (str) => (str.match(blockCloseRe) || []).length;
+    const lines = text.split("\n");
+    const result = [];
+    let inList = false;
+    let listType = "";
+    let htmlBlockDepth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (htmlBlockDepth > 0) {
+        htmlBlockDepth += countOpens(trimmed) - countCloses(trimmed);
+        if (htmlBlockDepth < 0) htmlBlockDepth = 0;
+        result.push(line);
+        continue;
+      }
+      if (/^<[a-zA-Z]/.test(trimmed)) {
+        const opens = countOpens(trimmed);
+        const closes = countCloses(trimmed);
+        if (opens > closes) {
+          htmlBlockDepth = opens - closes;
+        }
+        result.push(trimmed);
+        continue;
+      }
+      if (/^<\/[a-zA-Z]/.test(trimmed)) {
+        htmlBlockDepth -= countCloses(trimmed);
+        if (htmlBlockDepth < 0) htmlBlockDepth = 0;
+        result.push(trimmed);
+        continue;
+      }
+      if (inList && !trimmed.match(/^[-*]\s/) && !trimmed.match(/^\d+\.\s/)) {
+        result.push(listType === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      if (!trimmed) {
+        result.push("<br />");
+        continue;
+      }
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        const level = headingMatch[1].length;
+        result.push(`<h${level} class="remind-h">${processInlineMarkdown(headingMatch[2])}</h${level}>`);
+        continue;
+      }
+      if (/^[-*_]{3,}\s*$/.test(trimmed)) {
+        result.push('<hr class="remind-hr" />');
+        continue;
+      }
+      if (trimmed.startsWith(">")) {
+        result.push(`<blockquote class="remind-quote">${processInlineMarkdown(trimmed.replace(/^>\s?/, ""))}</blockquote>`);
+        continue;
+      }
+      const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
+      if (ulMatch) {
+        if (!inList || listType !== "ul") {
+          if (inList) result.push(listType === "ul" ? "</ul>" : "</ol>");
+          result.push('<ul class="remind-list-md">');
+          inList = true;
+          listType = "ul";
+        }
+        result.push(`<li>${processInlineMarkdown(ulMatch[1])}</li>`);
+        continue;
+      }
+      const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+      if (olMatch) {
+        if (!inList || listType !== "ol") {
+          if (inList) result.push(listType === "ul" ? "</ul>" : "</ol>");
+          result.push('<ol class="remind-list-md">');
+          inList = true;
+          listType = "ol";
+        }
+        result.push(`<li>${processInlineMarkdown(olMatch[1])}</li>`);
+        continue;
+      }
+      if (/^\x00(HTMLBLOCK|CODEBLOCK|INLINECODE)\d+\x00$/.test(trimmed)) {
+        result.push(trimmed);
+        continue;
+      }
+      result.push(`<p class="remind-p">${processInlineMarkdown(trimmed)}</p>`);
+    }
+    if (inList) {
+      result.push(listType === "ul" ? "</ul>" : "</ol>");
+    }
+    text = result.join("\n");
+    codeBlocks.forEach((block, i) => {
+      text = text.replace(`\0CODEBLOCK${i}\0`, () => block);
+    });
+    inlineCodes.forEach((code, i) => {
+      text = text.replace(`\0INLINECODE${i}\0`, () => code);
+    });
+    protectedBlocks.forEach((block, i) => {
+      text = text.replace(`\0HTMLBLOCK${i}\0`, () => block);
+    });
+    return text;
+  }
+  function styleDialogue(html) {
+    if (!html) return html;
+    html = html.replace(/(?<=>|^)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match) => {
+      return match.replace(/"([^"]+)"/g, '<span class="remind-dialogue">"$1"</span>');
+    });
+    html = html.replace(/(?<=>|^)([^<]*?「[^」]*?」[^<]*?)(?=<|$)/g, (match) => {
+      return match.replace(/「([^」]+)」/g, '<span class="remind-dialogue">\u300C$1\u300D</span>');
+    });
+    return html;
+  }
+  function sanitizeHtml(html) {
+    const doc = document.implementation.createHTMLDocument("");
+    const root = doc.createElement("div");
+    root.innerHTML = html;
+    root.querySelectorAll("script, object, embed, link, meta, base, form").forEach((el) => el.remove());
+    root.querySelectorAll("iframe").forEach((el) => {
+      if (!el.classList.contains("remind-regex-iframe")) {
+        el.remove();
+        return;
+      }
+      el.setAttribute("sandbox", "allow-scripts");
+      el.removeAttribute("src");
+      el.removeAttribute("srcdoc");
+    });
+    root.querySelectorAll("*").forEach((el) => {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith("on")) {
+          el.removeAttribute(attr.name);
+        } else if ((name === "href" || name === "src" || name === "xlink:href") && /^\s*javascript:/i.test(attr.value)) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
+    return root.innerHTML;
+  }
+  function renderMessageHtml(message, options) {
+    let text = message.mes || "";
+    if (Array.isArray(message.swipes) && typeof message.swipe_id === "number" && message.swipes[message.swipe_id] !== void 0) {
+      text = message.swipes[message.swipe_id];
+    }
+    if (!text && !message.extra) return "";
+    if (options.userName) text = text.replace(/\{\{user\}\}/gi, options.userName);
+    if (options.characterName) text = text.replace(/\{\{char\}\}/gi, options.characterName);
+    if (options.applyRegex !== false) {
+      text = applyStRegexScripts(text, {
+        isUser: !!message.is_user,
+        characterName: options.characterName,
+        userName: options.userName,
+        charAvatar: options.charAvatar
+      });
+    }
+    text = unwrapPreviousInfoBlocks(text);
+    text = removeCursorMarkers(text);
+    const { text: textWithPlaceholders, iframePlaceholders } = convertHtmlDocsToIframes(text);
+    text = textWithPlaceholders;
+    text = processImages(text, options.characterName);
+    text = processChoices(text);
+    text = renderMarkdown(text);
+    text = restoreIframePlaceholders(text, iframePlaceholders);
+    text = styleDialogue(text);
+    const extraImgHtml = renderExtraImagesHtml(message);
+    if (extraImgHtml) {
+      if (message.extra?.inline_image) {
+        text = extraImgHtml;
+      } else {
+        text += extraImgHtml;
+      }
+    }
+    return sanitizeHtml(text);
+  }
+
+  // src/ui/remindViewer.js
+  init_textUtils();
+  init_notifications();
+  var isViewerOpen = false;
+  var currentRemind = null;
+  var currentMessages = null;
+  var regexEnabled = true;
+  async function openRemindViewer(remindId) {
+    const remind = remindStore.get(remindId);
+    if (!remind) {
+      showToast("\uB9AC\uB9C8\uC778\uB4DC\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
+      return;
+    }
+    closeRemindViewer();
+    currentRemind = remind;
+    currentMessages = null;
+    regexEnabled = true;
+    const container = document.getElementById("chat-lobby-container") || document.body;
+    const rangeText = remind.start !== null || remind.end !== null ? `#${remind.start ?? 0} ~ ${remind.end !== null ? "#" + remind.end : "\uB05D"}` : "\uC804\uCCB4";
+    const overlay = document.createElement("div");
+    overlay.id = "chat-lobby-remind-viewer";
+    overlay.innerHTML = `
+        <div class="remind-viewer-panel">
+            <header class="remind-viewer-header">
+                <div class="remind-viewer-title">
+                    <span class="remind-viewer-char">${escapeHtml(remind.charName || "")}</span>
+                    <span class="remind-viewer-file">${escapeHtml(remind.fileName)} \xB7 ${escapeHtml(rangeText)}</span>
+                    ${remind.note ? `<span class="remind-viewer-note">\u{1F516} ${escapeHtml(remind.note)}</span>` : ""}
+                </div>
+                <div class="remind-viewer-actions">
+                    <button class="remind-viewer-btn" id="remind-viewer-regex" title="ST \uC815\uADDC\uC2DD \uC2A4\uD06C\uB9BD\uD2B8 \uC801\uC6A9 \uCF1C\uAE30/\uB044\uAE30">\u2728 \uC815\uADDC\uC2DD ON</button>
+                    <button class="remind-viewer-btn" id="remind-viewer-export" title="\uC774 \uAD6C\uAC04\uC744 \uD14D\uC2A4\uD2B8 \uD30C\uC77C\uB85C \uBC31\uC5C5">\u{1F4BE} \uBC31\uC5C5</button>
+                    <button class="remind-viewer-close" title="\uB2EB\uAE30">\u2715</button>
+                </div>
+            </header>
+            <div class="remind-viewer-body">
+                <div class="remind-viewer-loading">\u{1F4D6} \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uB294 \uC911...</div>
+            </div>
+            <div class="remind-lightbox" id="remind-lightbox">
+                <div class="remind-lightbox-backdrop"></div>
+                <div class="remind-lightbox-content">
+                    <img class="remind-lightbox-img" src="" alt="">
+                    <div class="remind-lightbox-caption"></div>
+                    <button class="remind-lightbox-close" title="\uB2EB\uAE30">\u2715</button>
+                </div>
+            </div>
+        </div>
+    `;
+    container.appendChild(overlay);
+    isViewerOpen = true;
+    listeners.add("remindViewer", overlay.querySelector(".remind-viewer-close"), "click", closeRemindViewer);
+    listeners.add("remindViewer", overlay.querySelector("#remind-viewer-regex"), "click", toggleRegex);
+    listeners.add("remindViewer", overlay.querySelector("#remind-viewer-export"), "click", exportCurrentRange);
+    listeners.add("remindViewer", overlay, "click", (e) => {
+      if (e.target === overlay) closeRemindViewer();
+    });
+    listeners.add("remindViewer", document, "keydown", handleViewerKeydown);
+    const viewerBody = overlay.querySelector(".remind-viewer-body");
+    listeners.add("remindViewer", viewerBody, "click", (e) => {
+      const img = e.target.closest("img");
+      if (img) {
+        e.preventDefault();
+        e.stopPropagation();
+        openLightbox(img.src, img.alt || img.title || "");
+      }
+    });
+    listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-backdrop"), "click", closeLightbox);
+    listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-close"), "click", closeLightbox);
+    listeners.add("remindViewer", viewerBody, "error", (e) => {
+      const img = e.target;
+      if (img?.tagName === "IMG" && img.closest(".remind-image-container")) {
+        img.closest(".remind-image-container").innerHTML = `<div class="remind-image-fallback">\u{1F5BC}\uFE0F ${escapeHtml(img.alt || "\uC774\uBBF8\uC9C0\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC74C")}</div>`;
+      }
+    }, true);
+    listeners.add("remindViewer", window, "message", (e) => {
+      if (e.data?.type !== "remind-iframe-resize" || typeof e.data.height !== "number") return;
+      const iframes = document.querySelectorAll("#chat-lobby-remind-viewer iframe.remind-regex-iframe");
+      for (const frame of iframes) {
+        if (frame.contentWindow === e.source) {
+          const h = Math.ceil(e.data.height);
+          frame.style.height = (h > 20 ? h : 400) + "px";
+          break;
+        }
+      }
+    });
+    const body = overlay.querySelector(".remind-viewer-body");
+    try {
+      const messages = await api.getChatMessages(remind.avatar, remind.fileName);
+      if (!messages || messages.length === 0) {
+        body.innerHTML = '<div class="remind-viewer-loading">\u26A0\uFE0F \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. (\uD30C\uC77C\uC774 \uC0AD\uC81C\uB418\uC5C8\uAC70\uB098 \uC774\uB984\uC774 \uBC14\uB00C\uC5C8\uC744 \uC218 \uC788\uC5B4\uC694)</div>';
+        return;
+      }
+      currentMessages = messages;
+      renderMessages();
+    } catch (e) {
+      console.error("[RemindViewer] Load failed:", e);
+      body.innerHTML = '<div class="remind-viewer-loading">\u26A0\uFE0F \uCC44\uD305 \uB85C\uB529 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.</div>';
+    }
+  }
+  function closeRemindViewer() {
+    const overlay = document.getElementById("chat-lobby-remind-viewer");
+    if (overlay) overlay.remove();
+    listeners.clear("remindViewer");
+    isViewerOpen = false;
+    currentRemind = null;
+    currentMessages = null;
+  }
+  function handleViewerKeydown(e) {
+    if (e.key === "Escape" && isViewerOpen) {
+      e.stopPropagation();
+      const lb = document.getElementById("remind-lightbox");
+      if (lb?.classList.contains("active")) {
+        closeLightbox();
+        return;
+      }
+      closeRemindViewer();
+    }
+  }
+  function toggleRegex() {
+    regexEnabled = !regexEnabled;
+    const btn = document.getElementById("remind-viewer-regex");
+    if (btn) {
+      btn.textContent = regexEnabled ? "\u2728 \uC815\uADDC\uC2DD ON" : "\u2728 \uC815\uADDC\uC2DD OFF";
+      btn.classList.toggle("off", !regexEnabled);
+    }
+    renderMessages();
+  }
+  function getCurrentSlice() {
+    if (!currentRemind || !currentMessages) return null;
+    const start = currentRemind.start ?? 0;
+    const end = currentRemind.end ?? currentMessages.length - 1;
+    return {
+      slice: currentMessages.slice(Math.max(0, start), Math.min(currentMessages.length, end + 1)),
+      start: Math.max(0, start)
+    };
+  }
+  function resolveMes(msg) {
+    if (Array.isArray(msg.swipes) && typeof msg.swipe_id === "number" && msg.swipes[msg.swipe_id] !== void 0) {
+      return msg.swipes[msg.swipe_id];
+    }
+    return msg.mes || "";
+  }
+  function openLightbox(src, alt) {
+    const lb = document.getElementById("remind-lightbox");
+    if (!lb) return;
+    lb.querySelector(".remind-lightbox-img").src = src;
+    lb.querySelector(".remind-lightbox-img").alt = alt;
+    lb.querySelector(".remind-lightbox-caption").textContent = alt;
+    lb.classList.add("active");
+  }
+  function closeLightbox() {
+    const lb = document.getElementById("remind-lightbox");
+    if (lb) lb.classList.remove("active");
+  }
+  function renderMessages() {
+    const body = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-body");
+    const data = getCurrentSlice();
+    if (!body || !data) return;
+    const { slice, start } = data;
+    if (slice.length === 0) {
+      body.innerHTML = `<div class="remind-viewer-loading">\u26A0\uFE0F \uD574\uB2F9 \uBC94\uC704\uC5D0 \uBA54\uC2DC\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. (\uCC44\uD305 \uAE38\uC774: ${currentMessages.length})</div>`;
+      return;
+    }
+    const userName = currentMessages.find((m) => m.is_user)?.name || "User";
+    const charName = currentRemind.charName || currentMessages.find((m) => !m.is_user && !m.is_system)?.name || "Character";
+    let html = "";
+    slice.forEach((msg, i) => {
+      const mesid = start + i;
+      const formatted = renderMessageHtml(msg, {
+        characterName: charName,
+        userName,
+        charAvatar: currentRemind.avatar,
+        applyRegex: regexEnabled
+      });
+      const roleClass = msg.is_user ? "is-user" : msg.is_system ? "is-system" : "is-char";
+      html += `
+        <article class="remind-msg ${roleClass}">
+            <div class="remind-msg-meta">
+                <span class="remind-msg-name">${escapeHtml(msg.name || (msg.is_user ? userName : charName))}</span>
+                <span class="remind-msg-id">#${mesid}</span>
+            </div>
+            <div class="remind-msg-body">${formatted}</div>
+        </article>`;
+    });
+    body.innerHTML = html;
+    body.scrollTop = 0;
+    hydrateRegexIframes(body);
+  }
+  function hydrateRegexIframes(scope) {
+    scope.querySelectorAll("iframe.remind-regex-iframe[data-remind-html]").forEach((iframe) => {
+      const b64 = iframe.getAttribute("data-remind-html");
+      iframe.removeAttribute("data-remind-html");
+      if (!b64) return;
+      try {
+        iframe.srcdoc = decodeURIComponent(escape(atob(b64)));
+      } catch (e) {
+        console.warn("[RemindViewer] iframe srcdoc set failed:", e);
+        iframe.replaceWith(Object.assign(document.createElement("div"), {
+          className: "remind-html-notice",
+          textContent: "\u{1F9E9} HTML \uBE14\uB85D\uC744 \uD45C\uC2DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."
+        }));
+        return;
+      }
+      iframe.addEventListener("load", () => {
+        setTimeout(() => {
+          if (!iframe.style.height || iframe.style.height === "0px") {
+            iframe.style.height = "400px";
+          }
+        }, 800);
+      });
+    });
+  }
+  function exportCurrentRange() {
+    const data = getCurrentSlice();
+    if (!data || data.slice.length === 0) {
+      showToast("\uB0B4\uBCF4\uB0BC \uBA54\uC2DC\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.", "warning");
+      return;
+    }
+    const { slice, start } = data;
+    const r = currentRemind;
+    const rangeText = r.start !== null ? `#${r.start}~#${r.end}` : "\uC804\uCCB4";
+    let text = `\u{1F516} ${r.charName} - ${r.fileName} (${rangeText})
+`;
+    if (r.note) text += `\uBA54\uBAA8: ${r.note}
+`;
+    text += `\uBC31\uC5C5\uC77C: ${(/* @__PURE__ */ new Date()).toLocaleString("ko-KR")}
+`;
+    text += "=".repeat(40) + "\n\n";
+    slice.forEach((msg, i) => {
+      text += `[#${start + i}] ${msg.name || (msg.is_user ? "User" : r.charName)}
+`;
+      text += resolveMes(msg) + "\n\n";
+      text += "-".repeat(40) + "\n\n";
+    });
+    const safeName = `${r.charName}_${r.fileName}_${rangeText}`.replace(/[\\/:*?"<>|#~\s]+/g, "_");
+    const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `remind_${safeName}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1e3);
+    showToast("\u{1F4BE} \uD14D\uC2A4\uD2B8 \uD30C\uC77C\uB85C \uBC31\uC5C5\uD588\uC2B5\uB2C8\uB2E4.", "success");
   }
 
   // src/ui/tabView.js
@@ -5441,6 +6326,9 @@ ${message}` : message;
     log(`Loaded ${state.folders.length} folders (excluding favorites)`);
     state.libraryChats = [];
     let keysToLoad = [];
+    if (state.libraryMode === "reminds") {
+      return;
+    }
     if (state.libraryMode === "favorites") {
       keysToLoad = data.favorites || [];
       log(`Loading ${keysToLoad.length} favorites`);
@@ -5519,13 +6407,17 @@ ${message}` : message;
     }
     container.innerHTML = `
         <div class="library-filter-bar">
-            <button class="library-filter-btn ${state.libraryMode === "favorites" ? "active" : ""}" 
+            <button class="library-filter-btn ${state.libraryMode === "favorites" ? "active" : ""}"
                     data-mode="favorites">
                 \u2B50 \uC990\uACA8\uCC3E\uAE30
             </button>
-            <button class="library-filter-btn ${state.libraryMode === "folders" ? "active" : ""}" 
+            <button class="library-filter-btn ${state.libraryMode === "folders" ? "active" : ""}"
                     data-mode="folders">
                 \u{1F4C1} \uD3F4\uB354
+            </button>
+            <button class="library-filter-btn ${state.libraryMode === "reminds" ? "active" : ""}"
+                    data-mode="reminds">
+                \u{1F516} \uB9AC\uB9C8\uC778\uB4DC
             </button>
             <button class="library-filter-btn folder-manage-btn" id="tab-folder-manage-btn" data-action="open-folder-modal" title="\uD3F4\uB354 \uAD00\uB9AC">
                 \u{1F4C1}
@@ -5544,7 +6436,7 @@ ${message}` : message;
             </div>
         ` : ""}
         <div class="library-content" id="library-content">
-            ${state.libraryMode === "favorites" ? renderFavoritesContent() : renderFoldersContent()}
+            ${state.libraryMode === "reminds" ? renderRemindsContent() : state.libraryMode === "favorites" ? renderFavoritesContent() : renderFoldersContent()}
         </div>
     `;
     container.querySelectorAll(".library-filter-btn[data-mode]").forEach((btn) => {
@@ -5579,7 +6471,67 @@ ${message}` : message;
       state.libraryBatchMode = false;
       renderLibraryView();
     });
-    bindLibraryChatEvents(container);
+    if (state.libraryMode === "reminds") {
+      bindRemindEvents(container);
+    } else {
+      bindLibraryChatEvents(container);
+    }
+  }
+  function renderRemindsContent() {
+    const reminds = remindStore.getAll();
+    if (reminds.length === 0) {
+      return `
+            <div class="tab-empty">
+                <span class="empty-icon">\u{1F516}</span>
+                <p>\uC800\uC7A5\uB41C \uB9AC\uB9C8\uC778\uB4DC\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4</p>
+                <small>\uCC44\uD305 \uBAA9\uB85D\uC758 \u22EE \uBA54\uB274\uC5D0\uC11C "\uB9AC\uB9C8\uC778\uB4DC \uCD94\uAC00"\uB85C<br>\uC88B\uC558\uB358 \uAD6C\uAC04\uC744 \uC800\uC7A5\uD574\uBCF4\uC138\uC694</small>
+            </div>
+        `;
+    }
+    return `
+        <div class="remind-list">
+            ${reminds.map((r) => {
+      const rangeText = r.start !== null ? `#${r.start}~#${r.end}` : "\uC804\uCCB4";
+      const date = new Date(r.createdAt).toLocaleDateString("ko-KR", { month: "short", day: "numeric" });
+      return `
+                <div class="remind-item" data-remind-id="${escapeHtml(r.id)}">
+                    <div class="remind-item-avatar">
+                        <img src="/characters/${encodeURIComponent(r.avatar)}" alt="" loading="lazy"
+                             onerror="this.parentElement.innerHTML='\u{1F516}'">
+                    </div>
+                    <div class="remind-item-info">
+                        <div class="remind-item-title">
+                            ${escapeHtml(r.charName)}
+                            <span class="remind-item-range">${escapeHtml(rangeText)}</span>
+                        </div>
+                        <div class="remind-item-file">${escapeHtml(r.fileName)}</div>
+                        ${r.note ? `<div class="remind-item-note">${escapeHtml(r.note)}</div>` : ""}
+                    </div>
+                    <div class="remind-item-side">
+                        <span class="remind-item-date">${date}</span>
+                        <button class="remind-item-delete" title="\uC0AD\uC81C">\u{1F5D1}\uFE0F</button>
+                    </div>
+                </div>`;
+    }).join("")}
+        </div>
+    `;
+  }
+  function bindRemindEvents(container) {
+    container.querySelectorAll(".remind-item").forEach((item) => {
+      const id = item.dataset.remindId;
+      item.querySelector(".remind-item-delete")?.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const confirmed = await showConfirm("\uC774 \uB9AC\uB9C8\uC778\uB4DC\uB97C \uC0AD\uC81C\uD558\uC2DC\uACA0\uC2B5\uB2C8\uAE4C?\n(\uCC44\uD305 \uC790\uCCB4\uB294 \uC0AD\uC81C\uB418\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4)");
+        if (confirmed) {
+          remindStore.remove(id);
+          showToast("\uB9AC\uB9C8\uC778\uB4DC \uC0AD\uC81C\uB428", "success");
+          renderLibraryView();
+        }
+      });
+      item.addEventListener("click", () => {
+        openRemindViewer(id);
+      });
+    });
   }
   function renderFavoritesContent() {
     if (state.libraryChats.length === 0) {
@@ -6405,7 +7357,7 @@ ${message}` : message;
   init_textUtils();
 
   // src/data/uiPrefs.js
-  var STORAGE_KEY4 = "chatLobby_uiPrefs";
+  var STORAGE_KEY5 = "chatLobby_uiPrefs";
   var DEFAULTS = {
     theme: null,
     // null = 레거시 키에서 마이그레이션
@@ -6426,7 +7378,7 @@ ${message}` : message;
       if (this._data) return this._data;
       let saved = {};
       try {
-        const raw = localStorage.getItem(STORAGE_KEY4);
+        const raw = localStorage.getItem(STORAGE_KEY5);
         if (raw) saved = JSON.parse(raw) || {};
       } catch (e) {
         console.warn("[UiPrefs] Failed to load:", e);
@@ -6441,7 +7393,7 @@ ${message}` : message;
     }
     _save() {
       try {
-        localStorage.setItem(STORAGE_KEY4, JSON.stringify(this._data));
+        localStorage.setItem(STORAGE_KEY5, JSON.stringify(this._data));
       } catch (e) {
         console.warn("[UiPrefs] Failed to save:", e);
       }
@@ -6467,13 +7419,54 @@ ${message}` : message;
 
   // src/ui/themeMenu.js
   init_textUtils();
+
+  // src/utils/drawerHelper.js
+  function openDrawerSafely(drawerId) {
+    const drawer = document.getElementById(drawerId);
+    if (!drawer) {
+      console.warn(`[ChatLobby] Drawer not found: ${drawerId}`);
+      return false;
+    }
+    const drawerContent = drawer.querySelector(".drawer-content");
+    const drawerIcon = drawer.querySelector(".drawer-icon");
+    if (!drawerContent) {
+      console.warn(`[ChatLobby] Drawer content not found in: ${drawerId}`);
+      return false;
+    }
+    if (drawerContent.classList.contains("openDrawer")) {
+      return true;
+    }
+    document.querySelectorAll(".drawer-content.openDrawer").forEach((el) => {
+      if (el !== drawerContent) {
+        el.classList.remove("openDrawer");
+        el.classList.add("closedDrawer");
+      }
+    });
+    document.querySelectorAll(".drawer-icon.openIcon").forEach((el) => {
+      if (el !== drawerIcon) {
+        el.classList.remove("openIcon");
+        el.classList.add("closedIcon");
+      }
+    });
+    drawerContent.classList.remove("closedDrawer");
+    drawerContent.classList.add("openDrawer");
+    if (drawerIcon) {
+      drawerIcon.classList.remove("closedIcon");
+      drawerIcon.classList.add("openIcon");
+    }
+    drawer.setAttribute("data-st-open", "true");
+    return true;
+  }
+
+  // src/ui/themeMenu.js
   var THEMES = [
     { id: "default", name: "\uC2DC\uB124\uB9C8 \uB2E4\uD06C", icon: "\u{1F3AC}", base: "dark", desc: "\uB137\uD50C\uB9AD\uC2A4 \uC2A4\uD0C0\uC77C" },
     { id: "light", name: "\uBAA8\uB178 \uB77C\uC774\uD2B8", icon: "\u{1F90D}", base: "light", desc: "\uAE54\uB054\uD55C \uBB34\uCC44\uC0C9" },
     { id: "glass", name: "\uAE00\uB798\uC2A4", icon: "\u{1FAE7}", base: "dark", desc: "\uBC18\uD22C\uBA85 \uBE14\uB7EC + \uAE00\uB85C\uC6B0" },
     { id: "polaroid", name: "\uD3F4\uB77C\uB85C\uC774\uB4DC", icon: "\u{1F4F8}", base: "light", desc: "\uC0AC\uC9C4 \uC561\uC790 \uCEEC\uB809\uC158" },
     { id: "messenger", name: "\uBC30\uB108 \uB9AC\uC2A4\uD2B8", icon: "\u{1F4AC}", base: "dark", desc: "\uC640\uC774\uB4DC \uBC30\uB108 \xB7 \uBAA8\uBC14\uC77C \uCD94\uCC9C" },
-    { id: "magazine", name: "\uB9E4\uAC70\uC9C4", icon: "\u{1F5DE}\uFE0F", base: "dark", desc: "\uC5D0\uB514\uD1A0\uB9AC\uC5BC \uD654\uBCF4 \uD0C0\uC774\uD3EC" }
+    { id: "magazine", name: "\uB9E4\uAC70\uC9C4", icon: "\u{1F5DE}\uFE0F", base: "dark", desc: "\uC5D0\uB514\uD1A0\uB9AC\uC5BC \uD654\uBCF4 \uD0C0\uC774\uD3EC" },
+    { id: "console", name: "\uCF58\uC194", icon: "\u{1F6F0}\uFE0F", base: "dark", desc: "\uC2E4\uB9AC \uBA54\uB274 \uB3C4\uD06C \uB0B4\uC7A5 \xB7 \uC2E4\uD5D8\uC801" }
   ];
   function getThemeById(id) {
     return THEMES.find((t) => t.id === id) || THEMES[0];
@@ -6584,8 +7577,53 @@ ${message}` : message;
     });
     applySizePrefs();
   }
+  var ST_DOCK_ITEMS = [
+    { icon: "\u{1F9E0}", label: "\uD504\uB9AC\uC14B", ids: ["leftNavHolder", "ai-response-configuration", "respective-presets-button"] },
+    { icon: "\u{1F50C}", label: "\uC5F0\uACB0", ids: ["sys-settings-button", "API-status-top", "api-connections-button"] },
+    { icon: "\u{1F170}\uFE0F", label: "\uD3EC\uB9E4\uD305", ids: ["advanced-formatting-button", "AdvancedFormatting"] },
+    { icon: "\u{1F4DA}", label: "\uC6D4\uB4DC\uC778\uD3EC", ids: ["WI-SP-button", "WIDrawerIcon", "WorldInfo", "world_info"] },
+    { icon: "\u2699\uFE0F", label: "\uC124\uC815", ids: ["user-settings-button"] },
+    { icon: "\u{1F5BC}\uFE0F", label: "\uBC30\uACBD", ids: ["logo_block", "backgrounds-button"] },
+    { icon: "\u{1F9E9}", label: "\uD655\uC7A5", ids: ["extensions-settings-button", "rm_extensions_block"] },
+    { icon: "\u{1F464}", label: "\uD398\uB974\uC18C\uB098", ids: ["persona-management-button"] },
+    { icon: "\u{1FAAA}", label: "\uCE90\uB9AD\uD130", ids: ["rightNavHolder"] }
+  ];
+  function resolveDrawerId(ids) {
+    for (const id of ids) {
+      const el = document.getElementById(id);
+      if (el && el.querySelector(".drawer-content")) return id;
+    }
+    return null;
+  }
+  function renderStDock() {
+    const dock = document.getElementById("chat-lobby-st-dock");
+    if (!dock) return;
+    const items = ST_DOCK_ITEMS.map((item) => ({ ...item, resolvedId: resolveDrawerId(item.ids) })).filter((item) => item.resolvedId);
+    dock.innerHTML = `
+        <div class="st-dock-title">ST</div>
+        ${items.map((item) => `
+            <button class="st-dock-btn" data-drawer-id="${escapeHtml(item.resolvedId)}" title="${escapeHtml(item.label)}">
+                <span class="st-dock-icon">${item.icon}</span>
+                <span class="st-dock-label">${escapeHtml(item.label)}</span>
+            </button>
+        `).join("")}
+    `;
+    if (dock.dataset.bound !== "true") {
+      dock.dataset.bound = "true";
+      listeners.add("stDock", dock, "click", async (e) => {
+        const btn = e.target.closest(".st-dock-btn");
+        if (!btn) return;
+        const drawerId = btn.dataset.drawerId;
+        if (!drawerId) return;
+        window.dispatchEvent(new CustomEvent("chatlobby:close"));
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        openDrawerSafely(drawerId);
+      });
+    }
+  }
   function cleanupThemeMenu() {
     listeners.clear("themeMenu");
+    listeners.clear("stDock");
   }
 
   // src/ui/templates.js
@@ -6630,6 +7668,8 @@ ${message}` : message;
             
             <!-- \uBA54\uC778 \uCF58\uD150\uCE20 -->
             <main id="chat-lobby-main">
+                <!-- ST \uBA54\uB274 \uB3C4\uD06C (\uCF58\uC194 \uD14C\uB9C8 \uC804\uC6A9, JS\uC5D0\uC11C \uB80C\uB354\uB9C1) -->
+                <aside id="chat-lobby-st-dock"></aside>
                 <!-- \uC67C\uCABD \uD328\uB110: \uD398\uB974\uC18C\uB098 + \uCE90\uB9AD\uD130 -->
                 <section id="chat-lobby-left" class="${collapsedClass}">
                     <!-- \uD398\uB974\uC18C\uB098 \uBC14 -->
@@ -6772,46 +7812,6 @@ ${message}` : message;
 
   // src/ui/personaBar.js
   init_textUtils();
-
-  // src/utils/drawerHelper.js
-  function openDrawerSafely(drawerId) {
-    const drawer = document.getElementById(drawerId);
-    if (!drawer) {
-      console.warn(`[ChatLobby] Drawer not found: ${drawerId}`);
-      return false;
-    }
-    const drawerContent = drawer.querySelector(".drawer-content");
-    const drawerIcon = drawer.querySelector(".drawer-icon");
-    if (!drawerContent) {
-      console.warn(`[ChatLobby] Drawer content not found in: ${drawerId}`);
-      return false;
-    }
-    if (drawerContent.classList.contains("openDrawer")) {
-      return true;
-    }
-    document.querySelectorAll(".drawer-content.openDrawer").forEach((el) => {
-      if (el !== drawerContent) {
-        el.classList.remove("openDrawer");
-        el.classList.add("closedDrawer");
-      }
-    });
-    document.querySelectorAll(".drawer-icon.openIcon").forEach((el) => {
-      if (el !== drawerIcon) {
-        el.classList.remove("openIcon");
-        el.classList.add("closedIcon");
-      }
-    });
-    drawerContent.classList.remove("closedDrawer");
-    drawerContent.classList.add("openDrawer");
-    if (drawerIcon) {
-      drawerIcon.classList.remove("closedIcon");
-      drawerIcon.classList.add("openIcon");
-    }
-    drawer.setAttribute("data-st-open", "true");
-    return true;
-  }
-
-  // src/ui/personaBar.js
   init_notifications();
   init_config();
   async function renderPersonaBar() {
@@ -9868,6 +10868,7 @@ ${message}` : message;
       setupHandlers();
       setupEventDelegation();
       initThemeMenuEvents(() => renderCharacterGrid(store.searchTerm));
+      renderStDock();
       setupSillyTavernEvents();
       startBackgroundPreload();
       addLobbyToOptionsMenu();
@@ -9929,7 +10930,8 @@ ${message}` : message;
           if (eventData?.character?.avatar) {
             lastChatCache.remove(eventData.character.avatar);
             clearCharacterCache(eventData.character.avatar);
-            console.debug("[ChatLobby] Removed deleted character from lastChatCache & branchCache:", eventData.character.avatar);
+            remindStore.removeByAvatar(eventData.character.avatar);
+            console.debug("[ChatLobby] Removed deleted character from caches:", eventData.character.avatar);
           }
           if (isLobbyOpen()) {
             renderCharacterGrid(store.searchTerm);

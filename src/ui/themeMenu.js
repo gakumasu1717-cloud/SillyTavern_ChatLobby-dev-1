@@ -16,6 +16,7 @@
 import { uiPrefs } from '../data/uiPrefs.js';
 import { listeners } from '../utils/listenerManager.js';
 import { escapeHtml } from '../utils/textUtils.js';
+import { openDrawerSafely } from '../utils/drawerHelper.js';
 
 export const THEMES = [
     { id: 'default',   name: '시네마 다크',  icon: '🎬', base: 'dark',  desc: '넷플릭스 스타일' },
@@ -24,6 +25,7 @@ export const THEMES = [
     { id: 'polaroid',  name: '폴라로이드',  icon: '📸', base: 'light', desc: '사진 액자 컬렉션' },
     { id: 'messenger', name: '배너 리스트', icon: '💬', base: 'dark',  desc: '와이드 배너 · 모바일 추천' },
     { id: 'magazine',  name: '매거진',     icon: '🗞️', base: 'dark',  desc: '에디토리얼 화보 타이포' },
+    { id: 'console',   name: '콘솔',       icon: '🛰️', base: 'dark',  desc: '실리 메뉴 도크 내장 · 실험적' },
 ];
 
 /**
@@ -179,9 +181,87 @@ export function initThemeMenuEvents(onDisplayPrefChange) {
     applySizePrefs();
 }
 
+// ============================================
+// ST 메뉴 도크 (콘솔 테마 전용)
+// 로비 안에서 실리태번 기본 메뉴(프리셋/연결/포매팅/월드인포/
+// 설정/확장/페르소나/캐릭터 패널)로 바로 점프하는 사이드 도크
+// ============================================
+
+/**
+ * 도크 항목 정의
+ * ids: ST 버전에 따라 드로어 홀더 id가 다를 수 있어 후보를 순서대로 탐색.
+ * 렌더 시점에 .drawer-content가 실제 존재하는 항목만 노출 → 버전 차이에 안전
+ */
+const ST_DOCK_ITEMS = [
+    { icon: '🧠', label: '프리셋',   ids: ['leftNavHolder', 'ai-response-configuration', 'respective-presets-button'] },
+    { icon: '🔌', label: '연결',     ids: ['sys-settings-button', 'API-status-top', 'api-connections-button'] },
+    { icon: '🅰️', label: '포매팅',  ids: ['advanced-formatting-button', 'AdvancedFormatting'] },
+    { icon: '📚', label: '월드인포', ids: ['WI-SP-button', 'WIDrawerIcon', 'WorldInfo', 'world_info'] },
+    { icon: '⚙️', label: '설정',     ids: ['user-settings-button'] },
+    { icon: '🖼️', label: '배경',     ids: ['logo_block', 'backgrounds-button'] },
+    { icon: '🧩', label: '확장',     ids: ['extensions-settings-button', 'rm_extensions_block'] },
+    { icon: '👤', label: '페르소나', ids: ['persona-management-button'] },
+    { icon: '🪪', label: '캐릭터',   ids: ['rightNavHolder'] },
+];
+
+/**
+ * 후보 id 중 실제로 열 수 있는 드로어 홀더 id 찾기
+ * @param {string[]} ids
+ * @returns {string|null}
+ */
+function resolveDrawerId(ids) {
+    for (const id of ids) {
+        const el = document.getElementById(id);
+        if (el && el.querySelector('.drawer-content')) return id;
+    }
+    return null;
+}
+
+/**
+ * ST 도크 렌더링 + 이벤트 바인딩 (1회)
+ * 도크 자체는 항상 DOM에 있고, 콘솔 테마에서만 CSS로 표시됨
+ */
+export function renderStDock() {
+    const dock = document.getElementById('chat-lobby-st-dock');
+    if (!dock) return;
+
+    // 현재 ST에 존재하는 메뉴만 노출
+    const items = ST_DOCK_ITEMS
+        .map(item => ({ ...item, resolvedId: resolveDrawerId(item.ids) }))
+        .filter(item => item.resolvedId);
+
+    dock.innerHTML = `
+        <div class="st-dock-title">ST</div>
+        ${items.map(item => `
+            <button class="st-dock-btn" data-drawer-id="${escapeHtml(item.resolvedId)}" title="${escapeHtml(item.label)}">
+                <span class="st-dock-icon">${item.icon}</span>
+                <span class="st-dock-label">${escapeHtml(item.label)}</span>
+            </button>
+        `).join('')}
+    `;
+
+    // 위임 바인딩 (1회)
+    if (dock.dataset.bound !== 'true') {
+        dock.dataset.bound = 'true';
+        listeners.add('stDock', dock, 'click', async (e) => {
+            const btn = e.target.closest('.st-dock-btn');
+            if (!btn) return;
+
+            const drawerId = btn.dataset.drawerId;
+            if (!drawerId) return;
+
+            // 로비를 닫고(상태 유지) ST 드로어 열기
+            window.dispatchEvent(new CustomEvent('chatlobby:close'));
+            await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+            openDrawerSafely(drawerId);
+        });
+    }
+}
+
 /**
  * 정리 (확장 재로드 시)
  */
 export function cleanupThemeMenu() {
     listeners.clear('themeMenu');
+    listeners.clear('stDock');
 }

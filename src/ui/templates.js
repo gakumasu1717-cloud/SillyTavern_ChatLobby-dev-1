@@ -52,6 +52,8 @@ export function createLobbyHTML() {
             
             <!-- 메인 콘텐츠 -->
             <main id="chat-lobby-main">
+                <!-- ST 메뉴 도크 (콘솔 테마 전용, JS에서 렌더링) -->
+                <aside id="chat-lobby-st-dock"></aside>
                 <!-- 왼쪽 패널: 페르소나 + 캐릭터 -->
                 <section id="chat-lobby-left" class="${collapsedClass}">
                     <!-- 페르소나 바 -->

@@ -26,7 +26,8 @@ import { intervalManager } from './utils/intervalManager.js';
 import { openDrawerSafely } from './utils/drawerHelper.js';
 import { initCustomThemeIntegration, cleanupCustomThemeIntegration } from './integration/customTheme.js';
 import { listeners } from './utils/listenerManager.js';
-import { applyTheme, toggleThemeMenu, closeThemeMenu, isThemeMenuOpen, initThemeMenuEvents, cleanupThemeMenu } from './ui/themeMenu.js';
+import { applyTheme, toggleThemeMenu, closeThemeMenu, isThemeMenuOpen, initThemeMenuEvents, cleanupThemeMenu, renderStDock } from './ui/themeMenu.js';
+import { remindStore } from './data/remindStore.js';
 import { escapeHtml } from './utils/textUtils.js';
 import { analyzeBranches } from './utils/branchAnalyzer.js';
 import { clearCharacterCache as clearBranchCache } from './data/branchCache.js';
@@ -184,6 +185,9 @@ import { operationLock } from './utils/operationLock.js';
 
         // 테마/표시 설정 메뉴 이벤트 (옵션 변경 시 그리드 리렌더)
         initThemeMenuEvents(() => renderCharacterGrid(store.searchTerm));
+
+        // ST 메뉴 도크 렌더링 (콘솔 테마에서 표시됨)
+        renderStDock();
         
         // SillyTavern 이벤트 리스닝
         setupSillyTavernEvents();
@@ -282,7 +286,8 @@ import { operationLock } from './utils/operationLock.js';
                 if (eventData?.character?.avatar) {
                     lastChatCache.remove(eventData.character.avatar);
                     clearBranchCache(eventData.character.avatar);
-                    console.debug('[ChatLobby] Removed deleted character from lastChatCache & branchCache:', eventData.character.avatar);
+                    remindStore.removeByAvatar(eventData.character.avatar);
+                    console.debug('[ChatLobby] Removed deleted character from caches:', eventData.character.avatar);
                 }
                 
                 if (isLobbyOpen()) {

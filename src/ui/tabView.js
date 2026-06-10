@@ -16,6 +16,8 @@ import { operationLock } from '../utils/operationLock.js';
 import { getLocalDateString } from '../data/calendarStorage.js';
 import { waitForChatChanged } from '../utils/waitFor.js';
 import { listeners } from '../utils/listenerManager.js';
+import { remindStore } from '../data/remindStore.js';
+import { openRemindViewer } from './remindViewer.js';
 
 // ============================================
 // 디버그 로깅
@@ -471,6 +473,11 @@ async function loadLibrary() {
     // 수집할 키 목록
     let keysToLoad = [];
     
+    if (state.libraryMode === 'reminds') {
+        // 리마인드 모드는 remindStore에서 직접 렌더 (채팅 API 불필요)
+        return;
+    }
+
     if (state.libraryMode === 'favorites') {
         keysToLoad = data.favorites || [];
         log(`Loading ${keysToLoad.length} favorites`);
@@ -573,13 +580,17 @@ function renderLibraryView() {
     
     container.innerHTML = `
         <div class="library-filter-bar">
-            <button class="library-filter-btn ${state.libraryMode === 'favorites' ? 'active' : ''}" 
+            <button class="library-filter-btn ${state.libraryMode === 'favorites' ? 'active' : ''}"
                     data-mode="favorites">
                 ⭐ 즐겨찾기
             </button>
-            <button class="library-filter-btn ${state.libraryMode === 'folders' ? 'active' : ''}" 
+            <button class="library-filter-btn ${state.libraryMode === 'folders' ? 'active' : ''}"
                     data-mode="folders">
                 📁 폴더
+            </button>
+            <button class="library-filter-btn ${state.libraryMode === 'reminds' ? 'active' : ''}"
+                    data-mode="reminds">
+                🔖 리마인드
             </button>
             <button class="library-filter-btn folder-manage-btn" id="tab-folder-manage-btn" data-action="open-folder-modal" title="폴더 관리">
                 📁
@@ -598,7 +609,9 @@ function renderLibraryView() {
             </div>
         ` : ''}
         <div class="library-content" id="library-content">
-            ${state.libraryMode === 'favorites' ? renderFavoritesContent() : renderFoldersContent()}
+            ${state.libraryMode === 'reminds' ? renderRemindsContent()
+                : state.libraryMode === 'favorites' ? renderFavoritesContent()
+                : renderFoldersContent()}
         </div>
     `;
     
@@ -643,7 +656,83 @@ function renderLibraryView() {
         renderLibraryView();
     });
     
-    bindLibraryChatEvents(container);
+    if (state.libraryMode === 'reminds') {
+        bindRemindEvents(container);
+    } else {
+        bindLibraryChatEvents(container);
+    }
+}
+
+// ============================================
+// 리마인드 모드 (좋았던 채팅/구간 모아보기)
+// ============================================
+
+function renderRemindsContent() {
+    const reminds = remindStore.getAll();
+
+    if (reminds.length === 0) {
+        return `
+            <div class="tab-empty">
+                <span class="empty-icon">🔖</span>
+                <p>저장된 리마인드가 없습니다</p>
+                <small>채팅 목록의 ⋮ 메뉴에서 "리마인드 추가"로<br>좋았던 구간을 저장해보세요</small>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="remind-list">
+            ${reminds.map(r => {
+                const rangeText = r.start !== null
+                    ? `#${r.start}~#${r.end}`
+                    : '전체';
+                const date = new Date(r.createdAt).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric' });
+                return `
+                <div class="remind-item" data-remind-id="${escapeHtml(r.id)}">
+                    <div class="remind-item-avatar">
+                        <img src="/characters/${encodeURIComponent(r.avatar)}" alt="" loading="lazy"
+                             onerror="this.parentElement.innerHTML='🔖'">
+                    </div>
+                    <div class="remind-item-info">
+                        <div class="remind-item-title">
+                            ${escapeHtml(r.charName)}
+                            <span class="remind-item-range">${escapeHtml(rangeText)}</span>
+                        </div>
+                        <div class="remind-item-file">${escapeHtml(r.fileName)}</div>
+                        ${r.note ? `<div class="remind-item-note">${escapeHtml(r.note)}</div>` : ''}
+                    </div>
+                    <div class="remind-item-side">
+                        <span class="remind-item-date">${date}</span>
+                        <button class="remind-item-delete" title="삭제">🗑️</button>
+                    </div>
+                </div>`;
+            }).join('')}
+        </div>
+    `;
+}
+
+/**
+ * 리마인드 목록 이벤트 바인딩 (클릭=뷰어, 삭제)
+ * @param {HTMLElement} container
+ */
+function bindRemindEvents(container) {
+    container.querySelectorAll('.remind-item').forEach(item => {
+        const id = item.dataset.remindId;
+
+        item.querySelector('.remind-item-delete')?.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const confirmed = await showConfirm('이 리마인드를 삭제하시겠습니까?\n(채팅 자체는 삭제되지 않습니다)');
+            if (confirmed) {
+                remindStore.remove(id);
+                showToast('리마인드 삭제됨', 'success');
+                renderLibraryView();
+            }
+        });
+
+        item.addEventListener('click', () => {
+            openRemindViewer(id);
+        });
+    });
 }
 
 function renderFavoritesContent() {
