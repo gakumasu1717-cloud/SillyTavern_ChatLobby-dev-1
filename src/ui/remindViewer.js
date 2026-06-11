@@ -408,17 +408,21 @@ export function isRemindViewerOpen() {
 function handleViewerKeydown(e) {
     if (!isViewerOpen) return;
 
-    if (e.key === 'Escape') {
-        e.stopPropagation();
-        closeTopRemindLayer();
-        return;
-    }
+    // ⚠️ ESC는 여기서 처리하지 않음!
+    // index.js의 전역 keydown(closeTopRemindLayer)이 먼저 실행되므로,
+    // 여기서 또 닫으면 ESC 한 번에 레이어가 두 개씩 닫히는 버그가 됨
 
-    if (e.key === 'ArrowLeft') {
-        changePage(-1);
-    } else if (e.key === 'ArrowRight') {
-        changePage(1);
-    }
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+    // 셀렉트/입력 포커스 중에는 페이지 넘김 금지 (설정 팝업 조작과 충돌)
+    const tag = e.target?.tagName;
+    if (tag === 'SELECT' || tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    // 라이트박스가 떠 있는 동안에도 금지 (뒤에서 페이지가 넘어가는 혼란 방지)
+    const lb = document.getElementById('remind-lightbox');
+    if (lb?.classList.contains('active')) return;
+
+    changePage(e.key === 'ArrowLeft' ? -1 : 1);
 }
 
 // ============================================

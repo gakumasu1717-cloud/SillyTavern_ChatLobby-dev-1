@@ -587,11 +587,13 @@ function renderMarkdown(text) {
 function styleDialogue(html) {
     if (!html) return html;
     // 텍스트 노드 구간에서만 "..."를 감싸기 (태그 내부 속성 오염 방지)
-    html = html.replace(/(?<=>|^)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match) => {
-        return match.replace(/"([^"]+)"/g, '<span class="remind-dialogue">"$1"</span>');
+    // ⚠️ lookbehind (?<=...) 사용 금지! 구형 Safari/WebView는 정규식 리터럴
+    // 파싱 단계에서 SyntaxError를 던져 번들 전체가 로드 실패함 → 캡처 그룹으로 대체
+    html = html.replace(/(^|>)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match, pre, seg) => {
+        return pre + seg.replace(/"([^"]+)"/g, '<span class="remind-dialogue">"$1"</span>');
     });
-    html = html.replace(/(?<=>|^)([^<]*?「[^」]*?」[^<]*?)(?=<|$)/g, (match) => {
-        return match.replace(/「([^」]+)」/g, '<span class="remind-dialogue">「$1」</span>');
+    html = html.replace(/(^|>)([^<]*?「[^」]*?」[^<]*?)(?=<|$)/g, (match, pre, seg) => {
+        return pre + seg.replace(/「([^」]+)」/g, '<span class="remind-dialogue">「$1」</span>');
     });
     return html;
 }

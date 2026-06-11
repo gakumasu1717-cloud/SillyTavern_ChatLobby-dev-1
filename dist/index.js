@@ -3892,11 +3892,11 @@ ${message}` : message;
   }
   function styleDialogue(html) {
     if (!html) return html;
-    html = html.replace(/(?<=>|^)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match) => {
-      return match.replace(/"([^"]+)"/g, '<span class="remind-dialogue">"$1"</span>');
+    html = html.replace(/(^|>)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match, pre, seg) => {
+      return pre + seg.replace(/"([^"]+)"/g, '<span class="remind-dialogue">"$1"</span>');
     });
-    html = html.replace(/(?<=>|^)([^<]*?「[^」]*?」[^<]*?)(?=<|$)/g, (match) => {
-      return match.replace(/「([^」]+)」/g, '<span class="remind-dialogue">\u300C$1\u300D</span>');
+    html = html.replace(/(^|>)([^<]*?「[^」]*?」[^<]*?)(?=<|$)/g, (match, pre, seg) => {
+      return pre + seg.replace(/「([^」]+)」/g, '<span class="remind-dialogue">\u300C$1\u300D</span>');
     });
     return html;
   }
@@ -4324,16 +4324,12 @@ ${message}` : message;
   }
   function handleViewerKeydown(e) {
     if (!isViewerOpen) return;
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      closeTopRemindLayer();
-      return;
-    }
-    if (e.key === "ArrowLeft") {
-      changePage(-1);
-    } else if (e.key === "ArrowRight") {
-      changePage(1);
-    }
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const tag = e.target?.tagName;
+    if (tag === "SELECT" || tag === "INPUT" || tag === "TEXTAREA") return;
+    const lb = document.getElementById("remind-lightbox");
+    if (lb?.classList.contains("active")) return;
+    changePage(e.key === "ArrowLeft" ? -1 : 1);
   }
   function toggleSettingsPop() {
     const pop = document.getElementById("remind-settings-pop");
