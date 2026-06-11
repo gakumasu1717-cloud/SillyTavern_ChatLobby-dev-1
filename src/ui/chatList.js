@@ -22,6 +22,8 @@ import {
 } from '../utils/branchAnalyzer.js';
 import { getAllBranches, getAllFingerprints } from '../data/branchCache.js';
 import { remindStore } from '../data/remindStore.js';
+import { highlightStore } from '../data/highlightStore.js';
+import { openChatInViewer } from './remindViewer.js';
 
 // ============================================
 // 툴팁 관련 변수
@@ -1180,6 +1182,9 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
     const menu = document.createElement('div');
     menu.className = 'chat-folder-menu';
     menu.innerHTML = `
+        <div class="folder-menu-item view-chat-item">
+            📖 뷰어로 감상
+        </div>
         <div class="folder-menu-item rename-chat-item">
             ✏️ 이름 바꾸기
         </div>
@@ -1218,6 +1223,14 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
     activeFolderMenu = menu;
     activeFolderMenu._targetBtn = targetBtn; // 토글용 참조 저장
     
+    // 뷰어로 감상 (리마인드 생성 없이 처음부터, 이어 읽기 지원)
+    menu.querySelector('.view-chat-item')?.addEventListener('click', async () => {
+        closeChatFolderMenu();
+        const context = api.getContext();
+        const char = (context?.characters || []).find(c => c.avatar === charAvatar);
+        await openChatInViewer(charAvatar, char?.name || '', fileName);
+    });
+
     // 이름 바꾸기
     menu.querySelector('.rename-chat-item')?.addEventListener('click', async () => {
         closeChatFolderMenu();
@@ -1231,7 +1244,7 @@ function showChatFolderMenu(targetBtn, charAvatar, fileName) {
     });
 
     // 폴더 이동
-    menu.querySelectorAll('.folder-menu-item:not(.rename-chat-item):not(.remind-add-item)').forEach(item => {
+    menu.querySelectorAll('.folder-menu-item:not(.rename-chat-item):not(.remind-add-item):not(.view-chat-item)').forEach(item => {
         item.addEventListener('click', async () => {
             const folderId = item.dataset.folderId;
             if (folderId) {
@@ -1374,9 +1387,10 @@ async function renameChatPrompt(charAvatar, fileName) {
     try {
         const success = await api.renameChat(charAvatar, currentName, newName);
         if (success) {
-            // 폴더 배정/즐겨찾기/리마인드 키 함께 이동
+            // 폴더 배정/즐겨찾기/리마인드/형광펜 키 함께 이동
             storage.renameChatKey(charAvatar, currentName, newName);
             remindStore.renameChat(charAvatar, currentName, newName);
+            highlightStore.renameChat(charAvatar, currentName, newName);
             showToast(`이름 변경: "${newName}"`, 'success');
             await refreshCurrentChatList(true);
         } else {

@@ -3262,6 +3262,8 @@ ${message}` : message;
 
   // src/data/remindStore.js
   var STORAGE_KEY3 = "chatLobby_reminds";
+  var PROGRESS_KEY = "chatLobby_remindProgress";
+  var PROGRESS_MAX_ENTRIES = 150;
   var RemindStore = class {
     constructor() {
       this._data = null;
@@ -3320,7 +3322,57 @@ ${message}` : message;
       if (idx === -1) return false;
       data.splice(idx, 1);
       this._save();
+      this.removeProgress(id);
       return true;
+    }
+    // ============================================
+    // 읽기 진행 위치 (이어 읽기)
+    // ============================================
+    _loadProgress() {
+      try {
+        const raw = localStorage.getItem(PROGRESS_KEY);
+        const data = raw ? JSON.parse(raw) : {};
+        return data && typeof data === "object" ? data : {};
+      } catch (e) {
+        return {};
+      }
+    }
+    _saveProgress(map) {
+      try {
+        const keys = Object.keys(map);
+        if (keys.length > PROGRESS_MAX_ENTRIES) {
+          keys.sort((a, b) => (map[a].ts || 0) - (map[b].ts || 0));
+          for (const k of keys.slice(0, keys.length - PROGRESS_MAX_ENTRIES)) {
+            delete map[k];
+          }
+        }
+        localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+      } catch (e) {
+        console.warn("[RemindStore] Failed to save progress:", e);
+      }
+    }
+    /**
+     * 읽기 진행 위치 조회
+     * @param {string} id - 리마인드 ID
+     * @returns {{viewStart:number, viewEnd:number, pageIndex:number, scrollTop:number}|null}
+     */
+    getProgress(id) {
+      return this._loadProgress()[id] || null;
+    }
+    /**
+     * 읽기 진행 위치 저장 (연장된 범위 포함)
+     */
+    setProgress(id, progress) {
+      const map = this._loadProgress();
+      map[id] = { ...progress, ts: Date.now() };
+      this._saveProgress(map);
+    }
+    removeProgress(id) {
+      const map = this._loadProgress();
+      if (map[id]) {
+        delete map[id];
+        this._saveProgress(map);
+      }
     }
     /**
      * ID로 조회
@@ -3360,6 +3412,1346 @@ ${message}` : message;
     }
   };
   var remindStore = new RemindStore();
+
+  // src/data/highlightStore.js
+  var STORAGE_KEY4 = "chatLobby_highlights";
+  var HighlightStore = class {
+    constructor() {
+      this._data = null;
+    }
+    _load() {
+      if (this._data) return this._data;
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY4);
+        this._data = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(this._data)) this._data = [];
+      } catch (e) {
+        console.warn("[HighlightStore] Failed to load:", e);
+        this._data = [];
+      }
+      return this._data;
+    }
+    _save() {
+      try {
+        localStorage.setItem(STORAGE_KEY4, JSON.stringify(this._data));
+      } catch (e) {
+        console.warn("[HighlightStore] Failed to save:", e);
+      }
+    }
+    /**
+     * 특정 메시지의 하이라이트 목록
+     */
+    getForMessage(avatar, fileName, mesid) {
+      const clean = (fileName || "").replace(/\.jsonl$/i, "");
+      return this._load().filter((h) => h.avatar === avatar && h.fileName === clean && h.mesid === mesid);
+    }
+    /**
+     * 하이라이트 추가
+     * @returns {Highlight}
+     */
+    add({ avatar, fileName, mesid, text }) {
+      const data = this._load();
+      const entry = {
+        id: "hl_" + Date.now() + "_" + Math.random().toString(36).slice(2, 7),
+        avatar,
+        fileName: (fileName || "").replace(/\.jsonl$/i, ""),
+        mesid,
+        text: text.slice(0, 600),
+        createdAt: Date.now()
+      };
+      data.push(entry);
+      this._save();
+      return entry;
+    }
+    /**
+     * 하이라이트 삭제
+     */
+    remove(id) {
+      const data = this._load();
+      const idx = data.findIndex((h) => h.id === id);
+      if (idx === -1) return false;
+      data.splice(idx, 1);
+      this._save();
+      return true;
+    }
+    /**
+     * 채팅 이름 변경 동기화
+     */
+    renameChat(avatar, oldFileName, newFileName) {
+      const oldName = (oldFileName || "").replace(/\.jsonl$/i, "");
+      const newName = (newFileName || "").replace(/\.jsonl$/i, "");
+      let changed = false;
+      for (const h of this._load()) {
+        if (h.avatar === avatar && h.fileName === oldName) {
+          h.fileName = newName;
+          changed = true;
+        }
+      }
+      if (changed) this._save();
+    }
+    /**
+     * 캐릭터 삭제 시 정리
+     */
+    removeByAvatar(avatar) {
+      const data = this._load();
+      const before = data.length;
+      this._data = data.filter((h) => h.avatar !== avatar);
+      if (this._data.length !== before) this._save();
+    }
+  };
+  var highlightStore = new HighlightStore();
+
+  // src/utils/chatTextFormatter.js
+  init_textUtils();
+  function getScriptFlags(script) {
+    switch (script?.substituteRegex) {
+      case 1:
+        return "g";
+      case 2:
+        return "i";
+      case 3:
+        return "";
+      default:
+        return "gi";
+    }
+  }
+  function regexFromString(regexStr, script) {
+    if (!regexStr) return null;
+    const slashForm = regexStr.match(/^\/(.*?)\/([gimsuy]*)$/);
+    try {
+      if (slashForm) return new RegExp(slashForm[1], slashForm[2]);
+      return new RegExp(regexStr, getScriptFlags(script));
+    } catch (e) {
+      console.warn("[ChatFormatter] Invalid regex:", regexStr, e.message);
+      return null;
+    }
+  }
+  function collectRegexScripts(context, charAvatar) {
+    const scripts = [];
+    const ext = context?.extensionSettings || {};
+    if (Array.isArray(ext.regex)) scripts.push(...ext.regex);
+    else if (Array.isArray(ext.regex?.scripts)) scripts.push(...ext.regex.scripts);
+    if (Array.isArray(ext.regex_scripts)) scripts.push(...ext.regex_scripts);
+    try {
+      const char = (context?.characters || []).find((c) => c.avatar === charAvatar);
+      const embedded = char?.data?.extensions?.regex_scripts;
+      if (Array.isArray(embedded)) scripts.push(...embedded);
+    } catch (e) {
+    }
+    return scripts;
+  }
+  function applyRegexScript(script, text, options) {
+    if (!script?.findRegex || !text) return text;
+    const findRegex = regexFromString(script.findRegex, script);
+    if (!findRegex) return text;
+    const replaceTemplate = (script.replaceString || "").replace(/\{\{match\}\}/gi, "$0");
+    const trimStrings = Array.isArray(script.trimStrings) ? script.trimStrings.filter(Boolean) : [];
+    try {
+      return text.replace(findRegex, function() {
+        const args = [...arguments];
+        let output = replaceTemplate.replace(/\$(\d+)|\$<([^>]+)>/g, (_, num, groupName) => {
+          let groupMatch;
+          if (num !== void 0) {
+            groupMatch = args[Number(num)];
+          } else if (groupName) {
+            const groups = args[args.length - 1];
+            groupMatch = groups && typeof groups === "object" ? groups[groupName] : void 0;
+          }
+          if (!groupMatch) return "";
+          for (const trimStr of trimStrings) {
+            groupMatch = groupMatch.replaceAll(trimStr, "");
+          }
+          return groupMatch;
+        });
+        if (options.characterName) {
+          output = output.replace(/\{\{charkey\}\}/gi, options.characterName);
+          output = output.replace(/\{\{char\}\}/gi, options.characterName);
+        }
+        if (options.userName) {
+          output = output.replace(/\{\{user\}\}/gi, options.userName);
+        }
+        return output;
+      });
+    } catch (e) {
+      console.warn("[ChatFormatter] Regex script failed:", script.scriptName, e);
+      return text;
+    }
+  }
+  function applyStRegexScripts(text, options) {
+    if (!text) return text;
+    try {
+      const context = window.SillyTavern?.getContext?.();
+      if (!context) return text;
+      const scripts = collectRegexScripts(context, options.charAvatar);
+      let result = text;
+      for (const script of scripts) {
+        if (script.disabled) continue;
+        if (script.promptOnly) continue;
+        if (Array.isArray(script.placement) && script.placement.length > 0) {
+          const forAi = script.placement.includes(2);
+          const forUser = script.placement.includes(1);
+          const forDisplay = script.placement.includes(0);
+          if (options.isUser && !forUser && !forDisplay) continue;
+          if (!options.isUser && !forAi && !forDisplay) continue;
+        }
+        result = applyRegexScript(script, result, options);
+      }
+      return result;
+    } catch (e) {
+      console.warn("[ChatFormatter] applyStRegexScripts error:", e);
+      return text;
+    }
+  }
+  function escapeAttr(str) {
+    if (!str) return "";
+    return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function resolveImagePath(filename, characterName) {
+    if (!filename) return "";
+    if (filename.startsWith("http://") || filename.startsWith("https://") || filename.startsWith("data:")) {
+      return filename;
+    }
+    if (filename.startsWith("/")) return filename;
+    return `/characters/${encodeURIComponent(characterName || "Unknown")}/${encodeURIComponent(filename)}`;
+  }
+  function createImageHtml(src, alt) {
+    return `<div class="remind-image-container"><img class="remind-image" src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" title="${escapeAttr(alt)}" loading="lazy" decoding="async"></div>`;
+  }
+  function processImages(text, characterName) {
+    if (!text) return text;
+    return text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
+      const trimmed = filename.trim();
+      return createImageHtml(resolveImagePath(trimmed, characterName), trimmed);
+    });
+  }
+  function renderExtraImagesHtml(message) {
+    if (!message?.extra) return "";
+    const images = [];
+    const extra = Object.assign({}, message.extra);
+    if (Array.isArray(extra.media)) {
+      for (const media of extra.media) {
+        if (media && media.url && (!media.type || media.type === "image")) {
+          images.push({ src: media.url, alt: media.title || "" });
+        }
+      }
+    }
+    if (images.length === 0 && extra.image) {
+      images.push({ src: extra.image, alt: extra.title || "" });
+    }
+    if (images.length === 0 && Array.isArray(extra.image_swipes)) {
+      const idx = extra.media_index ?? extra.image_swipes.length - 1;
+      const url = extra.image_swipes[idx] || extra.image_swipes[extra.image_swipes.length - 1];
+      if (url) images.push({ src: url, alt: extra.title || "" });
+    }
+    if (images.length === 0) return "";
+    return '<div class="remind-extra-images">' + images.map((img) => createImageHtml(img.src, img.alt)).join("") + "</div>";
+  }
+  function unwrapPreviousInfoBlocks(text) {
+    if (!text) return text;
+    text = text.replace(/<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/gi, "");
+    let openCount = (text.match(/<details\b/gi) || []).length;
+    let closeCount = (text.match(/<\/details\s*>/gi) || []).length;
+    while (closeCount > openCount) {
+      text = text.replace(/<\/details\s*>/, "");
+      closeCount--;
+    }
+    return text;
+  }
+  function removeCursorMarkers(text) {
+    if (!text) return text;
+    text = text.replace(/^\s*\|\s*$/gm, "");
+    text = text.replace(/<cursor\s*\/?>/gi, "");
+    text = text.replace(/\{\{cursor\}\}/gi, "");
+    text = text.replace(/\n{3,}/g, "\n\n");
+    return text;
+  }
+  var IFRAME_OVERRIDE_CSS = "<style>html,body{margin:0!important;padding:0!important;background:transparent;}html{scrollbar-width:none!important;}::-webkit-scrollbar{display:none!important;}img,video{max-width:100%!important;height:auto!important;}</style>";
+  var IFRAME_RESIZE_SCRIPT = `<script>
+(function(){
+  document.addEventListener('DOMContentLoaded',function(){
+    if(document.getElementById('rm-wrap'))return;
+    var w=document.createElement('div');
+    w.id='rm-wrap';
+    while(document.body.firstChild)w.appendChild(document.body.firstChild);
+    document.body.appendChild(w);
+    init();
+  });
+  function init(){
+    var w=document.getElementById('rm-wrap');
+    if(!w)return;
+    var timer=null;
+    function sendH(){
+      if(timer)return;
+      timer=setTimeout(function(){
+        timer=null;
+        var orig=w.style.height;
+        var origOv=w.style.overflow;
+        w.style.overflow='auto';
+        w.style.height='0';
+        var h=w.scrollHeight;
+        w.style.height=orig||'';
+        w.style.overflow=origOv||'';
+        if(h>0){
+          window.parent.postMessage({type:'remind-iframe-resize',height:h},'*');
+        }
+      },0);
+    }
+    sendH();
+    document.querySelectorAll('details').forEach(function(d){
+      d.addEventListener('toggle',function(){
+        sendH();
+        setTimeout(sendH,100);
+        setTimeout(sendH,300);
+      });
+    });
+    new MutationObserver(function(){sendH();}).observe(w,{childList:true,subtree:true,attributes:true});
+    [100,300,600,1500,3000].forEach(function(d){setTimeout(sendH,d);});
+  }
+})();
+<\/script>`;
+  function convertHtmlDocsToIframes(text) {
+    const iframePlaceholders = [];
+    if (!text) return { text, iframePlaceholders };
+    const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
+    const processed = text.replace(htmlDocPattern, (match) => {
+      let modified = match.replace(/^\s*\[/, "").replace(/\]\s*$/, "");
+      if (modified.includes("</head>")) {
+        modified = modified.replace("</head>", IFRAME_OVERRIDE_CSS + "</head>");
+      } else if (modified.includes("<body")) {
+        modified = modified.replace("<body", IFRAME_OVERRIDE_CSS + "<body");
+      } else {
+        modified = IFRAME_OVERRIDE_CSS + modified;
+      }
+      if (modified.includes("</body>")) {
+        modified = modified.replace("</body>", IFRAME_RESIZE_SCRIPT + "</body>");
+      } else {
+        modified += IFRAME_RESIZE_SCRIPT;
+      }
+      const b64 = btoa(unescape(encodeURIComponent(modified)));
+      const iframe = `<iframe class="remind-regex-iframe" data-remind-html="${b64}" sandbox="allow-scripts" frameborder="0" scrolling="no"></iframe>`;
+      const index = iframePlaceholders.length;
+      iframePlaceholders.push(iframe);
+      return `
+%%%RM_IFRAME_${index}%%%
+`;
+    });
+    return { text: processed, iframePlaceholders };
+  }
+  function restoreIframePlaceholders(html, iframePlaceholders) {
+    if (!iframePlaceholders || iframePlaceholders.length === 0) return html;
+    return html.replace(
+      /(?:<br\s*\/?>)?\s*(?:<pre[^>]*>)?\s*(?:<code[^>]*>)?\s*(?:<p[^>]*>)?\s*%%%RM_IFRAME_(\d+)%%%\s*(?:<\/p>)?\s*(?:<\/code>)?\s*(?:<\/pre>)?\s*(?:<br\s*\/?>)?/g,
+      (match, index) => iframePlaceholders[parseInt(index, 10)] || match
+    );
+  }
+  function processChoices(text) {
+    if (!text) return text;
+    return text.replace(/<choices>([\s\S]*?)<\/choices>/gi, (match, content) => {
+      const lines = content.trim().split("\n").filter((l) => l.trim());
+      if (lines.length === 0) return match;
+      let html = '<div class="remind-choices"><div class="remind-choices-header">\uC120\uD0DD\uC9C0</div>';
+      lines.forEach((line, i) => {
+        const cleanLine = line.replace(/^\d+[.)\-]\s*/, "").trim();
+        if (cleanLine) {
+          html += `<div class="remind-choice-card"><span class="remind-choice-num">${i + 1}.</span><span>${escapeHtml(cleanLine)}</span></div>`;
+        }
+      });
+      html += "</div>";
+      return html;
+    });
+  }
+  function processInlineMarkdown(text) {
+    if (!text) return "";
+    text = text.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
+    text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
+    text = text.replace(/\*(.+?)\*/g, "<em>$1</em>");
+    text = text.replace(/~~(.+?)~~/g, "<del>$1</del>");
+    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    return text;
+  }
+  function renderMarkdown(text) {
+    if (!text) return "";
+    const protectedBlocks = [];
+    function protectBlock(match) {
+      const idx = protectedBlocks.length;
+      protectedBlocks.push(match);
+      return `\0HTMLBLOCK${idx}\0`;
+    }
+    const codeBlocks = [];
+    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
+      const idx = codeBlocks.length;
+      codeBlocks.push(`<pre class="remind-code"><code>${escapeHtml(code.trim())}</code></pre>`);
+      return `\0CODEBLOCK${idx}\0`;
+    });
+    const inlineCodes = [];
+    text = text.replace(/`([^`]+)`/g, (match, code) => {
+      const idx = inlineCodes.length;
+      inlineCodes.push(`<code class="remind-inline-code">${escapeHtml(code)}</code>`);
+      return `\0INLINECODE${idx}\0`;
+    });
+    text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, protectBlock);
+    text = text.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, protectBlock);
+    text = text.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, protectBlock);
+    const blockOpenRe = /<(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|pre|dl)\b/gi;
+    const blockCloseRe = /<\/(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|pre|dl)\s*>/gi;
+    const countOpens = (str) => (str.match(blockOpenRe) || []).length;
+    const countCloses = (str) => (str.match(blockCloseRe) || []).length;
+    const lines = text.split("\n");
+    const result = [];
+    let inList = false;
+    let listType = "";
+    let htmlBlockDepth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const trimmed = line.trim();
+      if (htmlBlockDepth > 0) {
+        htmlBlockDepth += countOpens(trimmed) - countCloses(trimmed);
+        if (htmlBlockDepth < 0) htmlBlockDepth = 0;
+        result.push(line);
+        continue;
+      }
+      if (/^<[a-zA-Z]/.test(trimmed)) {
+        const opens = countOpens(trimmed);
+        const closes = countCloses(trimmed);
+        if (opens > closes) {
+          htmlBlockDepth = opens - closes;
+        }
+        result.push(trimmed);
+        continue;
+      }
+      if (/^<\/[a-zA-Z]/.test(trimmed)) {
+        htmlBlockDepth -= countCloses(trimmed);
+        if (htmlBlockDepth < 0) htmlBlockDepth = 0;
+        result.push(trimmed);
+        continue;
+      }
+      if (inList && !trimmed.match(/^[-*]\s/) && !trimmed.match(/^\d+\.\s/)) {
+        result.push(listType === "ul" ? "</ul>" : "</ol>");
+        inList = false;
+      }
+      if (!trimmed) {
+        result.push("<br />");
+        continue;
+      }
+      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
+      if (headingMatch) {
+        const level = headingMatch[1].length;
+        result.push(`<h${level} class="remind-h">${processInlineMarkdown(headingMatch[2])}</h${level}>`);
+        continue;
+      }
+      if (/^[-*_]{3,}\s*$/.test(trimmed)) {
+        result.push('<hr class="remind-hr" />');
+        continue;
+      }
+      if (trimmed.startsWith(">")) {
+        result.push(`<blockquote class="remind-quote">${processInlineMarkdown(trimmed.replace(/^>\s?/, ""))}</blockquote>`);
+        continue;
+      }
+      const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
+      if (ulMatch) {
+        if (!inList || listType !== "ul") {
+          if (inList) result.push(listType === "ul" ? "</ul>" : "</ol>");
+          result.push('<ul class="remind-list-md">');
+          inList = true;
+          listType = "ul";
+        }
+        result.push(`<li>${processInlineMarkdown(ulMatch[1])}</li>`);
+        continue;
+      }
+      const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
+      if (olMatch) {
+        if (!inList || listType !== "ol") {
+          if (inList) result.push(listType === "ul" ? "</ul>" : "</ol>");
+          result.push('<ol class="remind-list-md">');
+          inList = true;
+          listType = "ol";
+        }
+        result.push(`<li>${processInlineMarkdown(olMatch[1])}</li>`);
+        continue;
+      }
+      if (/^\x00(HTMLBLOCK|CODEBLOCK|INLINECODE)\d+\x00$/.test(trimmed)) {
+        result.push(trimmed);
+        continue;
+      }
+      result.push(`<p class="remind-p">${processInlineMarkdown(trimmed)}</p>`);
+    }
+    if (inList) {
+      result.push(listType === "ul" ? "</ul>" : "</ol>");
+    }
+    text = result.join("\n");
+    codeBlocks.forEach((block, i) => {
+      text = text.replace(`\0CODEBLOCK${i}\0`, () => block);
+    });
+    inlineCodes.forEach((code, i) => {
+      text = text.replace(`\0INLINECODE${i}\0`, () => code);
+    });
+    protectedBlocks.forEach((block, i) => {
+      text = text.replace(`\0HTMLBLOCK${i}\0`, () => block);
+    });
+    return text;
+  }
+  function styleDialogue(html) {
+    if (!html) return html;
+    html = html.replace(/(?<=>|^)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match) => {
+      return match.replace(/"([^"]+)"/g, '<span class="remind-dialogue">"$1"</span>');
+    });
+    html = html.replace(/(?<=>|^)([^<]*?「[^」]*?」[^<]*?)(?=<|$)/g, (match) => {
+      return match.replace(/「([^」]+)」/g, '<span class="remind-dialogue">\u300C$1\u300D</span>');
+    });
+    return html;
+  }
+  function sanitizeHtml(html) {
+    const doc = document.implementation.createHTMLDocument("");
+    const root = doc.createElement("div");
+    root.innerHTML = html;
+    root.querySelectorAll("script, object, embed, link, meta, base, form").forEach((el) => el.remove());
+    root.querySelectorAll("iframe").forEach((el) => {
+      if (!el.classList.contains("remind-regex-iframe")) {
+        el.remove();
+        return;
+      }
+      el.setAttribute("sandbox", "allow-scripts");
+      el.removeAttribute("src");
+      el.removeAttribute("srcdoc");
+    });
+    root.querySelectorAll("*").forEach((el) => {
+      for (const attr of [...el.attributes]) {
+        const name = attr.name.toLowerCase();
+        if (name.startsWith("on")) {
+          el.removeAttribute(attr.name);
+        } else if ((name === "href" || name === "src" || name === "xlink:href") && /^\s*javascript:/i.test(attr.value)) {
+          el.removeAttribute(attr.name);
+        }
+      }
+    });
+    return root.innerHTML;
+  }
+  function renderMessageHtml(message, options) {
+    let text = message.mes || "";
+    if (Array.isArray(message.swipes) && typeof message.swipe_id === "number" && message.swipes[message.swipe_id] !== void 0) {
+      text = message.swipes[message.swipe_id];
+    }
+    if (!text && !message.extra) return "";
+    if (options.userName) text = text.replace(/\{\{user\}\}/gi, options.userName);
+    if (options.characterName) text = text.replace(/\{\{char\}\}/gi, options.characterName);
+    if (options.applyRegex !== false) {
+      text = applyStRegexScripts(text, {
+        isUser: !!message.is_user,
+        characterName: options.characterName,
+        userName: options.userName,
+        charAvatar: options.charAvatar
+      });
+    }
+    text = unwrapPreviousInfoBlocks(text);
+    text = removeCursorMarkers(text);
+    const { text: textWithPlaceholders, iframePlaceholders } = convertHtmlDocsToIframes(text);
+    text = textWithPlaceholders;
+    text = processImages(text, options.characterName);
+    text = processChoices(text);
+    text = renderMarkdown(text);
+    text = restoreIframePlaceholders(text, iframePlaceholders);
+    text = styleDialogue(text);
+    const extraImgHtml = renderExtraImagesHtml(message);
+    if (extraImgHtml) {
+      if (message.extra?.inline_image) {
+        text = extraImgHtml;
+      } else {
+        text += extraImgHtml;
+      }
+    }
+    return sanitizeHtml(text);
+  }
+
+  // src/ui/remindViewer.js
+  init_textUtils();
+  init_notifications();
+
+  // src/data/uiPrefs.js
+  var STORAGE_KEY5 = "chatLobby_uiPrefs";
+  var DEFAULTS = {
+    theme: null,
+    // null = 레거시 키에서 마이그레이션
+    showHero: true,
+    // 최애 코너 (히어로 배너)
+    personaBadges: true,
+    // 캐릭터 카드 페르소나 배지
+    cardSize: 200,
+    // 캐릭터 카드 폭 (px)
+    badgeSize: 36,
+    // 페르소나 배지 크기 (px)
+    badgePosition: "top",
+    // 페르소나 배지 위치 ('top' = 우측 상단, 'bottom' = 우측 하단)
+    viewerFontSize: 15,
+    // 리마인드 뷰어 글자 크기 (px)
+    viewerPageSize: 10,
+    // 리마인드 뷰어 페이지당 메시지 수 (0 = 모두)
+    viewerTheme: "auto",
+    // 읽기 모드 테마 ('auto'|'dark'|'sepia'|'paper')
+    viewerFontFamily: "default"
+    // 뷰어 폰트 ('default'|'serif'|'mono')
+  };
+  var UiPrefs = class {
+    constructor() {
+      this._data = null;
+    }
+    _load() {
+      if (this._data) return this._data;
+      let saved = {};
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY5);
+        if (raw) saved = JSON.parse(raw) || {};
+      } catch (e) {
+        console.warn("[UiPrefs] Failed to load:", e);
+      }
+      this._data = { ...DEFAULTS, ...saved };
+      if (this._data.theme === null) {
+        const legacy = localStorage.getItem("chatlobby-theme");
+        this._data.theme = legacy === "light" ? "light" : "default";
+        this._save();
+      }
+      return this._data;
+    }
+    _save() {
+      try {
+        localStorage.setItem(STORAGE_KEY5, JSON.stringify(this._data));
+      } catch (e) {
+        console.warn("[UiPrefs] Failed to save:", e);
+      }
+    }
+    /**
+     * @param {string} key
+     * @returns {*}
+     */
+    get(key) {
+      return this._load()[key];
+    }
+    /**
+     * @param {string} key
+     * @param {*} value
+     */
+    set(key, value) {
+      this._load();
+      this._data[key] = value;
+      this._save();
+    }
+  };
+  var uiPrefs = new UiPrefs();
+
+  // src/ui/remindViewer.js
+  var isViewerOpen = false;
+  var currentRemind = null;
+  var currentMessages = null;
+  var regexEnabled = true;
+  var pageIndex = 0;
+  var viewStart = 0;
+  var viewEnd = 0;
+  var lastRenderedRange = { from: 0, to: 0 };
+  var progressSaveTimer = null;
+  var pendingHighlight = null;
+  var FONT_MIN = 12;
+  var FONT_MAX = 24;
+  var PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 0];
+  var READER_THEMES = [
+    { id: "auto", name: "\u{1F3A8} \uB85C\uBE44 \uD14C\uB9C8" },
+    { id: "dark", name: "\u{1F319} \uB2E4\uD06C" },
+    { id: "sepia", name: "\u{1F4DC} \uC138\uD53C\uC544" },
+    { id: "paper", name: "\u{1F90D} \uC21C\uBC31" }
+  ];
+  async function openRemindViewer(remindId) {
+    const remind = remindStore.get(remindId);
+    if (!remind) {
+      showToast("\uB9AC\uB9C8\uC778\uB4DC\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
+      return;
+    }
+    await openViewerWithData(remind);
+  }
+  async function openChatInViewer(avatar, charName, fileName) {
+    const cleanName = (fileName || "").replace(/\.jsonl$/i, "");
+    await openViewerWithData({
+      id: `adhoc_${avatar}::${cleanName}`,
+      // 진행 저장용 안정 키
+      avatar,
+      charName: charName || avatar.replace(/\.[^.]+$/, ""),
+      fileName: cleanName,
+      start: null,
+      end: null,
+      note: "",
+      _adhoc: true
+    });
+  }
+  async function openViewerWithData(remind) {
+    closeRemindViewer();
+    const overlay = document.getElementById("chat-lobby-remind-viewer");
+    if (!overlay) {
+      showToast("\uBDF0\uC5B4\uB97C \uC5F4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB85C\uBE44\uB97C \uB2E4\uC2DC \uC5F4\uC5B4\uC8FC\uC138\uC694.", "error");
+      return;
+    }
+    currentRemind = remind;
+    currentMessages = null;
+    regexEnabled = true;
+    pageIndex = 0;
+    pendingHighlight = null;
+    const rangeText = remind._adhoc ? "\uC804\uCCB4 \uAC10\uC0C1" : remind.start !== null || remind.end !== null ? `#${remind.start ?? 0} ~ ${remind.end !== null ? "#" + remind.end : "\uB05D"}` : "\uC804\uCCB4";
+    const pageSize = getPageSize();
+    const fontSize = getFontSize();
+    const readerTheme = getReaderTheme();
+    overlay.innerHTML = `
+        <div class="remind-viewer-panel" data-reader-theme="${readerTheme}">
+            <header class="remind-viewer-header" id="remind-viewer-header">
+                <div class="remind-viewer-toprow">
+                    <div class="remind-viewer-title">
+                        <span class="remind-viewer-char">${escapeHtml(remind.charName || "")}</span>
+                        <span class="remind-viewer-file">${escapeHtml(remind.fileName)} \xB7 ${escapeHtml(rangeText)}</span>
+                        ${remind.note ? `<span class="remind-viewer-note">\u{1F516} ${escapeHtml(remind.note)}</span>` : ""}
+                    </div>
+                    <div class="remind-viewer-topbtns">
+                        <button class="remind-viewer-btn" id="remind-continue-chat" title="\uC774 \uCC44\uD305 \uC774\uC5B4\uC11C \uD558\uAE30">\u25B6\uFE0F \uC774\uC5B4 \uCC44\uD305</button>
+                        <button class="remind-viewer-btn" id="remind-add-here" title="\uD604\uC7AC \uBCF4\uB294 \uAD6C\uAC04\uC744 \uB9AC\uB9C8\uC778\uB4DC\uB85C \uC800\uC7A5">\u{1F516}</button>
+                        <button class="remind-viewer-btn" id="remind-settings-toggle" title="\uBDF0\uC5B4 \uC124\uC815">\u2699\uFE0F</button>
+                        <button class="remind-viewer-close" title="\uB2EB\uAE30">\u2715</button>
+                    </div>
+                </div>
+                <div class="remind-viewer-pagrow">
+                    <button class="remind-viewer-btn" id="remind-page-prev" title="\uC774\uC804 \uD398\uC774\uC9C0 (\uBC94\uC704 \uC55E\uB3C4 \uC774\uC5B4\uC11C \uBD88\uB7EC\uC634)">\u25C0</button>
+                    <span class="remind-page-label" id="remind-page-label">-</span>
+                    <button class="remind-viewer-btn" id="remind-page-next" title="\uB2E4\uC74C \uD398\uC774\uC9C0 (\uBC94\uC704 \uB05D\uB098\uBA74 \uC774\uC5B4\uC11C \uBD88\uB7EC\uC634)">\u25B6</button>
+                </div>
+                <div class="remind-settings-pop" id="remind-settings-pop" style="display:none;">
+                    <div class="remind-set-row">
+                        <span class="remind-set-label">\uD398\uC774\uC9C0\uB2F9</span>
+                        <select class="remind-viewer-select" id="remind-page-size">
+                            ${PAGE_SIZE_OPTIONS.map((n) => `
+                                <option value="${n}" ${n === pageSize ? "selected" : ""}>${n === 0 ? "\uBAA8\uB450" : n + "\uAC1C\uC529"}</option>
+                            `).join("")}
+                        </select>
+                    </div>
+                    <div class="remind-set-row">
+                        <span class="remind-set-label">\uAE00\uC790 \uD06C\uAE30</span>
+                        <div class="remind-set-inline">
+                            <button class="remind-viewer-btn" id="remind-font-minus">A\u2212</button>
+                            <span class="remind-page-label" id="remind-font-label">${fontSize}px</span>
+                            <button class="remind-viewer-btn" id="remind-font-plus">A\uFF0B</button>
+                        </div>
+                    </div>
+                    <div class="remind-set-row">
+                        <span class="remind-set-label">\uC77D\uAE30 \uD14C\uB9C8</span>
+                        <select class="remind-viewer-select" id="remind-theme-select">
+                            ${READER_THEMES.map((t) => `
+                                <option value="${t.id}" ${t.id === readerTheme ? "selected" : ""}>${t.name}</option>
+                            `).join("")}
+                        </select>
+                    </div>
+                    <div class="remind-set-row remind-set-actions">
+                        <button class="remind-viewer-btn" id="remind-viewer-regex" title="ST \uC815\uADDC\uC2DD \uC2A4\uD06C\uB9BD\uD2B8 \uC801\uC6A9 \uCF1C\uAE30/\uB044\uAE30">\u2728 \uC815\uADDC\uC2DD ON</button>
+                        <button class="remind-viewer-btn" id="remind-viewer-export" title="\uC774 \uAD6C\uAC04 \uC804\uCCB4\uB97C \uD14D\uC2A4\uD2B8 \uD30C\uC77C\uB85C \uBC31\uC5C5">\u{1F4BE} \uBC31\uC5C5</button>
+                    </div>
+                </div>
+            </header>
+            <div class="remind-viewer-body">
+                <div class="remind-viewer-loading">\u{1F4D6} \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uB294 \uC911...</div>
+            </div>
+            <button class="remind-hl-popup" id="remind-hl-popup" style="display:none;">\u{1F58D}\uFE0F \uD615\uAD11\uD39C</button>
+            <div class="remind-lightbox" id="remind-lightbox">
+                <div class="remind-lightbox-backdrop"></div>
+                <div class="remind-lightbox-content">
+                    <img class="remind-lightbox-img" src="" alt="">
+                    <div class="remind-lightbox-caption"></div>
+                    <button class="remind-lightbox-close" title="\uB2EB\uAE30">\u2715</button>
+                </div>
+            </div>
+        </div>
+    `;
+    overlay.classList.add("visible");
+    isViewerOpen = true;
+    applyFontSize(fontSize);
+    listeners.add("remindViewer", overlay.querySelector(".remind-viewer-close"), "click", closeRemindViewer);
+    listeners.add("remindViewer", overlay.querySelector("#remind-viewer-regex"), "click", toggleRegex);
+    listeners.add("remindViewer", overlay.querySelector("#remind-viewer-export"), "click", exportCurrentRange);
+    listeners.add("remindViewer", overlay.querySelector("#remind-continue-chat"), "click", continueChat);
+    listeners.add("remindViewer", overlay.querySelector("#remind-add-here"), "click", addRemindFromViewer);
+    listeners.add("remindViewer", overlay.querySelector("#remind-settings-toggle"), "click", (e) => {
+      e.stopPropagation();
+      toggleSettingsPop();
+    });
+    listeners.add("remindViewer", overlay.querySelector("#remind-page-prev"), "click", () => changePage(-1));
+    listeners.add("remindViewer", overlay.querySelector("#remind-page-next"), "click", () => changePage(1));
+    listeners.add("remindViewer", overlay.querySelector("#remind-page-size"), "change", (e) => {
+      uiPrefs.set("viewerPageSize", parseInt(e.target.value, 10) || 0);
+      pageIndex = 0;
+      renderMessages();
+    });
+    listeners.add("remindViewer", overlay.querySelector("#remind-font-minus"), "click", () => changeFontSize(-1));
+    listeners.add("remindViewer", overlay.querySelector("#remind-font-plus"), "click", () => changeFontSize(1));
+    listeners.add("remindViewer", overlay.querySelector("#remind-theme-select"), "change", (e) => {
+      uiPrefs.set("viewerTheme", e.target.value);
+      const panel = overlay.querySelector(".remind-viewer-panel");
+      if (panel) panel.dataset.readerTheme = e.target.value;
+    });
+    listeners.add("remindViewer", overlay, "click", (e) => {
+      if (e.target === overlay) closeRemindViewer();
+    });
+    listeners.add("remindViewer", document, "keydown", handleViewerKeydown);
+    const viewerBody = overlay.querySelector(".remind-viewer-body");
+    let lastScrollTop = 0;
+    listeners.add("remindViewer", viewerBody, "scroll", () => {
+      const header = document.getElementById("remind-viewer-header");
+      if (header) {
+        const st = viewerBody.scrollTop;
+        if (st < 40) {
+          header.classList.remove("header-hidden");
+        } else if (st > lastScrollTop + 6) {
+          header.classList.add("header-hidden");
+          hideSettingsPop();
+        } else if (st < lastScrollTop - 6) {
+          header.classList.remove("header-hidden");
+        }
+        lastScrollTop = st;
+      }
+      scheduleProgressSave();
+      hideHighlightPopup();
+    }, { passive: true });
+    listeners.add("remindViewer", viewerBody, "click", async (e) => {
+      hideSettingsPop();
+      const mark = e.target.closest(".remind-highlight");
+      if (mark) {
+        e.preventDefault();
+        e.stopPropagation();
+        const hlId = mark.dataset.hlId;
+        const confirmed = await showConfirm("\uC774 \uD615\uAD11\uD39C\uC744 \uC9C0\uC6B8\uAE4C\uC694?");
+        if (confirmed && hlId) {
+          highlightStore.remove(hlId);
+          unwrapHighlight(hlId);
+        }
+        return;
+      }
+      const img = e.target.closest("img");
+      if (img) {
+        e.preventDefault();
+        e.stopPropagation();
+        openLightbox(img.src, img.alt || img.title || "");
+      }
+    });
+    listeners.add("remindViewer", viewerBody, "mouseup", () => setTimeout(handleTextSelection, 10));
+    listeners.add("remindViewer", viewerBody, "touchend", () => setTimeout(handleTextSelection, 200));
+    listeners.add("remindViewer", overlay.querySelector("#remind-hl-popup"), "click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      saveHighlightFromSelection();
+    });
+    listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-backdrop"), "click", closeLightbox);
+    listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-close"), "click", closeLightbox);
+    listeners.add("remindViewer", viewerBody, "error", (e) => {
+      const img = e.target;
+      if (img?.tagName === "IMG" && img.closest(".remind-image-container")) {
+        img.closest(".remind-image-container").innerHTML = `<div class="remind-image-fallback">\u{1F5BC}\uFE0F ${escapeHtml(img.alt || "\uC774\uBBF8\uC9C0\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC74C")}</div>`;
+      }
+    }, true);
+    listeners.add("remindViewer", window, "message", (e) => {
+      if (e.data?.type !== "remind-iframe-resize" || typeof e.data.height !== "number") return;
+      const iframes = document.querySelectorAll("#chat-lobby-remind-viewer iframe.remind-regex-iframe");
+      for (const frame of iframes) {
+        if (frame.contentWindow === e.source) {
+          const h = Math.ceil(e.data.height);
+          frame.style.height = (h > 20 ? h : 400) + "px";
+          break;
+        }
+      }
+    });
+    const body = overlay.querySelector(".remind-viewer-body");
+    try {
+      const messages = await api.getChatMessages(remind.avatar, remind.fileName);
+      if (!messages || messages.length === 0) {
+        body.innerHTML = '<div class="remind-viewer-loading">\u26A0\uFE0F \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. (\uD30C\uC77C\uC774 \uC0AD\uC81C\uB418\uC5C8\uAC70\uB098 \uC774\uB984\uC774 \uBC14\uB00C\uC5C8\uC744 \uC218 \uC788\uC5B4\uC694)</div>';
+        return;
+      }
+      currentMessages = messages;
+      const total = messages.length;
+      viewStart = Math.max(0, remind.start ?? 0);
+      viewEnd = Math.min(total - 1, remind.end ?? total - 1);
+      const progress = remindStore.getProgress(remind.id);
+      if (progress) {
+        viewStart = Math.max(0, progress.viewStart ?? viewStart);
+        viewEnd = Math.max(viewStart, progress.viewEnd ?? viewEnd);
+        pageIndex = Math.max(0, progress.pageIndex ?? 0);
+      }
+      if (viewStart > total - 1) {
+        viewStart = Math.max(0, total - (getPageSize() || 20));
+        viewEnd = total - 1;
+        pageIndex = 0;
+        showToast(`\uBC94\uC704\uAC00 \uCC44\uD305 \uAE38\uC774(${total}\uAC1C)\uB97C \uBC97\uC5B4\uB098 \uB05D \uAD6C\uAC04\uC73C\uB85C \uC774\uB3D9\uD588\uC5B4\uC694.`, "warning");
+      }
+      viewEnd = Math.min(total - 1, viewEnd);
+      renderMessages();
+      if (progress?.scrollTop > 0) {
+        body.scrollTop = progress.scrollTop;
+      }
+    } catch (e) {
+      console.error("[RemindViewer] Load failed:", e);
+      body.innerHTML = '<div class="remind-viewer-loading">\u26A0\uFE0F \uCC44\uD305 \uB85C\uB529 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.</div>';
+    }
+  }
+  function closeRemindViewer() {
+    if (isViewerOpen) saveProgressNow();
+    const overlay = document.getElementById("chat-lobby-remind-viewer");
+    if (overlay) {
+      overlay.classList.remove("visible");
+      overlay.innerHTML = "";
+    }
+    if (progressSaveTimer) {
+      clearTimeout(progressSaveTimer);
+      progressSaveTimer = null;
+    }
+    listeners.clear("remindViewer");
+    isViewerOpen = false;
+    currentRemind = null;
+    currentMessages = null;
+    pendingHighlight = null;
+  }
+  function closeTopRemindLayer() {
+    if (!isViewerOpen) return false;
+    const lb = document.getElementById("remind-lightbox");
+    if (lb?.classList.contains("active")) {
+      closeLightbox();
+      return true;
+    }
+    const pop = document.getElementById("remind-settings-pop");
+    if (pop && pop.style.display !== "none") {
+      hideSettingsPop();
+      return true;
+    }
+    closeRemindViewer();
+    return true;
+  }
+  function handleViewerKeydown(e) {
+    if (!isViewerOpen) return;
+    if (e.key === "Escape") {
+      e.stopPropagation();
+      closeTopRemindLayer();
+      return;
+    }
+    if (e.key === "ArrowLeft") {
+      changePage(-1);
+    } else if (e.key === "ArrowRight") {
+      changePage(1);
+    }
+  }
+  function toggleSettingsPop() {
+    const pop = document.getElementById("remind-settings-pop");
+    if (!pop) return;
+    pop.style.display = pop.style.display === "none" ? "block" : "none";
+  }
+  function hideSettingsPop() {
+    const pop = document.getElementById("remind-settings-pop");
+    if (pop) pop.style.display = "none";
+  }
+  function getFontSize() {
+    const v = parseInt(uiPrefs.get("viewerFontSize"), 10);
+    return Math.min(FONT_MAX, Math.max(FONT_MIN, isNaN(v) ? 15 : v));
+  }
+  function getPageSize() {
+    const v = parseInt(uiPrefs.get("viewerPageSize"), 10);
+    return PAGE_SIZE_OPTIONS.includes(v) ? v : 10;
+  }
+  function getReaderTheme() {
+    const v = uiPrefs.get("viewerTheme");
+    return READER_THEMES.some((t) => t.id === v) ? v : "auto";
+  }
+  function applyFontSize(px) {
+    const panel = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-panel");
+    if (panel) panel.style.setProperty("--remind-font", `${px}px`);
+    const label = document.getElementById("remind-font-label");
+    if (label) label.textContent = `${px}px`;
+  }
+  function changeFontSize(delta) {
+    const next = Math.min(FONT_MAX, Math.max(FONT_MIN, getFontSize() + delta));
+    uiPrefs.set("viewerFontSize", next);
+    applyFontSize(next);
+  }
+  function toggleRegex() {
+    regexEnabled = !regexEnabled;
+    const btn = document.getElementById("remind-viewer-regex");
+    if (btn) {
+      btn.textContent = regexEnabled ? "\u2728 \uC815\uADDC\uC2DD ON" : "\u2728 \uC815\uADDC\uC2DD OFF";
+      btn.classList.toggle("off", !regexEnabled);
+    }
+    renderMessages(true);
+  }
+  function scheduleProgressSave() {
+    if (progressSaveTimer) clearTimeout(progressSaveTimer);
+    progressSaveTimer = setTimeout(saveProgressNow, 600);
+  }
+  function saveProgressNow() {
+    if (!currentRemind) return;
+    const body = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-body");
+    remindStore.setProgress(currentRemind.id, {
+      viewStart,
+      viewEnd,
+      pageIndex,
+      scrollTop: body ? Math.round(body.scrollTop) : 0
+    });
+  }
+  function getCurrentSlice() {
+    if (!currentRemind || !currentMessages) return null;
+    return {
+      slice: currentMessages.slice(viewStart, viewEnd + 1),
+      start: viewStart
+    };
+  }
+  function getTotalPages(rangeLength) {
+    const pageSize = getPageSize();
+    if (pageSize === 0) return 1;
+    return Math.max(1, Math.ceil(rangeLength / pageSize));
+  }
+  function changePage(delta) {
+    const data = getCurrentSlice();
+    if (!data || !currentMessages) return;
+    const total = currentMessages.length;
+    const pageSize = getPageSize();
+    const extendChunk = pageSize || 20;
+    const totalPages = getTotalPages(data.slice.length);
+    if (delta > 0) {
+      if (pageIndex < totalPages - 1) {
+        pageIndex++;
+      } else if (viewEnd < total - 1) {
+        const newEnd = Math.min(total - 1, viewEnd + extendChunk);
+        viewEnd = newEnd;
+        pageIndex++;
+        showToast(`\u{1F4D6} \uB2E4\uC74C \uAD6C\uAC04 \uC774\uC5B4 \uBCF4\uAE30 (~#${newEnd})`, "info", 1500);
+      } else {
+        return;
+      }
+    } else {
+      if (pageIndex > 0) {
+        pageIndex--;
+      } else if (viewStart > 0) {
+        const newStart = Math.max(0, viewStart - extendChunk);
+        viewStart = newStart;
+        pageIndex = 0;
+        showToast(`\u{1F4D6} \uC774\uC804 \uAD6C\uAC04 \uC774\uC5B4 \uBCF4\uAE30 (#${newStart}~)`, "info", 1500);
+      } else {
+        return;
+      }
+    }
+    renderMessages();
+    scheduleProgressSave();
+  }
+  function resolveMes(msg) {
+    if (Array.isArray(msg.swipes) && typeof msg.swipe_id === "number" && msg.swipes[msg.swipe_id] !== void 0) {
+      return msg.swipes[msg.swipe_id];
+    }
+    return msg.mes || "";
+  }
+  async function continueChat() {
+    const r = currentRemind;
+    if (!r) return;
+    const context = api.getContext();
+    const charIndex = (context?.characters || []).findIndex((c) => c.avatar === r.avatar);
+    if (charIndex === -1) {
+      showToast("\uCE90\uB9AD\uD130\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
+      return;
+    }
+    saveProgressNow();
+    const info = { fileName: r.fileName, charAvatar: r.avatar, charIndex: String(charIndex) };
+    closeRemindViewer();
+    await openChat(info);
+  }
+  async function addRemindFromViewer() {
+    const r = currentRemind;
+    if (!r) return;
+    const defaultRange = `${lastRenderedRange.from}-${lastRenderedRange.to}`;
+    const rangeInput = await showPrompt(
+      "\uC800\uC7A5\uD560 \uBA54\uC2DC\uC9C0 \uBC94\uC704 (\uD604\uC7AC \uBCF4\uB294 \uD398\uC774\uC9C0\uAC00 \uAE30\uBCF8\uAC12)\n\uC608: 120-130 / 120 / \uBE44\uC6B0\uBA74 \uC804\uCCB4",
+      "\u{1F516} \uC774 \uAD6C\uAC04 \uB9AC\uB9C8\uC778\uB4DC\uB85C \uC800\uC7A5",
+      defaultRange
+    );
+    if (rangeInput === null) return;
+    let start = null;
+    let end = null;
+    const trimmed = rangeInput.trim();
+    if (trimmed) {
+      const match = trimmed.match(/^(\d+)\s*[-~]\s*(\d+)$/) || trimmed.match(/^(\d+)$/);
+      if (!match) {
+        showToast("\uBC94\uC704 \uD615\uC2DD\uC774 \uC62C\uBC14\uB974\uC9C0 \uC54A\uC2B5\uB2C8\uB2E4. \uC608: 120-130", "error");
+        return;
+      }
+      start = parseInt(match[1], 10);
+      end = match[2] !== void 0 ? parseInt(match[2], 10) : start;
+      if (end < start) [start, end] = [end, start];
+      if (currentMessages) {
+        const total = currentMessages.length;
+        if (start > total - 1) {
+          showToast(`\uC774 \uCC44\uD305\uC740 #${total - 1}\uAE4C\uC9C0\uB9CC \uC788\uC5B4\uC694. \uBC94\uC704\uB97C \uD655\uC778\uD574\uC8FC\uC138\uC694.`, "error");
+          return;
+        }
+        if (end > total - 1) end = total - 1;
+      }
+    }
+    const note = await showPrompt("\uBA54\uBAA8\uB97C \uB0A8\uACA8\uC8FC\uC138\uC694.", "\u{1F516} \uB9AC\uB9C8\uC778\uB4DC \uBA54\uBAA8", "");
+    if (note === null) return;
+    remindStore.add({
+      avatar: r.avatar,
+      charName: r.charName,
+      fileName: r.fileName,
+      start,
+      end,
+      note: note.trim()
+    });
+    showToast(`\u{1F516} \uB9AC\uB9C8\uC778\uB4DC \uC800\uC7A5\uB428${start !== null ? ` (#${start}~#${end})` : ""}`, "success");
+  }
+  function hideHighlightPopup() {
+    const popup = document.getElementById("remind-hl-popup");
+    if (popup) popup.style.display = "none";
+  }
+  function handleTextSelection() {
+    const popup = document.getElementById("remind-hl-popup");
+    const panel = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-panel");
+    if (!popup || !panel) return;
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+      hideHighlightPopup();
+      return;
+    }
+    const text = sel.toString().trim();
+    if (!text || text.length < 2 || text.length > 600) {
+      hideHighlightPopup();
+      return;
+    }
+    const range = sel.getRangeAt(0);
+    const anchor = range.commonAncestorContainer;
+    const anchorEl = anchor.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor;
+    const article = anchorEl?.closest?.(".remind-msg");
+    if (!article || !article.dataset.mesid) {
+      hideHighlightPopup();
+      return;
+    }
+    pendingHighlight = {
+      mesid: parseInt(article.dataset.mesid, 10),
+      text
+    };
+    const rect = range.getBoundingClientRect();
+    const panelRect = panel.getBoundingClientRect();
+    const left = Math.min(panelRect.width - 110, Math.max(8, rect.left - panelRect.left));
+    const top = Math.min(panelRect.height - 50, rect.bottom - panelRect.top + 8);
+    popup.style.left = `${left}px`;
+    popup.style.top = `${top}px`;
+    popup.style.display = "flex";
+  }
+  function saveHighlightFromSelection() {
+    if (!pendingHighlight || !currentRemind) {
+      hideHighlightPopup();
+      return;
+    }
+    const { mesid, text } = pendingHighlight;
+    const entry = highlightStore.add({
+      avatar: currentRemind.avatar,
+      fileName: currentRemind.fileName,
+      mesid,
+      text
+    });
+    const article = document.querySelector(`#chat-lobby-remind-viewer .remind-msg[data-mesid="${mesid}"] .remind-msg-body`);
+    if (article) {
+      wrapTextOccurrence(article, text, entry.id);
+    }
+    window.getSelection()?.removeAllRanges();
+    pendingHighlight = null;
+    hideHighlightPopup();
+    showToast("\u{1F58D}\uFE0F \uD615\uAD11\uD39C \uC800\uC7A5\uB428 (\uD0ED\uD558\uBA74 \uC81C\uAC70)", "success", 1800);
+  }
+  function wrapTextOccurrence(rootEl, searchText, hlId) {
+    if (!rootEl || !searchText) return false;
+    const full = rootEl.textContent;
+    const idx = full.indexOf(searchText);
+    if (idx === -1) return false;
+    const endIdx = idx + searchText.length;
+    const walker = document.createTreeWalker(rootEl, NodeFilter.SHOW_TEXT);
+    let pos = 0;
+    const targets = [];
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const len = node.nodeValue.length;
+      const nodeStart = pos;
+      const nodeEnd = pos + len;
+      if (nodeEnd > idx && nodeStart < endIdx) {
+        targets.push({
+          node,
+          from: Math.max(0, idx - nodeStart),
+          to: Math.min(len, endIdx - nodeStart)
+        });
+      }
+      pos = nodeEnd;
+      if (pos >= endIdx) break;
+    }
+    for (const t of targets) {
+      try {
+        const range = document.createRange();
+        range.setStart(t.node, t.from);
+        range.setEnd(t.node, t.to);
+        const mark = document.createElement("mark");
+        mark.className = "remind-highlight";
+        mark.dataset.hlId = hlId;
+        range.surroundContents(mark);
+      } catch (e) {
+      }
+    }
+    return targets.length > 0;
+  }
+  function unwrapHighlight(hlId) {
+    document.querySelectorAll(`#chat-lobby-remind-viewer mark[data-hl-id="${CSS.escape(hlId)}"]`).forEach((mark) => {
+      while (mark.firstChild) {
+        mark.parentNode.insertBefore(mark.firstChild, mark);
+      }
+      mark.remove();
+    });
+  }
+  function applySavedHighlights(body) {
+    if (!currentRemind) return;
+    body.querySelectorAll(".remind-msg[data-mesid]").forEach((article) => {
+      const mesid = parseInt(article.dataset.mesid, 10);
+      const hls = highlightStore.getForMessage(currentRemind.avatar, currentRemind.fileName, mesid);
+      if (hls.length === 0) return;
+      const msgBody = article.querySelector(".remind-msg-body");
+      if (!msgBody) return;
+      for (const hl of hls) {
+        wrapTextOccurrence(msgBody, hl.text, hl.id);
+      }
+    });
+  }
+  function openLightbox(src, alt) {
+    const lb = document.getElementById("remind-lightbox");
+    if (!lb) return;
+    lb.querySelector(".remind-lightbox-img").src = src;
+    lb.querySelector(".remind-lightbox-img").alt = alt;
+    lb.querySelector(".remind-lightbox-caption").textContent = alt;
+    lb.classList.add("active");
+  }
+  function closeLightbox() {
+    const lb = document.getElementById("remind-lightbox");
+    if (lb) lb.classList.remove("active");
+  }
+  function renderMessages(keepScroll = false) {
+    const body = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-body");
+    const data = getCurrentSlice();
+    if (!body || !data) return;
+    const { slice, start } = data;
+    if (slice.length === 0) {
+      body.innerHTML = `<div class="remind-viewer-loading">\u26A0\uFE0F \uD574\uB2F9 \uBC94\uC704\uC5D0 \uBA54\uC2DC\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. (\uCC44\uD305 \uAE38\uC774: ${currentMessages.length})<br><small>\u25C0 \uBC84\uD2BC\uC73C\uB85C \uC774\uC804 \uAD6C\uAC04\uC744 \uBD88\uB7EC\uC62C \uC218 \uC788\uC5B4\uC694.</small></div>`;
+      updatePageControls(0, 0);
+      return;
+    }
+    const pageSize = getPageSize();
+    const totalPages = getTotalPages(slice.length);
+    pageIndex = Math.min(totalPages - 1, Math.max(0, pageIndex));
+    const pageStart = pageSize === 0 ? 0 : pageIndex * pageSize;
+    const pageSlice = pageSize === 0 ? slice : slice.slice(pageStart, pageStart + pageSize);
+    const userName = currentMessages.find((m) => m.is_user)?.name || "User";
+    const charName = currentRemind.charName || currentMessages.find((m) => !m.is_user && !m.is_system)?.name || "Character";
+    const prevScroll = body.scrollTop;
+    let html = "";
+    pageSlice.forEach((msg, i) => {
+      const mesid = start + pageStart + i;
+      const formatted = renderMessageHtml(msg, {
+        characterName: charName,
+        userName,
+        charAvatar: currentRemind.avatar,
+        applyRegex: regexEnabled
+      });
+      const roleClass = msg.is_user ? "is-user" : msg.is_system ? "is-system" : "is-char";
+      html += `
+        <article class="remind-msg ${roleClass}" data-mesid="${mesid}">
+            <div class="remind-msg-meta">
+                <span class="remind-msg-name">${escapeHtml(msg.name || (msg.is_user ? userName : charName))}</span>
+                <span class="remind-msg-id">#${mesid}</span>
+            </div>
+            <div class="remind-msg-body">${formatted}</div>
+        </article>`;
+    });
+    body.innerHTML = html;
+    body.scrollTop = keepScroll ? prevScroll : 0;
+    const rangeFrom = start + pageStart;
+    const rangeTo = start + pageStart + pageSlice.length - 1;
+    lastRenderedRange = { from: rangeFrom, to: rangeTo };
+    updatePageControls(totalPages, slice.length, rangeFrom, rangeTo);
+    document.getElementById("remind-viewer-header")?.classList.remove("header-hidden");
+    hideHighlightPopup();
+    hideSettingsPop();
+    hydrateRegexIframes(body);
+    applySavedHighlights(body);
+  }
+  function updatePageControls(totalPages, rangeLength, rangeFrom = 0, rangeTo = 0) {
+    const label = document.getElementById("remind-page-label");
+    const prevBtn = document.getElementById("remind-page-prev");
+    const nextBtn = document.getElementById("remind-page-next");
+    const total = currentMessages?.length || 0;
+    if (label) {
+      if (rangeLength === 0) {
+        label.textContent = "-";
+      } else if (totalPages <= 1) {
+        label.textContent = `#${rangeFrom}~#${rangeTo}`;
+      } else {
+        label.textContent = `#${rangeFrom}~#${rangeTo} (${pageIndex + 1}/${totalPages})`;
+      }
+    }
+    if (prevBtn) prevBtn.disabled = pageIndex <= 0 && viewStart <= 0;
+    if (nextBtn) nextBtn.disabled = pageIndex >= totalPages - 1 && viewEnd >= total - 1;
+  }
+  function hydrateRegexIframes(scope) {
+    scope.querySelectorAll("iframe.remind-regex-iframe[data-remind-html]").forEach((iframe) => {
+      const b64 = iframe.getAttribute("data-remind-html");
+      iframe.removeAttribute("data-remind-html");
+      if (!b64) return;
+      try {
+        iframe.srcdoc = decodeURIComponent(escape(atob(b64)));
+      } catch (e) {
+        console.warn("[RemindViewer] iframe srcdoc set failed:", e);
+        iframe.replaceWith(Object.assign(document.createElement("div"), {
+          className: "remind-html-notice",
+          textContent: "\u{1F9E9} HTML \uBE14\uB85D\uC744 \uD45C\uC2DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."
+        }));
+        return;
+      }
+      iframe.addEventListener("load", () => {
+        setTimeout(() => {
+          if (!iframe.style.height || iframe.style.height === "0px") {
+            iframe.style.height = "400px";
+          }
+        }, 800);
+      });
+    });
+  }
+  function exportCurrentRange() {
+    const data = getCurrentSlice();
+    if (!data || data.slice.length === 0) {
+      showToast("\uB0B4\uBCF4\uB0BC \uBA54\uC2DC\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.", "warning");
+      return;
+    }
+    const { slice, start } = data;
+    const r = currentRemind;
+    const rangeText = `#${viewStart}~#${viewEnd}`;
+    let text = `\u{1F516} ${r.charName} - ${r.fileName} (${rangeText})
+`;
+    if (r.note) text += `\uBA54\uBAA8: ${r.note}
+`;
+    text += `\uBC31\uC5C5\uC77C: ${(/* @__PURE__ */ new Date()).toLocaleString("ko-KR")}
+`;
+    text += "=".repeat(40) + "\n\n";
+    slice.forEach((msg, i) => {
+      text += `[#${start + i}] ${msg.name || (msg.is_user ? "User" : r.charName)}
+`;
+      text += resolveMes(msg) + "\n\n";
+      text += "-".repeat(40) + "\n\n";
+    });
+    const safeName = `${r.charName}_${r.fileName}_${rangeText}`.replace(/[\\/:*?"<>|#~\s]+/g, "_");
+    const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `remind_${safeName}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1e3);
+    showToast("\u{1F4BE} \uD14D\uC2A4\uD2B8 \uD30C\uC77C\uB85C \uBC31\uC5C5\uD588\uC2B5\uB2C8\uB2E4.", "success");
+  }
 
   // src/ui/chatList.js
   var tooltipElement = null;
@@ -4058,6 +5450,9 @@ ${message}` : message;
     const menu = document.createElement("div");
     menu.className = "chat-folder-menu";
     menu.innerHTML = `
+        <div class="folder-menu-item view-chat-item">
+            \u{1F4D6} \uBDF0\uC5B4\uB85C \uAC10\uC0C1
+        </div>
         <div class="folder-menu-item rename-chat-item">
             \u270F\uFE0F \uC774\uB984 \uBC14\uAFB8\uAE30
         </div>
@@ -4091,6 +5486,12 @@ ${message}` : message;
     lobbyContainer.appendChild(menu);
     activeFolderMenu = menu;
     activeFolderMenu._targetBtn = targetBtn;
+    menu.querySelector(".view-chat-item")?.addEventListener("click", async () => {
+      closeChatFolderMenu();
+      const context = api.getContext();
+      const char = (context?.characters || []).find((c) => c.avatar === charAvatar);
+      await openChatInViewer(charAvatar, char?.name || "", fileName);
+    });
     menu.querySelector(".rename-chat-item")?.addEventListener("click", async () => {
       closeChatFolderMenu();
       await renameChatPrompt(charAvatar, fileName);
@@ -4099,7 +5500,7 @@ ${message}` : message;
       closeChatFolderMenu();
       await addRemindPrompt(charAvatar, fileName);
     });
-    menu.querySelectorAll(".folder-menu-item:not(.rename-chat-item):not(.remind-add-item)").forEach((item) => {
+    menu.querySelectorAll(".folder-menu-item:not(.rename-chat-item):not(.remind-add-item):not(.view-chat-item)").forEach((item) => {
       item.addEventListener("click", async () => {
         const folderId = item.dataset.folderId;
         if (folderId) {
@@ -4202,6 +5603,7 @@ ${message}` : message;
       if (success) {
         storage.renameChatKey(charAvatar, currentName, newName);
         remindStore.renameChat(charAvatar, currentName, newName);
+        highlightStore.renameChat(charAvatar, currentName, newName);
         showToast(`\uC774\uB984 \uBCC0\uACBD: "${newName}"`, "success");
         await refreshCurrentChatList(true);
       } else {
@@ -5193,7 +6595,7 @@ ${message}` : message;
   }
 
   // src/data/calendarStorage.js
-  var STORAGE_KEY4 = "chatLobby_calendar";
+  var STORAGE_KEY6 = "chatLobby_calendar";
   var CURRENT_VERSION = 1;
   var _snapshotsCache = null;
   function getLocalDateString(date = /* @__PURE__ */ new Date()) {
@@ -5204,14 +6606,14 @@ ${message}` : message;
       return _snapshotsCache;
     }
     try {
-      const data = localStorage.getItem(STORAGE_KEY4);
+      const data = localStorage.getItem(STORAGE_KEY6);
       if (data) {
         const parsed = JSON.parse(data);
         const version = parsed.version || 0;
         if (version < CURRENT_VERSION) {
           console.debug("[Calendar] Migrating data from version", version, "to", CURRENT_VERSION);
           const migrated = { version: CURRENT_VERSION, snapshots: parsed.snapshots || {} };
-          localStorage.setItem(STORAGE_KEY4, JSON.stringify(migrated));
+          localStorage.setItem(STORAGE_KEY6, JSON.stringify(migrated));
         }
         _snapshotsCache = parsed.snapshots || {};
         return _snapshotsCache;
@@ -5241,7 +6643,7 @@ ${message}` : message;
     }
     if (deleted > 0) {
       console.debug("[Calendar] Deleted", deleted, "old snapshots (2+ years)");
-      localStorage.setItem(STORAGE_KEY4, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+      localStorage.setItem(STORAGE_KEY6, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
     }
   }
   function saveSnapshot(date, total, topChar, byChar = {}, lastChatTimes = {}, isBaseline = false) {
@@ -5254,7 +6656,7 @@ ${message}` : message;
       const existingTimes = snapshots[date]?.lastChatTimes || {};
       const mergedLastChatTimes = { ...existingTimes, ...lastChatTimes };
       snapshots[date] = { total, topChar, byChar, lastChatTimes: mergedLastChatTimes };
-      localStorage.setItem(STORAGE_KEY4, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+      localStorage.setItem(STORAGE_KEY6, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
       console.debug("[Calendar] saveSnapshot:", date, "| total:", total, "| topChar:", topChar, "| lastChatTimes count:", Object.keys(mergedLastChatTimes).length);
     } catch (e) {
       if (e.name === "QuotaExceededError") {
@@ -5265,7 +6667,7 @@ ${message}` : message;
           const existingTimes = snapshots[date]?.lastChatTimes || {};
           const mergedLastChatTimes = { ...existingTimes, ...lastChatTimes };
           snapshots[date] = { total, topChar, byChar, lastChatTimes: mergedLastChatTimes };
-          localStorage.setItem(STORAGE_KEY4, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+          localStorage.setItem(STORAGE_KEY6, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
         } catch (e2) {
           console.error("[Calendar] Still failed after cleanup:", e2);
         }
@@ -5277,733 +6679,10 @@ ${message}` : message;
   function clearAllSnapshots() {
     try {
       _snapshotsCache = null;
-      localStorage.removeItem(STORAGE_KEY4);
+      localStorage.removeItem(STORAGE_KEY6);
     } catch (e) {
       console.error("[Calendar] Failed to clear snapshots:", e);
     }
-  }
-
-  // src/utils/chatTextFormatter.js
-  init_textUtils();
-  function getScriptFlags(script) {
-    switch (script?.substituteRegex) {
-      case 1:
-        return "g";
-      case 2:
-        return "i";
-      case 3:
-        return "";
-      default:
-        return "gi";
-    }
-  }
-  function regexFromString(regexStr, script) {
-    if (!regexStr) return null;
-    const slashForm = regexStr.match(/^\/(.*?)\/([gimsuy]*)$/);
-    try {
-      if (slashForm) return new RegExp(slashForm[1], slashForm[2]);
-      return new RegExp(regexStr, getScriptFlags(script));
-    } catch (e) {
-      console.warn("[ChatFormatter] Invalid regex:", regexStr, e.message);
-      return null;
-    }
-  }
-  function collectRegexScripts(context, charAvatar) {
-    const scripts = [];
-    const ext = context?.extensionSettings || {};
-    if (Array.isArray(ext.regex)) scripts.push(...ext.regex);
-    else if (Array.isArray(ext.regex?.scripts)) scripts.push(...ext.regex.scripts);
-    if (Array.isArray(ext.regex_scripts)) scripts.push(...ext.regex_scripts);
-    try {
-      const char = (context?.characters || []).find((c) => c.avatar === charAvatar);
-      const embedded = char?.data?.extensions?.regex_scripts;
-      if (Array.isArray(embedded)) scripts.push(...embedded);
-    } catch (e) {
-    }
-    return scripts;
-  }
-  function applyRegexScript(script, text, options) {
-    if (!script?.findRegex || !text) return text;
-    const findRegex = regexFromString(script.findRegex, script);
-    if (!findRegex) return text;
-    const replaceTemplate = (script.replaceString || "").replace(/\{\{match\}\}/gi, "$0");
-    const trimStrings = Array.isArray(script.trimStrings) ? script.trimStrings.filter(Boolean) : [];
-    try {
-      return text.replace(findRegex, function() {
-        const args = [...arguments];
-        let output = replaceTemplate.replace(/\$(\d+)|\$<([^>]+)>/g, (_, num, groupName) => {
-          let groupMatch;
-          if (num !== void 0) {
-            groupMatch = args[Number(num)];
-          } else if (groupName) {
-            const groups = args[args.length - 1];
-            groupMatch = groups && typeof groups === "object" ? groups[groupName] : void 0;
-          }
-          if (!groupMatch) return "";
-          for (const trimStr of trimStrings) {
-            groupMatch = groupMatch.replaceAll(trimStr, "");
-          }
-          return groupMatch;
-        });
-        if (options.characterName) {
-          output = output.replace(/\{\{charkey\}\}/gi, options.characterName);
-          output = output.replace(/\{\{char\}\}/gi, options.characterName);
-        }
-        if (options.userName) {
-          output = output.replace(/\{\{user\}\}/gi, options.userName);
-        }
-        return output;
-      });
-    } catch (e) {
-      console.warn("[ChatFormatter] Regex script failed:", script.scriptName, e);
-      return text;
-    }
-  }
-  function applyStRegexScripts(text, options) {
-    if (!text) return text;
-    try {
-      const context = window.SillyTavern?.getContext?.();
-      if (!context) return text;
-      const scripts = collectRegexScripts(context, options.charAvatar);
-      let result = text;
-      for (const script of scripts) {
-        if (script.disabled) continue;
-        if (script.promptOnly) continue;
-        if (Array.isArray(script.placement) && script.placement.length > 0) {
-          const forAi = script.placement.includes(2);
-          const forUser = script.placement.includes(1);
-          const forDisplay = script.placement.includes(0);
-          if (options.isUser && !forUser && !forDisplay) continue;
-          if (!options.isUser && !forAi && !forDisplay) continue;
-        }
-        result = applyRegexScript(script, result, options);
-      }
-      return result;
-    } catch (e) {
-      console.warn("[ChatFormatter] applyStRegexScripts error:", e);
-      return text;
-    }
-  }
-  function escapeAttr(str) {
-    if (!str) return "";
-    return str.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/'/g, "&#x27;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-  function resolveImagePath(filename, characterName) {
-    if (!filename) return "";
-    if (filename.startsWith("http://") || filename.startsWith("https://") || filename.startsWith("data:")) {
-      return filename;
-    }
-    if (filename.startsWith("/")) return filename;
-    return `/characters/${encodeURIComponent(characterName || "Unknown")}/${encodeURIComponent(filename)}`;
-  }
-  function createImageHtml(src, alt) {
-    return `<div class="remind-image-container"><img class="remind-image" src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" title="${escapeAttr(alt)}" loading="lazy" decoding="async"></div>`;
-  }
-  function processImages(text, characterName) {
-    if (!text) return text;
-    return text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
-      const trimmed = filename.trim();
-      return createImageHtml(resolveImagePath(trimmed, characterName), trimmed);
-    });
-  }
-  function renderExtraImagesHtml(message) {
-    if (!message?.extra) return "";
-    const images = [];
-    const extra = Object.assign({}, message.extra);
-    if (Array.isArray(extra.media)) {
-      for (const media of extra.media) {
-        if (media && media.url && (!media.type || media.type === "image")) {
-          images.push({ src: media.url, alt: media.title || "" });
-        }
-      }
-    }
-    if (images.length === 0 && extra.image) {
-      images.push({ src: extra.image, alt: extra.title || "" });
-    }
-    if (images.length === 0 && Array.isArray(extra.image_swipes)) {
-      const idx = extra.media_index ?? extra.image_swipes.length - 1;
-      const url = extra.image_swipes[idx] || extra.image_swipes[extra.image_swipes.length - 1];
-      if (url) images.push({ src: url, alt: extra.title || "" });
-    }
-    if (images.length === 0) return "";
-    return '<div class="remind-extra-images">' + images.map((img) => createImageHtml(img.src, img.alt)).join("") + "</div>";
-  }
-  function unwrapPreviousInfoBlocks(text) {
-    if (!text) return text;
-    text = text.replace(/<details[^>]*>\s*<summary[^>]*>[^<]*이전\s*정보[^<]*<\/summary>/gi, "");
-    let openCount = (text.match(/<details\b/gi) || []).length;
-    let closeCount = (text.match(/<\/details\s*>/gi) || []).length;
-    while (closeCount > openCount) {
-      text = text.replace(/<\/details\s*>/, "");
-      closeCount--;
-    }
-    return text;
-  }
-  function removeCursorMarkers(text) {
-    if (!text) return text;
-    text = text.replace(/^\s*\|\s*$/gm, "");
-    text = text.replace(/<cursor\s*\/?>/gi, "");
-    text = text.replace(/\{\{cursor\}\}/gi, "");
-    text = text.replace(/\n{3,}/g, "\n\n");
-    return text;
-  }
-  var IFRAME_OVERRIDE_CSS = "<style>html,body{margin:0!important;padding:0!important;background:transparent;}html{scrollbar-width:none!important;}::-webkit-scrollbar{display:none!important;}</style>";
-  var IFRAME_RESIZE_SCRIPT = `<script>
-(function(){
-  document.addEventListener('DOMContentLoaded',function(){
-    if(document.getElementById('rm-wrap'))return;
-    var w=document.createElement('div');
-    w.id='rm-wrap';
-    while(document.body.firstChild)w.appendChild(document.body.firstChild);
-    document.body.appendChild(w);
-    init();
-  });
-  function init(){
-    var w=document.getElementById('rm-wrap');
-    if(!w)return;
-    var timer=null;
-    function sendH(){
-      if(timer)return;
-      timer=setTimeout(function(){
-        timer=null;
-        var orig=w.style.height;
-        var origOv=w.style.overflow;
-        w.style.overflow='auto';
-        w.style.height='0';
-        var h=w.scrollHeight;
-        w.style.height=orig||'';
-        w.style.overflow=origOv||'';
-        if(h>0){
-          window.parent.postMessage({type:'remind-iframe-resize',height:h},'*');
-        }
-      },0);
-    }
-    sendH();
-    document.querySelectorAll('details').forEach(function(d){
-      d.addEventListener('toggle',function(){
-        sendH();
-        setTimeout(sendH,100);
-        setTimeout(sendH,300);
-      });
-    });
-    new MutationObserver(function(){sendH();}).observe(w,{childList:true,subtree:true,attributes:true});
-    [100,300,600,1500,3000].forEach(function(d){setTimeout(sendH,d);});
-  }
-})();
-<\/script>`;
-  function convertHtmlDocsToIframes(text) {
-    const iframePlaceholders = [];
-    if (!text) return { text, iframePlaceholders };
-    const htmlDocPattern = /\[?\s*(?:<!DOCTYPE\s+html[^>]*>[\s\S]*?<\/html>|<html[^>]*>[\s\S]*?<\/html>)\s*\]?/gi;
-    const processed = text.replace(htmlDocPattern, (match) => {
-      let modified = match.replace(/^\s*\[/, "").replace(/\]\s*$/, "");
-      if (modified.includes("</head>")) {
-        modified = modified.replace("</head>", IFRAME_OVERRIDE_CSS + "</head>");
-      } else if (modified.includes("<body")) {
-        modified = modified.replace("<body", IFRAME_OVERRIDE_CSS + "<body");
-      } else {
-        modified = IFRAME_OVERRIDE_CSS + modified;
-      }
-      if (modified.includes("</body>")) {
-        modified = modified.replace("</body>", IFRAME_RESIZE_SCRIPT + "</body>");
-      } else {
-        modified += IFRAME_RESIZE_SCRIPT;
-      }
-      const b64 = btoa(unescape(encodeURIComponent(modified)));
-      const iframe = `<iframe class="remind-regex-iframe" data-remind-html="${b64}" sandbox="allow-scripts" frameborder="0" scrolling="no"></iframe>`;
-      const index = iframePlaceholders.length;
-      iframePlaceholders.push(iframe);
-      return `
-%%%RM_IFRAME_${index}%%%
-`;
-    });
-    return { text: processed, iframePlaceholders };
-  }
-  function restoreIframePlaceholders(html, iframePlaceholders) {
-    if (!iframePlaceholders || iframePlaceholders.length === 0) return html;
-    return html.replace(
-      /(?:<br\s*\/?>)?\s*(?:<pre[^>]*>)?\s*(?:<code[^>]*>)?\s*(?:<p[^>]*>)?\s*%%%RM_IFRAME_(\d+)%%%\s*(?:<\/p>)?\s*(?:<\/code>)?\s*(?:<\/pre>)?\s*(?:<br\s*\/?>)?/g,
-      (match, index) => iframePlaceholders[parseInt(index, 10)] || match
-    );
-  }
-  function processChoices(text) {
-    if (!text) return text;
-    return text.replace(/<choices>([\s\S]*?)<\/choices>/gi, (match, content) => {
-      const lines = content.trim().split("\n").filter((l) => l.trim());
-      if (lines.length === 0) return match;
-      let html = '<div class="remind-choices"><div class="remind-choices-header">\uC120\uD0DD\uC9C0</div>';
-      lines.forEach((line, i) => {
-        const cleanLine = line.replace(/^\d+[.)\-]\s*/, "").trim();
-        if (cleanLine) {
-          html += `<div class="remind-choice-card"><span class="remind-choice-num">${i + 1}.</span><span>${escapeHtml(cleanLine)}</span></div>`;
-        }
-      });
-      html += "</div>";
-      return html;
-    });
-  }
-  function processInlineMarkdown(text) {
-    if (!text) return "";
-    text = text.replace(/\*\*\*(.+?)\*\*\*/g, "<strong><em>$1</em></strong>");
-    text = text.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    text = text.replace(/\*(.+?)\*/g, "<em>$1</em>");
-    text = text.replace(/~~(.+?)~~/g, "<del>$1</del>");
-    text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
-    return text;
-  }
-  function renderMarkdown(text) {
-    if (!text) return "";
-    const protectedBlocks = [];
-    function protectBlock(match) {
-      const idx = protectedBlocks.length;
-      protectedBlocks.push(match);
-      return `\0HTMLBLOCK${idx}\0`;
-    }
-    const codeBlocks = [];
-    text = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (match, lang, code) => {
-      const idx = codeBlocks.length;
-      codeBlocks.push(`<pre class="remind-code"><code>${escapeHtml(code.trim())}</code></pre>`);
-      return `\0CODEBLOCK${idx}\0`;
-    });
-    const inlineCodes = [];
-    text = text.replace(/`([^`]+)`/g, (match, code) => {
-      const idx = inlineCodes.length;
-      inlineCodes.push(`<code class="remind-inline-code">${escapeHtml(code)}</code>`);
-      return `\0INLINECODE${idx}\0`;
-    });
-    text = text.replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, protectBlock);
-    text = text.replace(/<svg\b[^>]*>[\s\S]*?<\/svg>/gi, protectBlock);
-    text = text.replace(/<table\b[^>]*>[\s\S]*?<\/table>/gi, protectBlock);
-    const blockOpenRe = /<(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|pre|dl)\b/gi;
-    const blockCloseRe = /<\/(div|details|section|article|aside|nav|header|footer|form|fieldset|figure|main|pre|dl)\s*>/gi;
-    const countOpens = (str) => (str.match(blockOpenRe) || []).length;
-    const countCloses = (str) => (str.match(blockCloseRe) || []).length;
-    const lines = text.split("\n");
-    const result = [];
-    let inList = false;
-    let listType = "";
-    let htmlBlockDepth = 0;
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-      if (htmlBlockDepth > 0) {
-        htmlBlockDepth += countOpens(trimmed) - countCloses(trimmed);
-        if (htmlBlockDepth < 0) htmlBlockDepth = 0;
-        result.push(line);
-        continue;
-      }
-      if (/^<[a-zA-Z]/.test(trimmed)) {
-        const opens = countOpens(trimmed);
-        const closes = countCloses(trimmed);
-        if (opens > closes) {
-          htmlBlockDepth = opens - closes;
-        }
-        result.push(trimmed);
-        continue;
-      }
-      if (/^<\/[a-zA-Z]/.test(trimmed)) {
-        htmlBlockDepth -= countCloses(trimmed);
-        if (htmlBlockDepth < 0) htmlBlockDepth = 0;
-        result.push(trimmed);
-        continue;
-      }
-      if (inList && !trimmed.match(/^[-*]\s/) && !trimmed.match(/^\d+\.\s/)) {
-        result.push(listType === "ul" ? "</ul>" : "</ol>");
-        inList = false;
-      }
-      if (!trimmed) {
-        result.push("<br />");
-        continue;
-      }
-      const headingMatch = trimmed.match(/^(#{1,6})\s+(.+)$/);
-      if (headingMatch) {
-        const level = headingMatch[1].length;
-        result.push(`<h${level} class="remind-h">${processInlineMarkdown(headingMatch[2])}</h${level}>`);
-        continue;
-      }
-      if (/^[-*_]{3,}\s*$/.test(trimmed)) {
-        result.push('<hr class="remind-hr" />');
-        continue;
-      }
-      if (trimmed.startsWith(">")) {
-        result.push(`<blockquote class="remind-quote">${processInlineMarkdown(trimmed.replace(/^>\s?/, ""))}</blockquote>`);
-        continue;
-      }
-      const ulMatch = trimmed.match(/^[-*]\s+(.+)$/);
-      if (ulMatch) {
-        if (!inList || listType !== "ul") {
-          if (inList) result.push(listType === "ul" ? "</ul>" : "</ol>");
-          result.push('<ul class="remind-list-md">');
-          inList = true;
-          listType = "ul";
-        }
-        result.push(`<li>${processInlineMarkdown(ulMatch[1])}</li>`);
-        continue;
-      }
-      const olMatch = trimmed.match(/^\d+\.\s+(.+)$/);
-      if (olMatch) {
-        if (!inList || listType !== "ol") {
-          if (inList) result.push(listType === "ul" ? "</ul>" : "</ol>");
-          result.push('<ol class="remind-list-md">');
-          inList = true;
-          listType = "ol";
-        }
-        result.push(`<li>${processInlineMarkdown(olMatch[1])}</li>`);
-        continue;
-      }
-      if (/^\x00(HTMLBLOCK|CODEBLOCK|INLINECODE)\d+\x00$/.test(trimmed)) {
-        result.push(trimmed);
-        continue;
-      }
-      result.push(`<p class="remind-p">${processInlineMarkdown(trimmed)}</p>`);
-    }
-    if (inList) {
-      result.push(listType === "ul" ? "</ul>" : "</ol>");
-    }
-    text = result.join("\n");
-    codeBlocks.forEach((block, i) => {
-      text = text.replace(`\0CODEBLOCK${i}\0`, () => block);
-    });
-    inlineCodes.forEach((code, i) => {
-      text = text.replace(`\0INLINECODE${i}\0`, () => code);
-    });
-    protectedBlocks.forEach((block, i) => {
-      text = text.replace(`\0HTMLBLOCK${i}\0`, () => block);
-    });
-    return text;
-  }
-  function styleDialogue(html) {
-    if (!html) return html;
-    html = html.replace(/(?<=>|^)([^<]*?"[^"]*?"[^<]*?)(?=<|$)/g, (match) => {
-      return match.replace(/"([^"]+)"/g, '<span class="remind-dialogue">"$1"</span>');
-    });
-    html = html.replace(/(?<=>|^)([^<]*?「[^」]*?」[^<]*?)(?=<|$)/g, (match) => {
-      return match.replace(/「([^」]+)」/g, '<span class="remind-dialogue">\u300C$1\u300D</span>');
-    });
-    return html;
-  }
-  function sanitizeHtml(html) {
-    const doc = document.implementation.createHTMLDocument("");
-    const root = doc.createElement("div");
-    root.innerHTML = html;
-    root.querySelectorAll("script, object, embed, link, meta, base, form").forEach((el) => el.remove());
-    root.querySelectorAll("iframe").forEach((el) => {
-      if (!el.classList.contains("remind-regex-iframe")) {
-        el.remove();
-        return;
-      }
-      el.setAttribute("sandbox", "allow-scripts");
-      el.removeAttribute("src");
-      el.removeAttribute("srcdoc");
-    });
-    root.querySelectorAll("*").forEach((el) => {
-      for (const attr of [...el.attributes]) {
-        const name = attr.name.toLowerCase();
-        if (name.startsWith("on")) {
-          el.removeAttribute(attr.name);
-        } else if ((name === "href" || name === "src" || name === "xlink:href") && /^\s*javascript:/i.test(attr.value)) {
-          el.removeAttribute(attr.name);
-        }
-      }
-    });
-    return root.innerHTML;
-  }
-  function renderMessageHtml(message, options) {
-    let text = message.mes || "";
-    if (Array.isArray(message.swipes) && typeof message.swipe_id === "number" && message.swipes[message.swipe_id] !== void 0) {
-      text = message.swipes[message.swipe_id];
-    }
-    if (!text && !message.extra) return "";
-    if (options.userName) text = text.replace(/\{\{user\}\}/gi, options.userName);
-    if (options.characterName) text = text.replace(/\{\{char\}\}/gi, options.characterName);
-    if (options.applyRegex !== false) {
-      text = applyStRegexScripts(text, {
-        isUser: !!message.is_user,
-        characterName: options.characterName,
-        userName: options.userName,
-        charAvatar: options.charAvatar
-      });
-    }
-    text = unwrapPreviousInfoBlocks(text);
-    text = removeCursorMarkers(text);
-    const { text: textWithPlaceholders, iframePlaceholders } = convertHtmlDocsToIframes(text);
-    text = textWithPlaceholders;
-    text = processImages(text, options.characterName);
-    text = processChoices(text);
-    text = renderMarkdown(text);
-    text = restoreIframePlaceholders(text, iframePlaceholders);
-    text = styleDialogue(text);
-    const extraImgHtml = renderExtraImagesHtml(message);
-    if (extraImgHtml) {
-      if (message.extra?.inline_image) {
-        text = extraImgHtml;
-      } else {
-        text += extraImgHtml;
-      }
-    }
-    return sanitizeHtml(text);
-  }
-
-  // src/ui/remindViewer.js
-  init_textUtils();
-  init_notifications();
-  var isViewerOpen = false;
-  var currentRemind = null;
-  var currentMessages = null;
-  var regexEnabled = true;
-  async function openRemindViewer(remindId) {
-    const remind = remindStore.get(remindId);
-    if (!remind) {
-      showToast("\uB9AC\uB9C8\uC778\uB4DC\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4.", "error");
-      return;
-    }
-    closeRemindViewer();
-    const overlay = document.getElementById("chat-lobby-remind-viewer");
-    if (!overlay) {
-      showToast("\uBDF0\uC5B4\uB97C \uC5F4 \uC218 \uC5C6\uC2B5\uB2C8\uB2E4. \uB85C\uBE44\uB97C \uB2E4\uC2DC \uC5F4\uC5B4\uC8FC\uC138\uC694.", "error");
-      return;
-    }
-    currentRemind = remind;
-    currentMessages = null;
-    regexEnabled = true;
-    const rangeText = remind.start !== null || remind.end !== null ? `#${remind.start ?? 0} ~ ${remind.end !== null ? "#" + remind.end : "\uB05D"}` : "\uC804\uCCB4";
-    overlay.innerHTML = `
-        <div class="remind-viewer-panel">
-            <header class="remind-viewer-header">
-                <div class="remind-viewer-title">
-                    <span class="remind-viewer-char">${escapeHtml(remind.charName || "")}</span>
-                    <span class="remind-viewer-file">${escapeHtml(remind.fileName)} \xB7 ${escapeHtml(rangeText)}</span>
-                    ${remind.note ? `<span class="remind-viewer-note">\u{1F516} ${escapeHtml(remind.note)}</span>` : ""}
-                </div>
-                <div class="remind-viewer-actions">
-                    <button class="remind-viewer-btn" id="remind-viewer-regex" title="ST \uC815\uADDC\uC2DD \uC2A4\uD06C\uB9BD\uD2B8 \uC801\uC6A9 \uCF1C\uAE30/\uB044\uAE30">\u2728 \uC815\uADDC\uC2DD ON</button>
-                    <button class="remind-viewer-btn" id="remind-viewer-export" title="\uC774 \uAD6C\uAC04\uC744 \uD14D\uC2A4\uD2B8 \uD30C\uC77C\uB85C \uBC31\uC5C5">\u{1F4BE} \uBC31\uC5C5</button>
-                    <button class="remind-viewer-close" title="\uB2EB\uAE30">\u2715</button>
-                </div>
-            </header>
-            <div class="remind-viewer-body">
-                <div class="remind-viewer-loading">\u{1F4D6} \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uB294 \uC911...</div>
-            </div>
-            <div class="remind-lightbox" id="remind-lightbox">
-                <div class="remind-lightbox-backdrop"></div>
-                <div class="remind-lightbox-content">
-                    <img class="remind-lightbox-img" src="" alt="">
-                    <div class="remind-lightbox-caption"></div>
-                    <button class="remind-lightbox-close" title="\uB2EB\uAE30">\u2715</button>
-                </div>
-            </div>
-        </div>
-    `;
-    overlay.classList.add("visible");
-    isViewerOpen = true;
-    listeners.add("remindViewer", overlay.querySelector(".remind-viewer-close"), "click", closeRemindViewer);
-    listeners.add("remindViewer", overlay.querySelector("#remind-viewer-regex"), "click", toggleRegex);
-    listeners.add("remindViewer", overlay.querySelector("#remind-viewer-export"), "click", exportCurrentRange);
-    listeners.add("remindViewer", overlay, "click", (e) => {
-      if (e.target === overlay) closeRemindViewer();
-    });
-    listeners.add("remindViewer", document, "keydown", handleViewerKeydown);
-    const viewerBody = overlay.querySelector(".remind-viewer-body");
-    listeners.add("remindViewer", viewerBody, "click", (e) => {
-      const img = e.target.closest("img");
-      if (img) {
-        e.preventDefault();
-        e.stopPropagation();
-        openLightbox(img.src, img.alt || img.title || "");
-      }
-    });
-    listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-backdrop"), "click", closeLightbox);
-    listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-close"), "click", closeLightbox);
-    listeners.add("remindViewer", viewerBody, "error", (e) => {
-      const img = e.target;
-      if (img?.tagName === "IMG" && img.closest(".remind-image-container")) {
-        img.closest(".remind-image-container").innerHTML = `<div class="remind-image-fallback">\u{1F5BC}\uFE0F ${escapeHtml(img.alt || "\uC774\uBBF8\uC9C0\uB97C \uCC3E\uC744 \uC218 \uC5C6\uC74C")}</div>`;
-      }
-    }, true);
-    listeners.add("remindViewer", window, "message", (e) => {
-      if (e.data?.type !== "remind-iframe-resize" || typeof e.data.height !== "number") return;
-      const iframes = document.querySelectorAll("#chat-lobby-remind-viewer iframe.remind-regex-iframe");
-      for (const frame of iframes) {
-        if (frame.contentWindow === e.source) {
-          const h = Math.ceil(e.data.height);
-          frame.style.height = (h > 20 ? h : 400) + "px";
-          break;
-        }
-      }
-    });
-    const body = overlay.querySelector(".remind-viewer-body");
-    try {
-      const messages = await api.getChatMessages(remind.avatar, remind.fileName);
-      if (!messages || messages.length === 0) {
-        body.innerHTML = '<div class="remind-viewer-loading">\u26A0\uFE0F \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4. (\uD30C\uC77C\uC774 \uC0AD\uC81C\uB418\uC5C8\uAC70\uB098 \uC774\uB984\uC774 \uBC14\uB00C\uC5C8\uC744 \uC218 \uC788\uC5B4\uC694)</div>';
-        return;
-      }
-      currentMessages = messages;
-      renderMessages();
-    } catch (e) {
-      console.error("[RemindViewer] Load failed:", e);
-      body.innerHTML = '<div class="remind-viewer-loading">\u26A0\uFE0F \uCC44\uD305 \uB85C\uB529 \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.</div>';
-    }
-  }
-  function closeRemindViewer() {
-    const overlay = document.getElementById("chat-lobby-remind-viewer");
-    if (overlay) {
-      overlay.classList.remove("visible");
-      overlay.innerHTML = "";
-    }
-    listeners.clear("remindViewer");
-    isViewerOpen = false;
-    currentRemind = null;
-    currentMessages = null;
-  }
-  function closeTopRemindLayer() {
-    if (!isViewerOpen) return false;
-    const lb = document.getElementById("remind-lightbox");
-    if (lb?.classList.contains("active")) {
-      closeLightbox();
-      return true;
-    }
-    closeRemindViewer();
-    return true;
-  }
-  function handleViewerKeydown(e) {
-    if (e.key === "Escape" && isViewerOpen) {
-      e.stopPropagation();
-      const lb = document.getElementById("remind-lightbox");
-      if (lb?.classList.contains("active")) {
-        closeLightbox();
-        return;
-      }
-      closeRemindViewer();
-    }
-  }
-  function toggleRegex() {
-    regexEnabled = !regexEnabled;
-    const btn = document.getElementById("remind-viewer-regex");
-    if (btn) {
-      btn.textContent = regexEnabled ? "\u2728 \uC815\uADDC\uC2DD ON" : "\u2728 \uC815\uADDC\uC2DD OFF";
-      btn.classList.toggle("off", !regexEnabled);
-    }
-    renderMessages();
-  }
-  function getCurrentSlice() {
-    if (!currentRemind || !currentMessages) return null;
-    const start = currentRemind.start ?? 0;
-    const end = currentRemind.end ?? currentMessages.length - 1;
-    return {
-      slice: currentMessages.slice(Math.max(0, start), Math.min(currentMessages.length, end + 1)),
-      start: Math.max(0, start)
-    };
-  }
-  function resolveMes(msg) {
-    if (Array.isArray(msg.swipes) && typeof msg.swipe_id === "number" && msg.swipes[msg.swipe_id] !== void 0) {
-      return msg.swipes[msg.swipe_id];
-    }
-    return msg.mes || "";
-  }
-  function openLightbox(src, alt) {
-    const lb = document.getElementById("remind-lightbox");
-    if (!lb) return;
-    lb.querySelector(".remind-lightbox-img").src = src;
-    lb.querySelector(".remind-lightbox-img").alt = alt;
-    lb.querySelector(".remind-lightbox-caption").textContent = alt;
-    lb.classList.add("active");
-  }
-  function closeLightbox() {
-    const lb = document.getElementById("remind-lightbox");
-    if (lb) lb.classList.remove("active");
-  }
-  function renderMessages() {
-    const body = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-body");
-    const data = getCurrentSlice();
-    if (!body || !data) return;
-    const { slice, start } = data;
-    if (slice.length === 0) {
-      body.innerHTML = `<div class="remind-viewer-loading">\u26A0\uFE0F \uD574\uB2F9 \uBC94\uC704\uC5D0 \uBA54\uC2DC\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4. (\uCC44\uD305 \uAE38\uC774: ${currentMessages.length})</div>`;
-      return;
-    }
-    const userName = currentMessages.find((m) => m.is_user)?.name || "User";
-    const charName = currentRemind.charName || currentMessages.find((m) => !m.is_user && !m.is_system)?.name || "Character";
-    let html = "";
-    slice.forEach((msg, i) => {
-      const mesid = start + i;
-      const formatted = renderMessageHtml(msg, {
-        characterName: charName,
-        userName,
-        charAvatar: currentRemind.avatar,
-        applyRegex: regexEnabled
-      });
-      const roleClass = msg.is_user ? "is-user" : msg.is_system ? "is-system" : "is-char";
-      html += `
-        <article class="remind-msg ${roleClass}">
-            <div class="remind-msg-meta">
-                <span class="remind-msg-name">${escapeHtml(msg.name || (msg.is_user ? userName : charName))}</span>
-                <span class="remind-msg-id">#${mesid}</span>
-            </div>
-            <div class="remind-msg-body">${formatted}</div>
-        </article>`;
-    });
-    body.innerHTML = html;
-    body.scrollTop = 0;
-    hydrateRegexIframes(body);
-  }
-  function hydrateRegexIframes(scope) {
-    scope.querySelectorAll("iframe.remind-regex-iframe[data-remind-html]").forEach((iframe) => {
-      const b64 = iframe.getAttribute("data-remind-html");
-      iframe.removeAttribute("data-remind-html");
-      if (!b64) return;
-      try {
-        iframe.srcdoc = decodeURIComponent(escape(atob(b64)));
-      } catch (e) {
-        console.warn("[RemindViewer] iframe srcdoc set failed:", e);
-        iframe.replaceWith(Object.assign(document.createElement("div"), {
-          className: "remind-html-notice",
-          textContent: "\u{1F9E9} HTML \uBE14\uB85D\uC744 \uD45C\uC2DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."
-        }));
-        return;
-      }
-      iframe.addEventListener("load", () => {
-        setTimeout(() => {
-          if (!iframe.style.height || iframe.style.height === "0px") {
-            iframe.style.height = "400px";
-          }
-        }, 800);
-      });
-    });
-  }
-  function exportCurrentRange() {
-    const data = getCurrentSlice();
-    if (!data || data.slice.length === 0) {
-      showToast("\uB0B4\uBCF4\uB0BC \uBA54\uC2DC\uC9C0\uAC00 \uC5C6\uC2B5\uB2C8\uB2E4.", "warning");
-      return;
-    }
-    const { slice, start } = data;
-    const r = currentRemind;
-    const rangeText = r.start !== null ? `#${r.start}~#${r.end}` : "\uC804\uCCB4";
-    let text = `\u{1F516} ${r.charName} - ${r.fileName} (${rangeText})
-`;
-    if (r.note) text += `\uBA54\uBAA8: ${r.note}
-`;
-    text += `\uBC31\uC5C5\uC77C: ${(/* @__PURE__ */ new Date()).toLocaleString("ko-KR")}
-`;
-    text += "=".repeat(40) + "\n\n";
-    slice.forEach((msg, i) => {
-      text += `[#${start + i}] ${msg.name || (msg.is_user ? "User" : r.charName)}
-`;
-      text += resolveMes(msg) + "\n\n";
-      text += "-".repeat(40) + "\n\n";
-    });
-    const safeName = `${r.charName}_${r.fileName}_${rangeText}`.replace(/[\\/:*?"<>|#~\s]+/g, "_");
-    const blob = new Blob(["\uFEFF" + text], { type: "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `remind_${safeName}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1e3);
-    showToast("\u{1F4BE} \uD14D\uC2A4\uD2B8 \uD30C\uC77C\uB85C \uBC31\uC5C5\uD588\uC2B5\uB2C8\uB2E4.", "success");
   }
 
   // src/ui/tabView.js
@@ -7370,69 +8049,6 @@ ${message}` : message;
 
   // src/ui/templates.js
   init_textUtils();
-
-  // src/data/uiPrefs.js
-  var STORAGE_KEY5 = "chatLobby_uiPrefs";
-  var DEFAULTS = {
-    theme: null,
-    // null = 레거시 키에서 마이그레이션
-    showHero: true,
-    // 최애 코너 (히어로 배너)
-    personaBadges: true,
-    // 캐릭터 카드 페르소나 배지
-    cardSize: 200,
-    // 캐릭터 카드 폭 (px)
-    badgeSize: 36,
-    // 페르소나 배지 크기 (px)
-    badgePosition: "top"
-    // 페르소나 배지 위치 ('top' = 우측 상단, 'bottom' = 우측 하단)
-  };
-  var UiPrefs = class {
-    constructor() {
-      this._data = null;
-    }
-    _load() {
-      if (this._data) return this._data;
-      let saved = {};
-      try {
-        const raw = localStorage.getItem(STORAGE_KEY5);
-        if (raw) saved = JSON.parse(raw) || {};
-      } catch (e) {
-        console.warn("[UiPrefs] Failed to load:", e);
-      }
-      this._data = { ...DEFAULTS, ...saved };
-      if (this._data.theme === null) {
-        const legacy = localStorage.getItem("chatlobby-theme");
-        this._data.theme = legacy === "light" ? "light" : "default";
-        this._save();
-      }
-      return this._data;
-    }
-    _save() {
-      try {
-        localStorage.setItem(STORAGE_KEY5, JSON.stringify(this._data));
-      } catch (e) {
-        console.warn("[UiPrefs] Failed to save:", e);
-      }
-    }
-    /**
-     * @param {string} key
-     * @returns {*}
-     */
-    get(key) {
-      return this._load()[key];
-    }
-    /**
-     * @param {string} key
-     * @param {*} value
-     */
-    set(key, value) {
-      this._load();
-      this._data[key] = value;
-      this._save();
-    }
-  };
-  var uiPrefs = new UiPrefs();
 
   // src/ui/themeMenu.js
   init_textUtils();
@@ -10964,6 +11580,7 @@ ${message}` : message;
             lastChatCache.remove(eventData.character.avatar);
             clearCharacterCache(eventData.character.avatar);
             remindStore.removeByAvatar(eventData.character.avatar);
+            highlightStore.removeByAvatar(eventData.character.avatar);
             console.debug("[ChatLobby] Removed deleted character from caches:", eventData.character.avatar);
           }
           if (isLobbyOpen()) {

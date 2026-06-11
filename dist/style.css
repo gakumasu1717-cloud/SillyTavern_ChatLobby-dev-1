@@ -7044,3 +7044,411 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
     padding: 5px 8px;
     cursor: pointer;
 }
+
+/* ============================================
+   🔖 리마인드 뷰어 v2 - 플로팅 헤더 / 페이지네이션 / 글자 크기
+   ============================================ */
+
+/* 패널: 헤더 absolute의 기준점 */
+.remind-viewer-panel {
+    position: relative;
+}
+
+/* 플로팅 헤더 - 본문 위에 떠 있고, 아래로 스크롤하면 숨음 */
+.remind-viewer-header {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    display: block;
+    padding: 10px 14px;
+    background: var(--lobby-bg-light, rgba(20, 20, 24, 0.97));
+    border-bottom: 1px solid var(--lobby-bg-hover, #333);
+    transition: transform 0.25s ease, opacity 0.25s ease;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+
+.remind-viewer-header.header-hidden {
+    transform: translateY(-110%);
+    opacity: 0;
+    pointer-events: none;
+}
+
+.remind-viewer-toprow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+}
+
+/* 컨트롤 줄 - 좁은 화면에선 가로 스크롤 */
+.remind-viewer-controls {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+}
+.remind-viewer-controls::-webkit-scrollbar { display: none; }
+
+.remind-ctrl-group {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    flex-shrink: 0;
+}
+
+.remind-page-label {
+    font-size: 11.5px;
+    color: var(--lobby-text-secondary, #aaa);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+    padding: 0 2px;
+}
+
+.remind-viewer-select {
+    background: var(--lobby-bg-card, #2f2f2f);
+    border: 1px solid var(--lobby-bg-hover, #444);
+    border-radius: 8px;
+    color: var(--lobby-text, #fff);
+    font-size: 11.5px;
+    padding: 5px 6px;
+    cursor: pointer;
+}
+
+.remind-viewer-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+/* 본문: 헤더 높이만큼 시작 여백 + 잘 보이는 스크롤바 */
+.remind-viewer-body {
+    padding-top: 104px;
+    scrollbar-width: auto;
+    scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+.remind-viewer-body::-webkit-scrollbar {
+    width: 10px;
+}
+.remind-viewer-body::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+}
+.remind-viewer-body::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.28);
+    border-radius: 5px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+}
+.remind-viewer-body::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.45);
+    background-clip: content-box;
+}
+
+/* 글자 크기 변수 적용 */
+.remind-msg-body {
+    font-size: var(--remind-font, 15px);
+}
+
+/* 본문 모든 이미지 화면 폭 맞춤 (정규식이 직접 넣은 <img> 포함) */
+.remind-msg-body img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* 모바일: 헤더 컴팩트 */
+@media (max-width: 768px) {
+    .remind-viewer-header {
+        padding: 8px 10px;
+    }
+    .remind-viewer-toprow {
+        margin-bottom: 6px;
+    }
+    .remind-viewer-char { font-size: 14px; }
+    .remind-viewer-note { display: none; } /* 좁은 화면에선 메모 생략 */
+    .remind-viewer-body {
+        padding-top: 96px;
+    }
+}
+
+/* ============================================
+   🔖 리마인드 뷰어 v3 - 읽기 테마 / 폰트 / 형광펜 / 이어 채팅
+   ============================================ */
+
+/* 헤더 상단 버튼 그룹 */
+.remind-viewer-topbtns {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+/* 본문 폰트 패밀리 (선택 가능) */
+.remind-viewer-body,
+.remind-msg-body {
+    font-family: var(--remind-font-family, inherit);
+}
+
+/* ===== 형광펜 ===== */
+.remind-highlight {
+    background: rgba(255, 224, 80, 0.42);
+    color: inherit;
+    border-radius: 2px;
+    padding: 0 1px;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.remind-highlight:hover {
+    background: rgba(255, 224, 80, 0.65);
+}
+
+/* 선택 시 뜨는 형광펜 버튼 */
+.remind-hl-popup {
+    position: absolute;
+    z-index: 8;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: #2a2a30;
+    color: #ffe9a0;
+    border: 1px solid rgba(255, 224, 80, 0.5);
+    border-radius: 20px;
+    padding: 7px 14px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.45);
+    white-space: nowrap;
+}
+
+.remind-hl-popup:hover {
+    background: #36363e;
+}
+
+/* ============================================
+   읽기 모드 테마 (로비 테마와 무관하게 가독성 보장)
+   data-reader-theme: auto | dark | sepia | paper
+   ============================================ */
+
+/* ----- 🌙 다크 ----- */
+.remind-viewer-panel[data-reader-theme="dark"] {
+    background: #101013;
+    border-color: #2c2c32;
+}
+.remind-viewer-panel[data-reader-theme="dark"] .remind-viewer-header {
+    background: rgba(18, 18, 22, 0.97);
+    border-bottom-color: #2c2c32;
+}
+.remind-viewer-panel[data-reader-theme="dark"] .remind-viewer-char { color: #f0f0f0; }
+.remind-viewer-panel[data-reader-theme="dark"] .remind-viewer-file { color: #8d8d96; }
+.remind-viewer-panel[data-reader-theme="dark"] .remind-msg-body { color: #dcdce2; }
+.remind-viewer-panel[data-reader-theme="dark"] .remind-msg-name { color: #d9b86a; }
+.remind-viewer-panel[data-reader-theme="dark"] .remind-msg.is-user .remind-msg-name { color: #76aef0; }
+.remind-viewer-panel[data-reader-theme="dark"] .remind-dialogue { color: #ffd9a0; }
+.remind-viewer-panel[data-reader-theme="dark"] .remind-viewer-btn,
+.remind-viewer-panel[data-reader-theme="dark"] .remind-viewer-select {
+    background: #1c1c22;
+    border-color: #34343c;
+    color: #e6e6ec;
+}
+
+/* ----- 📜 세피아 ----- */
+.remind-viewer-panel[data-reader-theme="sepia"] {
+    background: #f4ecd8;
+    border-color: #d8cbae;
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-header {
+    background: rgba(236, 225, 200, 0.97);
+    border-bottom-color: #d8cbae;
+    box-shadow: 0 4px 14px rgba(120, 95, 50, 0.15);
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-char { color: #4b3f2f; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-file { color: #8a7a60; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-note { color: #a05c28; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-msg-body { color: #443a2b; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-msg-name { color: #8a5a2b; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-msg.is-user .remind-msg-name { color: #4a6a8a; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-msg-id { color: #a89878; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-dialogue { color: #9c4f1e; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-h { color: #4b3f2f; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-quote {
+    background: rgba(120, 95, 50, 0.08);
+    border-left-color: #b08a50;
+    color: #6b5d45;
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-code,
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-inline-code {
+    background: rgba(120, 95, 50, 0.1);
+    border-color: #d8cbae;
+    color: #5a4c36;
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-btn,
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-select {
+    background: #ece1c8;
+    border-color: #cdbd9a;
+    color: #4b3f2f;
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-close { color: #4b3f2f; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-page-label { color: #8a7a60; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-body {
+    scrollbar-color: rgba(120, 95, 50, 0.4) transparent;
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-body::-webkit-scrollbar-thumb {
+    background: rgba(120, 95, 50, 0.35);
+    background-clip: content-box;
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-viewer-loading { color: #8a7a60; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-highlight {
+    background: rgba(240, 180, 40, 0.4);
+}
+
+/* ----- 🤍 순백 ----- */
+.remind-viewer-panel[data-reader-theme="paper"] {
+    background: #fafafa;
+    border-color: #ddd;
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-header {
+    background: rgba(255, 255, 255, 0.97);
+    border-bottom-color: #e3e3e3;
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.08);
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-char { color: #1c1c1c; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-file { color: #888; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-note { color: #c0392b; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-msg-body { color: #2a2a2a; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-msg-name { color: #b05a00; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-msg.is-user .remind-msg-name { color: #2563ad; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-msg-id { color: #aaa; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-dialogue { color: #9a4f00; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-h { color: #1c1c1c; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-quote {
+    background: rgba(0, 0, 0, 0.04);
+    border-left-color: #c0392b;
+    color: #555;
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-code,
+.remind-viewer-panel[data-reader-theme="paper"] .remind-inline-code {
+    background: rgba(0, 0, 0, 0.05);
+    border-color: #ddd;
+    color: #333;
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-btn,
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-select {
+    background: #f0f0f0;
+    border-color: #ccc;
+    color: #2a2a2a;
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-close { color: #2a2a2a; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-page-label { color: #888; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-body {
+    scrollbar-color: rgba(0, 0, 0, 0.3) transparent;
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-body::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.25);
+    background-clip: content-box;
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-viewer-loading { color: #888; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-highlight {
+    background: rgba(255, 215, 0, 0.45);
+}
+
+/* 모바일: 상단 버튼 라벨 축약 */
+@media (max-width: 768px) {
+    #remind-continue-chat {
+        font-size: 11px;
+        padding: 5px 8px;
+    }
+}
+
+/* ============================================
+   🔖 리마인드 뷰어 v4 - ⚙️ 설정 팝업 + 페이지 줄
+   (가로 스크롤 컨트롤 줄 폐지)
+   ============================================ */
+
+/* 페이지네이션 줄 - 중앙 정렬, 항상 표시 */
+.remind-viewer-pagrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+}
+
+/* 설정 팝업 - 헤더 우측 아래 드롭다운 */
+.remind-settings-pop {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 10px;
+    width: 230px;
+    background: var(--lobby-bg-light, #1c1c22);
+    border: 1px solid var(--lobby-bg-hover, #3a3a42);
+    border-radius: 12px;
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.5);
+    padding: 10px;
+    z-index: 6;
+}
+
+.remind-set-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 6px 4px;
+}
+
+.remind-set-label {
+    font-size: 12px;
+    color: var(--lobby-text-secondary, #999);
+    flex-shrink: 0;
+}
+
+.remind-set-inline {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.remind-set-actions {
+    border-top: 1px solid var(--lobby-bg-hover, #3a3a42);
+    margin-top: 4px;
+    padding-top: 10px;
+    justify-content: flex-end;
+}
+
+/* 테마별 설정 팝업 색상 */
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-settings-pop {
+    background: #ece1c8;
+    border-color: #cdbd9a;
+}
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-set-label { color: #8a7a60; }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-set-actions { border-top-color: #d8cbae; }
+
+.remind-viewer-panel[data-reader-theme="paper"] .remind-settings-pop {
+    background: #ffffff;
+    border-color: #ddd;
+}
+.remind-viewer-panel[data-reader-theme="paper"] .remind-set-label { color: #888; }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-set-actions { border-top-color: #e3e3e3; }
+
+.remind-viewer-panel[data-reader-theme="dark"] .remind-settings-pop {
+    background: #18181d;
+    border-color: #34343c;
+}
+
+/* 본문 시작 여백 (헤더 2줄 기준) */
+.remind-viewer-body {
+    padding-top: 100px;
+}
+
+@media (max-width: 768px) {
+    .remind-viewer-body {
+        padding-top: 92px;
+    }
+    .remind-settings-pop {
+        right: 6px;
+        width: 215px;
+    }
+}

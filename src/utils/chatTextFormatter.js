@@ -275,8 +275,9 @@ function removeCursorMarkers(text) {
 // 높이는 내부 주입 스크립트가 postMessage로 알려줌
 // ============================================
 
-// iframe 내부 주입: 여백 제거 + 스크롤바 숨김
-const IFRAME_OVERRIDE_CSS = '<style>html,body{margin:0!important;padding:0!important;background:transparent;}html{scrollbar-width:none!important;}::-webkit-scrollbar{display:none!important;}</style>';
+// iframe 내부 주입: 여백 제거 + 스크롤바 숨김 + 이미지 화면 폭 맞춤
+// (자동생성 이미지가 원본 크기(예: 1260px)로 화면을 뚫고 나가는 문제 방지)
+const IFRAME_OVERRIDE_CSS = '<style>html,body{margin:0!important;padding:0!important;background:transparent;}html{scrollbar-width:none!important;}::-webkit-scrollbar{display:none!important;}img,video{max-width:100%!important;height:auto!important;}</style>';
 
 // iframe 내부 주입: shrink-to-measure 높이 측정 → 부모로 postMessage
 const IFRAME_RESIZE_SCRIPT = `<script>

@@ -5,6 +5,8 @@
 // ============================================
 
 const STORAGE_KEY = 'chatLobby_reminds';
+const PROGRESS_KEY = 'chatLobby_remindProgress';
+const PROGRESS_MAX_ENTRIES = 150;
 
 /**
  * @typedef {Object} Remind
@@ -82,7 +84,64 @@ class RemindStore {
         if (idx === -1) return false;
         data.splice(idx, 1);
         this._save();
+        this.removeProgress(id);
         return true;
+    }
+
+    // ============================================
+    // 읽기 진행 위치 (이어 읽기)
+    // ============================================
+
+    _loadProgress() {
+        try {
+            const raw = localStorage.getItem(PROGRESS_KEY);
+            const data = raw ? JSON.parse(raw) : {};
+            return (data && typeof data === 'object') ? data : {};
+        } catch (e) {
+            return {};
+        }
+    }
+
+    _saveProgress(map) {
+        try {
+            // 오래된 항목 정리 (최대 개수 초과 시)
+            const keys = Object.keys(map);
+            if (keys.length > PROGRESS_MAX_ENTRIES) {
+                keys.sort((a, b) => (map[a].ts || 0) - (map[b].ts || 0));
+                for (const k of keys.slice(0, keys.length - PROGRESS_MAX_ENTRIES)) {
+                    delete map[k];
+                }
+            }
+            localStorage.setItem(PROGRESS_KEY, JSON.stringify(map));
+        } catch (e) {
+            console.warn('[RemindStore] Failed to save progress:', e);
+        }
+    }
+
+    /**
+     * 읽기 진행 위치 조회
+     * @param {string} id - 리마인드 ID
+     * @returns {{viewStart:number, viewEnd:number, pageIndex:number, scrollTop:number}|null}
+     */
+    getProgress(id) {
+        return this._loadProgress()[id] || null;
+    }
+
+    /**
+     * 읽기 진행 위치 저장 (연장된 범위 포함)
+     */
+    setProgress(id, progress) {
+        const map = this._loadProgress();
+        map[id] = { ...progress, ts: Date.now() };
+        this._saveProgress(map);
+    }
+
+    removeProgress(id) {
+        const map = this._loadProgress();
+        if (map[id]) {
+            delete map[id];
+            this._saveProgress(map);
+        }
     }
 
     /**

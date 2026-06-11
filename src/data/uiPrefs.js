@@ -12,6 +12,10 @@ const DEFAULTS = {
     cardSize: 200,         // 캐릭터 카드 폭 (px)
     badgeSize: 36,         // 페르소나 배지 크기 (px)
     badgePosition: 'top',  // 페르소나 배지 위치 ('top' = 우측 상단, 'bottom' = 우측 하단)
+    viewerFontSize: 15,    // 리마인드 뷰어 글자 크기 (px)
+    viewerPageSize: 10,    // 리마인드 뷰어 페이지당 메시지 수 (0 = 모두)
+    viewerTheme: 'auto',   // 읽기 모드 테마 ('auto'|'dark'|'sepia'|'paper')
+    viewerFontFamily: 'default', // 뷰어 폰트 ('default'|'serif'|'mono')
 };
 
 class UiPrefs {

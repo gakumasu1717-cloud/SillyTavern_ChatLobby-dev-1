@@ -28,6 +28,7 @@ import { initCustomThemeIntegration, cleanupCustomThemeIntegration } from './int
 import { listeners } from './utils/listenerManager.js';
 import { applyTheme, toggleThemeMenu, closeThemeMenu, isThemeMenuOpen, initThemeMenuEvents, cleanupThemeMenu, renderStDock } from './ui/themeMenu.js';
 import { remindStore } from './data/remindStore.js';
+import { highlightStore } from './data/highlightStore.js';
 import { closeTopRemindLayer } from './ui/remindViewer.js';
 import { escapeHtml } from './utils/textUtils.js';
 import { analyzeBranches } from './utils/branchAnalyzer.js';
@@ -288,6 +289,7 @@ import { operationLock } from './utils/operationLock.js';
                     lastChatCache.remove(eventData.character.avatar);
                     clearBranchCache(eventData.character.avatar);
                     remindStore.removeByAvatar(eventData.character.avatar);
+                    highlightStore.removeByAvatar(eventData.character.avatar);
                     console.debug('[ChatLobby] Removed deleted character from caches:', eventData.character.avatar);
                 }
                 
