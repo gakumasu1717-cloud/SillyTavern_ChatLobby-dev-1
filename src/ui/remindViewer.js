@@ -560,12 +560,19 @@ function changePage(delta) {
     scheduleProgressSave();
 }
 
+/**
+ * 메시지 본문 (백업용 - 원문 기준)
+ * ⚠️ mes 우선 - ST 표시 기준과 동일 (스와이프 배열은 mes가 비었을 때만 폴백)
+ * autopic 등이 mes에만 이미지를 덧붙이는 경우가 있어 swipes 우선 시 이미지 누락됨
+ */
 function resolveMes(msg) {
+    const mes = msg.mes || '';
+    if (mes.trim()) return mes;
     if (Array.isArray(msg.swipes) && typeof msg.swipe_id === 'number'
         && msg.swipes[msg.swipe_id] !== undefined) {
         return msg.swipes[msg.swipe_id];
     }
-    return msg.mes || '';
+    return mes;
 }
 
 // ============================================

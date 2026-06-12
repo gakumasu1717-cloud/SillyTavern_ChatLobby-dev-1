@@ -189,14 +189,42 @@ function createImageHtml(src, alt) {
 }
 
 /**
- * {{img::파일명}} 패턴 → <img> (정규식 스크립트가 처리 안 한 경우의 폴백)
+ * 임의 형태의 이미지 URL 정규화
+ * - http(s)/data/절대경로: 그대로
+ * - "user/images/..." 같은 슬래시 포함 상대경로: 루트 기준으로
+ * - 파일명만: 캐릭터 이미지 폴더로
+ */
+function resolveAnyImageUrl(url, characterName) {
+    if (!url) return '';
+    if (/^(https?:|data:|\/)/i.test(url)) return url;
+    if (url.includes('/')) return '/' + url.replace(/^\/+/, '');
+    return resolveImagePath(url, characterName);
+}
+
+/**
+ * 본문 내 이미지 패턴 → <img>
+ * 1. {{img::파일명}} (정규식 스크립트가 처리 안 한 경우의 폴백)
+ * 2. 마크다운 ![alt](url) — 자동생성 확장들이 본문에 직접 삽입하는 방식
+ *    ⚠️ 이걸 먼저 변환하지 않으면 링크 정규식이 [alt](url)를 먹어서
+ *    이미지가 텍스트 링크로 변해버림 (이미지가 간헐적으로 안 보이던 원인)
  */
 function processImages(text, characterName) {
     if (!text) return text;
-    return text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
+
+    // {{img::파일명}}
+    text = text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
         const trimmed = filename.trim();
         return createImageHtml(resolveImagePath(trimmed, characterName), trimmed);
     });
+
+    // 마크다운 이미지 ![alt](url "title")
+    text = text.replace(/!\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\s*\)/g, (match, alt, url) => {
+        const cleanUrl = url.replace(/^<|>$/g, '').trim();
+        if (!cleanUrl) return match;
+        return createImageHtml(resolveAnyImageUrl(cleanUrl, characterName), alt || '');
+    });
+
+    return text;
 }
 
 /**
@@ -209,22 +237,32 @@ export function renderExtraImagesHtml(message) {
     const images = [];
     const extra = Object.assign({}, message.extra);
 
+    // 상대경로("user/images/...") → 루트 기준으로 보정
+    const fixUrl = (u) => {
+        if (!u || typeof u !== 'string') return '';
+        if (/^(https?:|data:|\/)/i.test(u)) return u;
+        return u.includes('/') ? '/' + u.replace(/^\/+/, '') : u;
+    };
+
     if (Array.isArray(extra.media)) {
         for (const media of extra.media) {
-            if (media && media.url && (!media.type || media.type === 'image')) {
-                images.push({ src: media.url, alt: media.title || '' });
-            }
+            if (!media?.url) continue;
+            // ⚠️ type 비교는 느슨하게 - 'image'/'IMAGE'/누락/알 수 없는 값 모두 허용,
+            // 명시적으로 video/audio인 것만 제외 (엄격 비교가 간헐 누락의 원인이 됨)
+            const mType = String(media.type || '').toLowerCase();
+            if (mType === 'video' || mType === 'audio') continue;
+            images.push({ src: fixUrl(media.url), alt: media.title || '' });
         }
     }
 
     if (images.length === 0 && extra.image) {
-        images.push({ src: extra.image, alt: extra.title || '' });
+        images.push({ src: fixUrl(extra.image), alt: extra.title || '' });
     }
 
     if (images.length === 0 && Array.isArray(extra.image_swipes)) {
         const idx = extra.media_index ?? (extra.image_swipes.length - 1);
         const url = extra.image_swipes[idx] || extra.image_swipes[extra.image_swipes.length - 1];
-        if (url) images.push({ src: url, alt: extra.title || '' });
+        if (url) images.push({ src: fixUrl(url), alt: extra.title || '' });
     }
 
     if (images.length === 0) return '';
@@ -440,7 +478,10 @@ function renderMarkdown(text) {
     });
 
     const inlineCodes = [];
-    text = text.replace(/`([^`]+)`/g, (match, code) => {
+    // ⚠️ [^`\n] — 줄바꿈 제외 필수!
+    // [^`]만 쓰면 본문에 백틱이 홀수 개 있을 때 여러 줄(이미지 태그 포함)을
+    // 통째로 코드로 삼켜버려 이미지가 간헐적으로 사라지는 원인이 됨
+    text = text.replace(/`([^`\n]+)`/g, (match, code) => {
         const idx = inlineCodes.length;
         inlineCodes.push(`<code class="remind-inline-code">${escapeHtml(code)}</code>`);
         return `\x00INLINECODE${idx}\x00`;
@@ -647,9 +688,13 @@ function sanitizeHtml(html) {
  * @returns {string} 안전한 HTML
  */
 export function renderMessageHtml(message, options) {
-    // 스와이프 반영
+    // ⚠️ mes 우선! (swipes[swipe_id] 우선 사용 금지)
+    // ST 화면의 표시 기준은 mes이고, autopic 등 일부 확장은 이미지를
+    // mes에만 덧붙이고 swipes 배열은 갱신하지 않은 채 저장한다.
+    // swipes를 우선하면 그런 메시지에서 이미지가 간헐적으로 사라짐.
     let text = message.mes || '';
-    if (Array.isArray(message.swipes) && typeof message.swipe_id === 'number'
+    if (!text.trim()
+        && Array.isArray(message.swipes) && typeof message.swipe_id === 'number'
         && message.swipes[message.swipe_id] !== undefined) {
         text = message.swipes[message.swipe_id];
     }

@@ -3617,31 +3617,49 @@ ${message}` : message;
   function createImageHtml(src, alt) {
     return `<div class="remind-image-container"><img class="remind-image" src="${escapeAttr(src)}" alt="${escapeAttr(alt)}" title="${escapeAttr(alt)}" loading="lazy" decoding="async"></div>`;
   }
+  function resolveAnyImageUrl(url, characterName) {
+    if (!url) return "";
+    if (/^(https?:|data:|\/)/i.test(url)) return url;
+    if (url.includes("/")) return "/" + url.replace(/^\/+/, "");
+    return resolveImagePath(url, characterName);
+  }
   function processImages(text, characterName) {
     if (!text) return text;
-    return text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
+    text = text.replace(/\{\{img::([^}]+)\}\}/gi, (match, filename) => {
       const trimmed = filename.trim();
       return createImageHtml(resolveImagePath(trimmed, characterName), trimmed);
     });
+    text = text.replace(/!\[([^\]]*)\]\(\s*(<[^>]+>|[^)\s]+)(?:\s+"[^"]*")?\s*\)/g, (match, alt, url) => {
+      const cleanUrl = url.replace(/^<|>$/g, "").trim();
+      if (!cleanUrl) return match;
+      return createImageHtml(resolveAnyImageUrl(cleanUrl, characterName), alt || "");
+    });
+    return text;
   }
   function renderExtraImagesHtml(message) {
     if (!message?.extra) return "";
     const images = [];
     const extra = Object.assign({}, message.extra);
+    const fixUrl = (u) => {
+      if (!u || typeof u !== "string") return "";
+      if (/^(https?:|data:|\/)/i.test(u)) return u;
+      return u.includes("/") ? "/" + u.replace(/^\/+/, "") : u;
+    };
     if (Array.isArray(extra.media)) {
       for (const media of extra.media) {
-        if (media && media.url && (!media.type || media.type === "image")) {
-          images.push({ src: media.url, alt: media.title || "" });
-        }
+        if (!media?.url) continue;
+        const mType = String(media.type || "").toLowerCase();
+        if (mType === "video" || mType === "audio") continue;
+        images.push({ src: fixUrl(media.url), alt: media.title || "" });
       }
     }
     if (images.length === 0 && extra.image) {
-      images.push({ src: extra.image, alt: extra.title || "" });
+      images.push({ src: fixUrl(extra.image), alt: extra.title || "" });
     }
     if (images.length === 0 && Array.isArray(extra.image_swipes)) {
       const idx = extra.media_index ?? extra.image_swipes.length - 1;
       const url = extra.image_swipes[idx] || extra.image_swipes[extra.image_swipes.length - 1];
-      if (url) images.push({ src: url, alt: extra.title || "" });
+      if (url) images.push({ src: fixUrl(url), alt: extra.title || "" });
     }
     if (images.length === 0) return "";
     return '<div class="remind-extra-images">' + images.map((img) => createImageHtml(img.src, img.alt)).join("") + "</div>";
@@ -3784,7 +3802,7 @@ ${message}` : message;
       return `\0CODEBLOCK${idx}\0`;
     });
     const inlineCodes = [];
-    text = text.replace(/`([^`]+)`/g, (match, code) => {
+    text = text.replace(/`([^`\n]+)`/g, (match, code) => {
       const idx = inlineCodes.length;
       inlineCodes.push(`<code class="remind-inline-code">${escapeHtml(code)}</code>`);
       return `\0INLINECODE${idx}\0`;
@@ -3928,7 +3946,7 @@ ${message}` : message;
   }
   function renderMessageHtml(message, options) {
     let text = message.mes || "";
-    if (Array.isArray(message.swipes) && typeof message.swipe_id === "number" && message.swipes[message.swipe_id] !== void 0) {
+    if (!text.trim() && Array.isArray(message.swipes) && typeof message.swipe_id === "number" && message.swipes[message.swipe_id] !== void 0) {
       text = message.swipes[message.swipe_id];
     }
     if (!text && !message.extra) return "";
@@ -4432,10 +4450,12 @@ ${message}` : message;
     scheduleProgressSave();
   }
   function resolveMes(msg) {
+    const mes = msg.mes || "";
+    if (mes.trim()) return mes;
     if (Array.isArray(msg.swipes) && typeof msg.swipe_id === "number" && msg.swipes[msg.swipe_id] !== void 0) {
       return msg.swipes[msg.swipe_id];
     }
-    return msg.mes || "";
+    return mes;
   }
   async function continueChat() {
     const r = currentRemind;
