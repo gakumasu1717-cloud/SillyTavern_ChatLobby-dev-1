@@ -4066,6 +4066,10 @@ ${message}` : message;
   var lastRenderedRange = { from: 0, to: 0 };
   var progressSaveTimer = null;
   var pendingHighlight = null;
+  var hlPopupInteracting = false;
+  var hlHideTimer = null;
+  var selectionActiveSince = 0;
+  var selChangeTimer = null;
   var FONT_MIN = 12;
   var FONT_MAX = 24;
   var PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 0];
@@ -4168,7 +4172,10 @@ ${message}` : message;
             <div class="remind-viewer-body">
                 <div class="remind-viewer-loading">\u{1F4D6} \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uB294 \uC911...</div>
             </div>
-            <button class="remind-hl-popup" id="remind-hl-popup" style="display:none;">\u{1F58D}\uFE0F \uD615\uAD11\uD39C</button>
+            <div class="remind-hl-popup" id="remind-hl-popup" style="display:none;">
+                <button id="remind-hl-save">\u{1F58D}\uFE0F \uD615\uAD11\uD39C</button>
+                <button id="remind-hl-clear" title="\uC120\uD0DD \uD574\uC81C">\u2715</button>
+            </div>
             <div class="remind-lightbox" id="remind-lightbox">
                 <div class="remind-lightbox-backdrop"></div>
                 <div class="remind-lightbox-content">
@@ -4230,6 +4237,11 @@ ${message}` : message;
     }, { passive: true });
     listeners.add("remindViewer", viewerBody, "click", async (e) => {
       hideSettingsPop();
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && selectionActiveSince && Date.now() - selectionActiveSince > 500) {
+        clearTextSelection();
+        return;
+      }
       const mark = e.target.closest(".remind-highlight");
       if (mark) {
         e.preventDefault();
@@ -4250,11 +4262,30 @@ ${message}` : message;
       }
     });
     listeners.add("remindViewer", viewerBody, "mouseup", () => setTimeout(handleTextSelection, 10));
-    listeners.add("remindViewer", viewerBody, "touchend", () => setTimeout(handleTextSelection, 200));
-    listeners.add("remindViewer", overlay.querySelector("#remind-hl-popup"), "click", (e) => {
+    listeners.add("remindViewer", document, "selectionchange", () => {
+      if (!isViewerOpen) return;
+      if (selChangeTimer) clearTimeout(selChangeTimer);
+      selChangeTimer = setTimeout(handleTextSelection, 180);
+    });
+    const hlPopup = overlay.querySelector("#remind-hl-popup");
+    listeners.add("remindViewer", hlPopup, "mousedown", (e) => {
+      e.preventDefault();
+      hlPopupInteracting = true;
+    });
+    listeners.add("remindViewer", hlPopup, "touchstart", () => {
+      hlPopupInteracting = true;
+    }, { passive: true });
+    listeners.add("remindViewer", overlay.querySelector("#remind-hl-save"), "click", (e) => {
       e.preventDefault();
       e.stopPropagation();
       saveHighlightFromSelection();
+      hlPopupInteracting = false;
+    });
+    listeners.add("remindViewer", overlay.querySelector("#remind-hl-clear"), "click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      clearTextSelection();
+      hlPopupInteracting = false;
     });
     listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-backdrop"), "click", closeLightbox);
     listeners.add("remindViewer", overlay.querySelector(".remind-lightbox-close"), "click", closeLightbox);
@@ -4319,11 +4350,21 @@ ${message}` : message;
       clearTimeout(progressSaveTimer);
       progressSaveTimer = null;
     }
+    if (hlHideTimer) {
+      clearTimeout(hlHideTimer);
+      hlHideTimer = null;
+    }
+    if (selChangeTimer) {
+      clearTimeout(selChangeTimer);
+      selChangeTimer = null;
+    }
     listeners.clear("remindViewer");
     isViewerOpen = false;
     currentRemind = null;
     currentMessages = null;
     pendingHighlight = null;
+    hlPopupInteracting = false;
+    selectionActiveSince = 0;
   }
   function closeTopRemindLayer() {
     if (!isViewerOpen) return false;
@@ -4515,8 +4556,32 @@ ${message}` : message;
     showToast(`\u{1F516} \uB9AC\uB9C8\uC778\uB4DC \uC800\uC7A5\uB428${start !== null ? ` (#${start}~#${end})` : ""}`, "success");
   }
   function hideHighlightPopup() {
+    if (hlHideTimer) {
+      clearTimeout(hlHideTimer);
+      hlHideTimer = null;
+    }
     const popup = document.getElementById("remind-hl-popup");
     if (popup) popup.style.display = "none";
+  }
+  function scheduleHideHighlightPopup() {
+    if (hlHideTimer) clearTimeout(hlHideTimer);
+    hlHideTimer = setTimeout(() => {
+      hlHideTimer = null;
+      if (!hlPopupInteracting) {
+        hideHighlightPopup();
+        pendingHighlight = null;
+        selectionActiveSince = 0;
+      }
+    }, 280);
+  }
+  function clearTextSelection() {
+    try {
+      window.getSelection()?.removeAllRanges();
+    } catch (e) {
+    }
+    pendingHighlight = null;
+    selectionActiveSince = 0;
+    hideHighlightPopup();
   }
   function handleTextSelection() {
     const popup = document.getElementById("remind-hl-popup");
@@ -4524,12 +4589,12 @@ ${message}` : message;
     if (!popup || !panel) return;
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-      hideHighlightPopup();
+      scheduleHideHighlightPopup();
       return;
     }
     const text = sel.toString().trim();
     if (!text || text.length < 2 || text.length > 600) {
-      hideHighlightPopup();
+      scheduleHideHighlightPopup();
       return;
     }
     const range = sel.getRangeAt(0);
@@ -4537,16 +4602,21 @@ ${message}` : message;
     const anchorEl = anchor.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor;
     const article = anchorEl?.closest?.(".remind-msg");
     if (!article || !article.dataset.mesid) {
-      hideHighlightPopup();
+      scheduleHideHighlightPopup();
       return;
     }
+    if (hlHideTimer) {
+      clearTimeout(hlHideTimer);
+      hlHideTimer = null;
+    }
+    if (!selectionActiveSince) selectionActiveSince = Date.now();
     pendingHighlight = {
       mesid: parseInt(article.dataset.mesid, 10),
       text
     };
     const rect = range.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
-    const left = Math.min(panelRect.width - 110, Math.max(8, rect.left - panelRect.left));
+    const left = Math.min(panelRect.width - 130, Math.max(8, rect.left - panelRect.left));
     const top = Math.min(panelRect.height - 50, rect.bottom - panelRect.top + 8);
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
@@ -4570,6 +4640,7 @@ ${message}` : message;
     }
     window.getSelection()?.removeAllRanges();
     pendingHighlight = null;
+    selectionActiveSince = 0;
     hideHighlightPopup();
     showToast("\u{1F58D}\uFE0F \uD615\uAD11\uD39C \uC800\uC7A5\uB428 (\uD0ED\uD558\uBA74 \uC81C\uAC70)", "success", 1800);
   }

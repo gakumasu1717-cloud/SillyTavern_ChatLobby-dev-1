@@ -7452,3 +7452,43 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
         width: 215px;
     }
 }
+
+/* ============================================
+   🖍️ 형광펜 팝업 v2 - [형광펜][✕ 해제] 2버튼 (모바일 대응)
+   ============================================ */
+.remind-hl-popup {
+    padding: 3px;
+    gap: 0;
+}
+
+.remind-hl-popup button {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    padding: 6px 12px;
+    border-radius: 16px;
+    /* 모바일 탭 시 선택 해제 방지 */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+#remind-hl-save {
+    color: #ffe9a0;
+}
+#remind-hl-save:active {
+    background: rgba(255, 224, 80, 0.18);
+}
+
+#remind-hl-clear {
+    color: #9aa0ae;
+    border-left: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 0 16px 16px 0;
+    padding: 6px 11px;
+}
+#remind-hl-clear:active {
+    background: rgba(255, 255, 255, 0.1);
+}

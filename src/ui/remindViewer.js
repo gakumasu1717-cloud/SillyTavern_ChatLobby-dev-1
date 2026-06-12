@@ -43,6 +43,14 @@ let progressSaveTimer = null;
 
 // 형광펜 선택 대기 상태
 let pendingHighlight = null;
+// 팝업 버튼 조작 중 플래그 (선택 collapse로 팝업이 숨겨지는 것 방지)
+let hlPopupInteracting = false;
+// 팝업 숨김 지연 타이머
+let hlHideTimer = null;
+// 선택이 활성화된 시각 (모바일 탭-해제 판단용)
+let selectionActiveSince = 0;
+// selectionchange 디바운스 타이머
+let selChangeTimer = null;
 
 // 글자 크기 범위
 const FONT_MIN = 12;
@@ -177,7 +185,10 @@ async function openViewerWithData(remind) {
             <div class="remind-viewer-body">
                 <div class="remind-viewer-loading">📖 채팅을 불러오는 중...</div>
             </div>
-            <button class="remind-hl-popup" id="remind-hl-popup" style="display:none;">🖍️ 형광펜</button>
+            <div class="remind-hl-popup" id="remind-hl-popup" style="display:none;">
+                <button id="remind-hl-save">🖍️ 형광펜</button>
+                <button id="remind-hl-clear" title="선택 해제">✕</button>
+            </div>
             <div class="remind-lightbox" id="remind-lightbox">
                 <div class="remind-lightbox-backdrop"></div>
                 <div class="remind-lightbox-content">
@@ -255,9 +266,19 @@ async function openViewerWithData(remind) {
         hideHighlightPopup();
     }, { passive: true });
 
-    // 본문 클릭: 설정 팝업 닫기 → 형광펜 제거 → 이미지 라이트박스
+    // 본문 클릭: 선택 해제 → 설정 팝업 닫기 → 형광펜 제거 → 이미지 라이트박스
     listeners.add('remindViewer', viewerBody, 'click', async (e) => {
         hideSettingsPop();
+
+        // 모바일: 텍스트 선택이 살아있는 상태에서 본문을 탭하면 선택 해제
+        // (일부 WebView가 기본 동작으로 안 풀어줘서 직접 처리.
+        //  500ms 가드 - PC에서 드래그 직후 발생하는 click이 방금 만든 선택을 지우는 것 방지)
+        const sel = window.getSelection();
+        if (sel && !sel.isCollapsed && selectionActiveSince
+            && Date.now() - selectionActiveSince > 500) {
+            clearTextSelection();
+            return; // 이 탭은 선택 해제로 소비
+        }
 
         const mark = e.target.closest('.remind-highlight');
         if (mark) {
@@ -280,13 +301,37 @@ async function openViewerWithData(remind) {
         }
     });
 
-    // 형광펜: 텍스트 선택 감지 (PC mouseup + 모바일 길게 눌러 선택 후 touchend)
+    // 형광펜: 텍스트 선택 감지
+    // - PC: mouseup 즉시
+    // - 모바일: 길게 눌러 선택/핸들 조정은 touchend가 안 잡히는 경우가 많아
+    //   document의 selectionchange로 감지해야 안정적
     listeners.add('remindViewer', viewerBody, 'mouseup', () => setTimeout(handleTextSelection, 10));
-    listeners.add('remindViewer', viewerBody, 'touchend', () => setTimeout(handleTextSelection, 200));
-    listeners.add('remindViewer', overlay.querySelector('#remind-hl-popup'), 'click', (e) => {
+    listeners.add('remindViewer', document, 'selectionchange', () => {
+        if (!isViewerOpen) return;
+        if (selChangeTimer) clearTimeout(selChangeTimer);
+        selChangeTimer = setTimeout(handleTextSelection, 180);
+    });
+
+    // 팝업 버튼: mousedown preventDefault로 선택 collapse 방지 (서식 툴바 표준 트릭)
+    const hlPopup = overlay.querySelector('#remind-hl-popup');
+    listeners.add('remindViewer', hlPopup, 'mousedown', (e) => {
+        e.preventDefault();
+        hlPopupInteracting = true;
+    });
+    listeners.add('remindViewer', hlPopup, 'touchstart', () => {
+        hlPopupInteracting = true;
+    }, { passive: true });
+    listeners.add('remindViewer', overlay.querySelector('#remind-hl-save'), 'click', (e) => {
         e.preventDefault();
         e.stopPropagation();
         saveHighlightFromSelection();
+        hlPopupInteracting = false;
+    });
+    listeners.add('remindViewer', overlay.querySelector('#remind-hl-clear'), 'click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        clearTextSelection();
+        hlPopupInteracting = false;
     });
 
     // 라이트박스
@@ -373,11 +418,21 @@ export function closeRemindViewer() {
         clearTimeout(progressSaveTimer);
         progressSaveTimer = null;
     }
+    if (hlHideTimer) {
+        clearTimeout(hlHideTimer);
+        hlHideTimer = null;
+    }
+    if (selChangeTimer) {
+        clearTimeout(selChangeTimer);
+        selChangeTimer = null;
+    }
     listeners.clear('remindViewer');
     isViewerOpen = false;
     currentRemind = null;
     currentMessages = null;
     pendingHighlight = null;
+    hlPopupInteracting = false;
+    selectionActiveSince = 0;
 }
 
 /**
@@ -653,8 +708,40 @@ async function addRemindFromViewer() {
 // ============================================
 
 function hideHighlightPopup() {
+    if (hlHideTimer) {
+        clearTimeout(hlHideTimer);
+        hlHideTimer = null;
+    }
     const popup = document.getElementById('remind-hl-popup');
     if (popup) popup.style.display = 'none';
+}
+
+/**
+ * 팝업 지연 숨김 - 선택이 collapse된 직후 팝업 버튼을 누르는 순간을 허용
+ * (즉시 숨기면 팝업 탭 → 선택 해제 → 팝업 사라짐 → 클릭 무효가 됨)
+ */
+function scheduleHideHighlightPopup() {
+    if (hlHideTimer) clearTimeout(hlHideTimer);
+    hlHideTimer = setTimeout(() => {
+        hlHideTimer = null;
+        if (!hlPopupInteracting) {
+            hideHighlightPopup();
+            pendingHighlight = null;
+            selectionActiveSince = 0;
+        }
+    }, 280);
+}
+
+/**
+ * 선택 강제 해제 (✕ 버튼 / 본문 탭)
+ */
+function clearTextSelection() {
+    try {
+        window.getSelection()?.removeAllRanges();
+    } catch (e) { /* ignore */ }
+    pendingHighlight = null;
+    selectionActiveSince = 0;
+    hideHighlightPopup();
 }
 
 function handleTextSelection() {
@@ -664,13 +751,13 @@ function handleTextSelection() {
 
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
-        hideHighlightPopup();
+        scheduleHideHighlightPopup();
         return;
     }
 
     const text = sel.toString().trim();
     if (!text || text.length < 2 || text.length > 600) {
-        hideHighlightPopup();
+        scheduleHideHighlightPopup();
         return;
     }
 
@@ -679,9 +766,16 @@ function handleTextSelection() {
     const anchorEl = anchor.nodeType === Node.TEXT_NODE ? anchor.parentElement : anchor;
     const article = anchorEl?.closest?.('.remind-msg');
     if (!article || !article.dataset.mesid) {
-        hideHighlightPopup();
+        scheduleHideHighlightPopup();
         return;
     }
+
+    // 유효한 선택 → 숨김 예약 취소 + 활성 시각 기록
+    if (hlHideTimer) {
+        clearTimeout(hlHideTimer);
+        hlHideTimer = null;
+    }
+    if (!selectionActiveSince) selectionActiveSince = Date.now();
 
     pendingHighlight = {
         mesid: parseInt(article.dataset.mesid, 10),
@@ -690,7 +784,7 @@ function handleTextSelection() {
 
     const rect = range.getBoundingClientRect();
     const panelRect = panel.getBoundingClientRect();
-    const left = Math.min(panelRect.width - 110, Math.max(8, rect.left - panelRect.left));
+    const left = Math.min(panelRect.width - 130, Math.max(8, rect.left - panelRect.left));
     const top = Math.min(panelRect.height - 50, rect.bottom - panelRect.top + 8);
     popup.style.left = `${left}px`;
     popup.style.top = `${top}px`;
@@ -718,6 +812,7 @@ function saveHighlightFromSelection() {
 
     window.getSelection()?.removeAllRanges();
     pendingHighlight = null;
+    selectionActiveSince = 0;
     hideHighlightPopup();
     showToast('🖍️ 형광펜 저장됨 (탭하면 제거)', 'success', 1800);
 }
