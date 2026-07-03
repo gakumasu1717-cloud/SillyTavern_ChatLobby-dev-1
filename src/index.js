@@ -19,7 +19,7 @@ import { openStatsView, closeStatsView, isStatsViewOpen } from './ui/statsView.j
 import { openCalendarView, closeCalendarView } from './ui/calendarView.js';
 import { bindTabEvents, switchTab, getCurrentTab, refreshCurrentTab, injectContextMenuStyles, cacheRecentChatsBeforeOpen, loadRecentChats, startRecentDomObserver, stopRecentDomObserver } from './ui/tabView.js';
 import { lastChatCache } from './data/lastChatCache.js';
-import { loadSnapshots as loadCalendarSnapshots, getLocalDateString } from './data/calendarStorage.js';
+import { loadSnapshots as loadCalendarSnapshots, getLocalDateString, initCalendarStorage } from './data/calendarStorage.js';
 import { debounce, isMobile } from './utils/eventHelpers.js';
 import { waitForElement } from './utils/waitFor.js';
 import { intervalManager } from './utils/intervalManager.js';
@@ -202,7 +202,11 @@ import { operationLock } from './utils/operationLock.js';
         
         // CustomTheme 사이드바에 버튼 추가 (있으면)
         setTimeout(() => initCustomThemeIntegration(openLobby), CONFIG.timing.initDelay);
-        
+
+        // 캘린더 저장소 초기화 (localforage 로드 + localStorage 마이그레이션)
+        // ⚠️ updateFabPreview()가 getStreak()→loadSnapshots()를 호출하므로 반드시 그 전에 await
+        await initCalendarStorage();
+
         // FAB 프리뷰 초기화
         updateFabPreview();
 

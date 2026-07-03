@@ -51,6 +51,14 @@ let hlHideTimer = null;
 let selectionActiveSince = 0;
 // selectionchange 디바운스 타이머
 let selChangeTimer = null;
+// 정규식 iframe lazy hydration 옵저버
+let iframeObserver = null;
+// "모두" 모드 대용량 안내 토스트 (뷰어 열 때마다 1회)
+let warnedLargeAll = false;
+
+// "모두" 모드에서 이 개수를 넘으면 강제 페이지 처리 (모바일 크래시 방지)
+const MAX_ALL_RENDER = 150;
+const FORCED_PAGE_SIZE = 50;
 
 // 글자 크기 범위
 const FONT_MIN = 12;
@@ -119,6 +127,7 @@ async function openViewerWithData(remind) {
     regexEnabled = true;
     pageIndex = 0;
     pendingHighlight = null;
+    warnedLargeAll = false;
 
     const rangeText = remind._adhoc
         ? '전체 감상'
@@ -184,6 +193,9 @@ async function openViewerWithData(remind) {
             </header>
             <div class="remind-viewer-body">
                 <div class="remind-viewer-loading">📖 채팅을 불러오는 중...</div>
+            </div>
+            <div class="remind-scrollbar" id="remind-scrollbar">
+                <div class="remind-scroll-thumb" id="remind-scroll-thumb"></div>
             </div>
             <div class="remind-hl-popup" id="remind-hl-popup" style="display:none;">
                 <button id="remind-hl-save">🖍️ 형광펜</button>
@@ -264,7 +276,11 @@ async function openViewerWithData(remind) {
         }
         scheduleProgressSave();
         hideHighlightPopup();
+        updateScrollThumb();
     }, { passive: true });
+
+    // 커스텀 스크롤 핸들 (홀드 드래그로 빠른 위치 이동)
+    bindScrollThumb(overlay, viewerBody);
 
     // 본문 클릭: 선택 해제 → 설정 팝업 닫기 → 형광펜 제거 → 이미지 라이트박스
     listeners.add('remindViewer', viewerBody, 'click', async (e) => {
@@ -426,6 +442,10 @@ export function closeRemindViewer() {
         clearTimeout(selChangeTimer);
         selChangeTimer = null;
     }
+    if (iframeObserver) {
+        iframeObserver.disconnect();
+        iframeObserver = null;
+    }
     listeners.clear('remindViewer');
     isViewerOpen = false;
     currentRemind = null;
@@ -509,6 +529,23 @@ function getPageSize() {
     return PAGE_SIZE_OPTIONS.includes(v) ? v : 10;
 }
 
+/**
+ * 실효 페이지 크기 - "모두" 모드라도 메시지가 너무 많으면 강제 페이지 처리
+ * (한 번에 수백 메시지 + 정규식 iframe 렌더 → 모바일 크래시 방지)
+ * @param {number} rangeLength - 현재 보기 범위의 메시지 수
+ */
+function getEffectivePageSize(rangeLength) {
+    const ps = getPageSize();
+    if (ps === 0 && rangeLength > MAX_ALL_RENDER) {
+        if (!warnedLargeAll) {
+            warnedLargeAll = true;
+            showToast(`메시지가 ${rangeLength}개라 ${FORCED_PAGE_SIZE}개씩 나눠 표시합니다.`, 'info');
+        }
+        return FORCED_PAGE_SIZE;
+    }
+    return ps;
+}
+
 function getReaderTheme() {
     const v = uiPrefs.get('viewerTheme');
     return READER_THEMES.some(t => t.id === v) ? v : 'auto';
@@ -570,7 +607,7 @@ function getCurrentSlice() {
 }
 
 function getTotalPages(rangeLength) {
-    const pageSize = getPageSize();
+    const pageSize = getEffectivePageSize(rangeLength);
     if (pageSize === 0) return 1;
     return Math.max(1, Math.ceil(rangeLength / pageSize));
 }
@@ -583,7 +620,7 @@ function changePage(delta) {
     if (!data || !currentMessages) return;
 
     const total = currentMessages.length;
-    const pageSize = getPageSize();
+    const pageSize = getEffectivePageSize(data.slice.length);
     const extendChunk = pageSize || 20;
     const totalPages = getTotalPages(data.slice.length);
 
@@ -901,6 +938,96 @@ function closeLightbox() {
 }
 
 // ============================================
+// 커스텀 스크롤 핸들 (홀드해서 자유롭게 내리는 스크롤바)
+// 모바일 네이티브 스크롤바는 얇아서 못 잡으므로 큰 드래그 핸들 제공
+// ============================================
+
+/**
+ * 본문 스크롤 위치에 맞춰 thumb 크기/위치 갱신
+ */
+function updateScrollThumb() {
+    const body = document.querySelector('#chat-lobby-remind-viewer .remind-viewer-body');
+    const bar = document.getElementById('remind-scrollbar');
+    const thumb = document.getElementById('remind-scroll-thumb');
+    if (!body || !bar || !thumb) return;
+
+    const { scrollTop, scrollHeight, clientHeight } = body;
+
+    // 스크롤할 게 없으면 숨김
+    if (scrollHeight <= clientHeight + 4) {
+        bar.style.display = 'none';
+        return;
+    }
+    bar.style.display = 'block';
+
+    const track = bar.clientHeight;
+    const thumbH = Math.max(44, Math.round(track * (clientHeight / scrollHeight)));
+    const maxThumbTop = track - thumbH;
+    const maxScroll = scrollHeight - clientHeight;
+    const top = maxScroll > 0 ? Math.round((scrollTop / maxScroll) * maxThumbTop) : 0;
+
+    thumb.style.height = `${thumbH}px`;
+    thumb.style.transform = `translateY(${top}px)`;
+}
+
+/**
+ * 스크롤 핸들 드래그 바인딩 (pointer 이벤트 - PC/모바일 통합)
+ */
+function bindScrollThumb(overlay, body) {
+    const bar = overlay.querySelector('#remind-scrollbar');
+    const thumb = overlay.querySelector('#remind-scroll-thumb');
+    if (!bar || !thumb) return;
+
+    let dragging = false;
+    let startY = 0;
+    let startScrollTop = 0;
+
+    const onMove = (e) => {
+        if (!dragging) return;
+        e.preventDefault();
+        const track = bar.clientHeight;
+        const thumbH = thumb.offsetHeight;
+        const maxThumbTop = track - thumbH;
+        const maxScroll = body.scrollHeight - body.clientHeight;
+        if (maxThumbTop <= 0 || maxScroll <= 0) return;
+
+        const clientY = e.clientY ?? (e.touches && e.touches[0]?.clientY) ?? 0;
+        const deltaY = clientY - startY;
+        const ratio = maxScroll / maxThumbTop;
+        body.scrollTop = startScrollTop + deltaY * ratio;
+    };
+
+    const onUp = (e) => {
+        if (!dragging) return;
+        dragging = false;
+        thumb.classList.remove('dragging');
+        try { thumb.releasePointerCapture?.(e.pointerId); } catch (err) { /* ignore */ }
+    };
+
+    listeners.add('remindViewer', thumb, 'pointerdown', (e) => {
+        dragging = true;
+        startY = e.clientY;
+        startScrollTop = body.scrollTop;
+        thumb.classList.add('dragging');
+        try { thumb.setPointerCapture?.(e.pointerId); } catch (err) { /* ignore */ }
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    listeners.add('remindViewer', thumb, 'pointermove', onMove);
+    listeners.add('remindViewer', thumb, 'pointerup', onUp);
+    listeners.add('remindViewer', thumb, 'pointercancel', onUp);
+
+    // 트랙(빈 영역) 클릭 시 그 위치로 점프
+    listeners.add('remindViewer', bar, 'pointerdown', (e) => {
+        if (e.target !== bar) return; // thumb 클릭은 제외
+        const rect = bar.getBoundingClientRect();
+        const clickRatio = (e.clientY - rect.top) / rect.height;
+        const maxScroll = body.scrollHeight - body.clientHeight;
+        body.scrollTop = clickRatio * maxScroll;
+    });
+}
+
+// ============================================
 // 렌더링
 // ============================================
 
@@ -917,7 +1044,7 @@ function renderMessages(keepScroll = false) {
         return;
     }
 
-    const pageSize = getPageSize();
+    const pageSize = getEffectivePageSize(slice.length);
     const totalPages = getTotalPages(slice.length);
     pageIndex = Math.min(totalPages - 1, Math.max(0, pageIndex));
 
@@ -935,12 +1062,18 @@ function renderMessages(keepScroll = false) {
     pageSlice.forEach((msg, i) => {
         const mesid = start + pageStart + i;
 
-        const formatted = renderMessageHtml(msg, {
+        let formatted = renderMessageHtml(msg, {
             characterName: charName,
             userName: userName,
             charAvatar: currentRemind.avatar,
             applyRegex: regexEnabled,
         });
+
+        // 빈 응답(빈 메시지/빈 스와이프)도 자리를 차지하게 플레이스홀더 표시
+        // → "빈 응답 채팅에서 메시지가 누락된 것처럼 보이던" 문제 해소
+        if (!formatted || !formatted.trim()) {
+            formatted = '<div class="remind-empty-msg">— 빈 응답 —</div>';
+        }
 
         const roleClass = msg.is_user ? 'is-user' : (msg.is_system ? 'is-system' : 'is-char');
         html += `
@@ -967,6 +1100,10 @@ function renderMessages(keepScroll = false) {
 
     hydrateRegexIframes(body);
     applySavedHighlights(body);
+
+    // 스크롤 핸들 갱신 (렌더 직후 + 이미지 로드로 높이 바뀔 수 있어 지연 1회 더)
+    updateScrollThumb();
+    setTimeout(updateScrollThumb, 300);
 }
 
 function updatePageControls(totalPages, rangeLength, rangeFrom = 0, rangeTo = 0) {
@@ -989,31 +1126,67 @@ function updatePageControls(totalPages, rangeLength, rangeFrom = 0, rangeTo = 0)
     if (nextBtn) nextBtn.disabled = pageIndex >= totalPages - 1 && viewEnd >= total - 1;
 }
 
-function hydrateRegexIframes(scope) {
-    scope.querySelectorAll('iframe.remind-regex-iframe[data-remind-html]').forEach(iframe => {
-        const b64 = iframe.getAttribute('data-remind-html');
-        iframe.removeAttribute('data-remind-html');
-        if (!b64) return;
+/**
+ * iframe 하나에 내용 주입 (base64 → srcdoc)
+ */
+function hydrateOneIframe(iframe) {
+    const b64 = iframe.getAttribute('data-remind-html');
+    iframe.removeAttribute('data-remind-html');
+    if (!b64) return;
 
-        try {
-            iframe.srcdoc = decodeURIComponent(escape(atob(b64)));
-        } catch (e) {
-            console.warn('[RemindViewer] iframe srcdoc set failed:', e);
-            iframe.replaceWith(Object.assign(document.createElement('div'), {
-                className: 'remind-html-notice',
-                textContent: '🧩 HTML 블록을 표시하지 못했습니다.',
-            }));
-            return;
-        }
+    try {
+        iframe.srcdoc = decodeURIComponent(escape(atob(b64)));
+    } catch (e) {
+        console.warn('[RemindViewer] iframe srcdoc set failed:', e);
+        iframe.replaceWith(Object.assign(document.createElement('div'), {
+            className: 'remind-html-notice',
+            textContent: '🧩 HTML 블록을 표시하지 못했습니다.',
+        }));
+        return;
+    }
 
-        iframe.addEventListener('load', () => {
-            setTimeout(() => {
-                if (!iframe.style.height || iframe.style.height === '0px') {
-                    iframe.style.height = '400px';
-                }
-            }, 800);
-        });
+    iframe.addEventListener('load', () => {
+        setTimeout(() => {
+            if (!iframe.style.height || iframe.style.height === '0px') {
+                iframe.style.height = '400px';
+            }
+        }, 800);
     });
+}
+
+/**
+ * 정규식 iframe lazy hydration
+ * ⚠️ 한 번에 전부 srcdoc 주입 금지!
+ * iframe 하나하나가 스크립트+옵저버가 도는 통짜 브라우징 컨텍스트라,
+ * 큰 채팅에서 수십 개를 동시에 살리면 모바일 WebView가 메모리 초과로 죽음(튕김).
+ * → IntersectionObserver로 화면 근처(±600px)에 온 것만 그때그때 생성
+ */
+function hydrateRegexIframes(scope) {
+    // 이전 페이지의 옵저버 정리
+    if (iframeObserver) {
+        iframeObserver.disconnect();
+        iframeObserver = null;
+    }
+
+    const frames = scope.querySelectorAll('iframe.remind-regex-iframe[data-remind-html]');
+    if (frames.length === 0) return;
+
+    // 구형 브라우저 폴백: 옵저버 없으면 즉시 하이드레이션 (기존 동작)
+    if (typeof IntersectionObserver === 'undefined') {
+        frames.forEach(hydrateOneIframe);
+        return;
+    }
+
+    iframeObserver = new IntersectionObserver((entries) => {
+        for (const entry of entries) {
+            if (entry.isIntersecting) {
+                iframeObserver?.unobserve(entry.target);
+                hydrateOneIframe(entry.target);
+            }
+        }
+    }, { root: scope, rootMargin: '600px 0px' });
+
+    frames.forEach(f => iframeObserver.observe(f));
 }
 
 // ============================================

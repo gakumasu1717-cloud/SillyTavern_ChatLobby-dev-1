@@ -4070,6 +4070,10 @@ ${message}` : message;
   var hlHideTimer = null;
   var selectionActiveSince = 0;
   var selChangeTimer = null;
+  var iframeObserver = null;
+  var warnedLargeAll = false;
+  var MAX_ALL_RENDER = 150;
+  var FORCED_PAGE_SIZE = 50;
   var FONT_MIN = 12;
   var FONT_MAX = 24;
   var PAGE_SIZE_OPTIONS = [5, 10, 20, 50, 0];
@@ -4113,6 +4117,7 @@ ${message}` : message;
     regexEnabled = true;
     pageIndex = 0;
     pendingHighlight = null;
+    warnedLargeAll = false;
     const rangeText = remind._adhoc ? "\uC804\uCCB4 \uAC10\uC0C1" : remind.start !== null || remind.end !== null ? `#${remind.start ?? 0} ~ ${remind.end !== null ? "#" + remind.end : "\uB05D"}` : "\uC804\uCCB4";
     const pageSize = getPageSize();
     const fontSize = getFontSize();
@@ -4171,6 +4176,9 @@ ${message}` : message;
             </header>
             <div class="remind-viewer-body">
                 <div class="remind-viewer-loading">\u{1F4D6} \uCC44\uD305\uC744 \uBD88\uB7EC\uC624\uB294 \uC911...</div>
+            </div>
+            <div class="remind-scrollbar" id="remind-scrollbar">
+                <div class="remind-scroll-thumb" id="remind-scroll-thumb"></div>
             </div>
             <div class="remind-hl-popup" id="remind-hl-popup" style="display:none;">
                 <button id="remind-hl-save">\u{1F58D}\uFE0F \uD615\uAD11\uD39C</button>
@@ -4234,7 +4242,9 @@ ${message}` : message;
       }
       scheduleProgressSave();
       hideHighlightPopup();
+      updateScrollThumb();
     }, { passive: true });
+    bindScrollThumb(overlay, viewerBody);
     listeners.add("remindViewer", viewerBody, "click", async (e) => {
       hideSettingsPop();
       const sel = window.getSelection();
@@ -4358,6 +4368,10 @@ ${message}` : message;
       clearTimeout(selChangeTimer);
       selChangeTimer = null;
     }
+    if (iframeObserver) {
+      iframeObserver.disconnect();
+      iframeObserver = null;
+    }
     listeners.clear("remindViewer");
     isViewerOpen = false;
     currentRemind = null;
@@ -4407,6 +4421,17 @@ ${message}` : message;
     const v = parseInt(uiPrefs.get("viewerPageSize"), 10);
     return PAGE_SIZE_OPTIONS.includes(v) ? v : 10;
   }
+  function getEffectivePageSize(rangeLength) {
+    const ps = getPageSize();
+    if (ps === 0 && rangeLength > MAX_ALL_RENDER) {
+      if (!warnedLargeAll) {
+        warnedLargeAll = true;
+        showToast(`\uBA54\uC2DC\uC9C0\uAC00 ${rangeLength}\uAC1C\uB77C ${FORCED_PAGE_SIZE}\uAC1C\uC529 \uB098\uB220 \uD45C\uC2DC\uD569\uB2C8\uB2E4.`, "info");
+      }
+      return FORCED_PAGE_SIZE;
+    }
+    return ps;
+  }
   function getReaderTheme() {
     const v = uiPrefs.get("viewerTheme");
     return READER_THEMES.some((t) => t.id === v) ? v : "auto";
@@ -4453,7 +4478,7 @@ ${message}` : message;
     };
   }
   function getTotalPages(rangeLength) {
-    const pageSize = getPageSize();
+    const pageSize = getEffectivePageSize(rangeLength);
     if (pageSize === 0) return 1;
     return Math.max(1, Math.ceil(rangeLength / pageSize));
   }
@@ -4461,7 +4486,7 @@ ${message}` : message;
     const data = getCurrentSlice();
     if (!data || !currentMessages) return;
     const total = currentMessages.length;
-    const pageSize = getPageSize();
+    const pageSize = getEffectivePageSize(data.slice.length);
     const extendChunk = pageSize || 20;
     const totalPages = getTotalPages(data.slice.length);
     if (delta > 0) {
@@ -4715,6 +4740,77 @@ ${message}` : message;
     const lb = document.getElementById("remind-lightbox");
     if (lb) lb.classList.remove("active");
   }
+  function updateScrollThumb() {
+    const body = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-body");
+    const bar = document.getElementById("remind-scrollbar");
+    const thumb = document.getElementById("remind-scroll-thumb");
+    if (!body || !bar || !thumb) return;
+    const { scrollTop, scrollHeight, clientHeight } = body;
+    if (scrollHeight <= clientHeight + 4) {
+      bar.style.display = "none";
+      return;
+    }
+    bar.style.display = "block";
+    const track = bar.clientHeight;
+    const thumbH = Math.max(44, Math.round(track * (clientHeight / scrollHeight)));
+    const maxThumbTop = track - thumbH;
+    const maxScroll = scrollHeight - clientHeight;
+    const top = maxScroll > 0 ? Math.round(scrollTop / maxScroll * maxThumbTop) : 0;
+    thumb.style.height = `${thumbH}px`;
+    thumb.style.transform = `translateY(${top}px)`;
+  }
+  function bindScrollThumb(overlay, body) {
+    const bar = overlay.querySelector("#remind-scrollbar");
+    const thumb = overlay.querySelector("#remind-scroll-thumb");
+    if (!bar || !thumb) return;
+    let dragging = false;
+    let startY = 0;
+    let startScrollTop = 0;
+    const onMove = (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      const track = bar.clientHeight;
+      const thumbH = thumb.offsetHeight;
+      const maxThumbTop = track - thumbH;
+      const maxScroll = body.scrollHeight - body.clientHeight;
+      if (maxThumbTop <= 0 || maxScroll <= 0) return;
+      const clientY = e.clientY ?? (e.touches && e.touches[0]?.clientY) ?? 0;
+      const deltaY = clientY - startY;
+      const ratio = maxScroll / maxThumbTop;
+      body.scrollTop = startScrollTop + deltaY * ratio;
+    };
+    const onUp = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      thumb.classList.remove("dragging");
+      try {
+        thumb.releasePointerCapture?.(e.pointerId);
+      } catch (err) {
+      }
+    };
+    listeners.add("remindViewer", thumb, "pointerdown", (e) => {
+      dragging = true;
+      startY = e.clientY;
+      startScrollTop = body.scrollTop;
+      thumb.classList.add("dragging");
+      try {
+        thumb.setPointerCapture?.(e.pointerId);
+      } catch (err) {
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    listeners.add("remindViewer", thumb, "pointermove", onMove);
+    listeners.add("remindViewer", thumb, "pointerup", onUp);
+    listeners.add("remindViewer", thumb, "pointercancel", onUp);
+    listeners.add("remindViewer", bar, "pointerdown", (e) => {
+      if (e.target !== bar) return;
+      const rect = bar.getBoundingClientRect();
+      const clickRatio = (e.clientY - rect.top) / rect.height;
+      const maxScroll = body.scrollHeight - body.clientHeight;
+      body.scrollTop = clickRatio * maxScroll;
+    });
+  }
   function renderMessages(keepScroll = false) {
     const body = document.querySelector("#chat-lobby-remind-viewer .remind-viewer-body");
     const data = getCurrentSlice();
@@ -4725,7 +4821,7 @@ ${message}` : message;
       updatePageControls(0, 0);
       return;
     }
-    const pageSize = getPageSize();
+    const pageSize = getEffectivePageSize(slice.length);
     const totalPages = getTotalPages(slice.length);
     pageIndex = Math.min(totalPages - 1, Math.max(0, pageIndex));
     const pageStart = pageSize === 0 ? 0 : pageIndex * pageSize;
@@ -4736,12 +4832,15 @@ ${message}` : message;
     let html = "";
     pageSlice.forEach((msg, i) => {
       const mesid = start + pageStart + i;
-      const formatted = renderMessageHtml(msg, {
+      let formatted = renderMessageHtml(msg, {
         characterName: charName,
         userName,
         charAvatar: currentRemind.avatar,
         applyRegex: regexEnabled
       });
+      if (!formatted || !formatted.trim()) {
+        formatted = '<div class="remind-empty-msg">\u2014 \uBE48 \uC751\uB2F5 \u2014</div>';
+      }
       const roleClass = msg.is_user ? "is-user" : msg.is_system ? "is-system" : "is-char";
       html += `
         <article class="remind-msg ${roleClass}" data-mesid="${mesid}">
@@ -4763,6 +4862,8 @@ ${message}` : message;
     hideSettingsPop();
     hydrateRegexIframes(body);
     applySavedHighlights(body);
+    updateScrollThumb();
+    setTimeout(updateScrollThumb, 300);
   }
   function updatePageControls(totalPages, rangeLength, rangeFrom = 0, rangeTo = 0) {
     const label = document.getElementById("remind-page-label");
@@ -4781,29 +4882,48 @@ ${message}` : message;
     if (prevBtn) prevBtn.disabled = pageIndex <= 0 && viewStart <= 0;
     if (nextBtn) nextBtn.disabled = pageIndex >= totalPages - 1 && viewEnd >= total - 1;
   }
-  function hydrateRegexIframes(scope) {
-    scope.querySelectorAll("iframe.remind-regex-iframe[data-remind-html]").forEach((iframe) => {
-      const b64 = iframe.getAttribute("data-remind-html");
-      iframe.removeAttribute("data-remind-html");
-      if (!b64) return;
-      try {
-        iframe.srcdoc = decodeURIComponent(escape(atob(b64)));
-      } catch (e) {
-        console.warn("[RemindViewer] iframe srcdoc set failed:", e);
-        iframe.replaceWith(Object.assign(document.createElement("div"), {
-          className: "remind-html-notice",
-          textContent: "\u{1F9E9} HTML \uBE14\uB85D\uC744 \uD45C\uC2DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."
-        }));
-        return;
-      }
-      iframe.addEventListener("load", () => {
-        setTimeout(() => {
-          if (!iframe.style.height || iframe.style.height === "0px") {
-            iframe.style.height = "400px";
-          }
-        }, 800);
-      });
+  function hydrateOneIframe(iframe) {
+    const b64 = iframe.getAttribute("data-remind-html");
+    iframe.removeAttribute("data-remind-html");
+    if (!b64) return;
+    try {
+      iframe.srcdoc = decodeURIComponent(escape(atob(b64)));
+    } catch (e) {
+      console.warn("[RemindViewer] iframe srcdoc set failed:", e);
+      iframe.replaceWith(Object.assign(document.createElement("div"), {
+        className: "remind-html-notice",
+        textContent: "\u{1F9E9} HTML \uBE14\uB85D\uC744 \uD45C\uC2DC\uD558\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4."
+      }));
+      return;
+    }
+    iframe.addEventListener("load", () => {
+      setTimeout(() => {
+        if (!iframe.style.height || iframe.style.height === "0px") {
+          iframe.style.height = "400px";
+        }
+      }, 800);
     });
+  }
+  function hydrateRegexIframes(scope) {
+    if (iframeObserver) {
+      iframeObserver.disconnect();
+      iframeObserver = null;
+    }
+    const frames = scope.querySelectorAll("iframe.remind-regex-iframe[data-remind-html]");
+    if (frames.length === 0) return;
+    if (typeof IntersectionObserver === "undefined") {
+      frames.forEach(hydrateOneIframe);
+      return;
+    }
+    iframeObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.isIntersecting) {
+          iframeObserver?.unobserve(entry.target);
+          hydrateOneIframe(entry.target);
+        }
+      }
+    }, { root: scope, rootMargin: "600px 0px" });
+    frames.forEach((f) => iframeObserver.observe(f));
   }
   function exportCurrentRange() {
     const data = getCurrentSlice();
@@ -6685,30 +6805,96 @@ ${message}` : message;
   var STORAGE_KEY6 = "chatLobby_calendar";
   var CURRENT_VERSION = 1;
   var _snapshotsCache = null;
-  function getLocalDateString(date = /* @__PURE__ */ new Date()) {
-    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  var _initialized = false;
+  var _saveTimer = null;
+  function lf() {
+    return typeof window !== "undefined" && window.localforage || null;
   }
-  function loadSnapshots(forceRefresh = false) {
-    if (_snapshotsCache && !forceRefresh) {
-      return _snapshotsCache;
+  function _safeRemoveLegacy() {
+    try {
+      localStorage.removeItem(STORAGE_KEY6);
+    } catch (e) {
     }
+  }
+  function _loadFromLocalStorageSync() {
     try {
       const data = localStorage.getItem(STORAGE_KEY6);
       if (data) {
         const parsed = JSON.parse(data);
-        const version = parsed.version || 0;
-        if (version < CURRENT_VERSION) {
-          console.debug("[Calendar] Migrating data from version", version, "to", CURRENT_VERSION);
-          const migrated = { version: CURRENT_VERSION, snapshots: parsed.snapshots || {} };
-          localStorage.setItem(STORAGE_KEY6, JSON.stringify(migrated));
-        }
-        _snapshotsCache = parsed.snapshots || {};
-        return _snapshotsCache;
+        return parsed.snapshots || {};
       }
     } catch (e) {
-      console.error("[Calendar] Failed to load snapshots:", e);
+      console.error("[Calendar] localStorage load failed:", e);
     }
-    _snapshotsCache = {};
+    return {};
+  }
+  function getLocalDateString(date = /* @__PURE__ */ new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+  async function initCalendarStorage() {
+    if (_initialized) return;
+    const store2 = lf();
+    try {
+      if (store2) {
+        const lfData = await store2.getItem(STORAGE_KEY6);
+        const lfSnaps = lfData && lfData.snapshots ? lfData.snapshots : null;
+        let lsSnaps = null;
+        try {
+          const legacy = localStorage.getItem(STORAGE_KEY6);
+          if (legacy) lsSnaps = JSON.parse(legacy).snapshots || null;
+        } catch (e) {
+          console.warn("[Calendar] Corrupt localStorage residue ignored");
+        }
+        if (lfSnaps && lsSnaps) {
+          _snapshotsCache = { ...lsSnaps, ...lfSnaps };
+          await store2.setItem(STORAGE_KEY6, { version: CURRENT_VERSION, snapshots: _snapshotsCache });
+          _safeRemoveLegacy();
+          console.info("[Calendar] Merged residual localStorage into localforage (lf priority)");
+        } else if (!lfSnaps && lsSnaps) {
+          _snapshotsCache = lsSnaps;
+          await store2.setItem(STORAGE_KEY6, { version: CURRENT_VERSION, snapshots: lsSnaps });
+          _safeRemoveLegacy();
+          console.info("[Calendar] Migrated localStorage \u2192 localforage(IndexedDB)");
+        } else {
+          _snapshotsCache = lfSnaps || {};
+          if (!lsSnaps && localStorage.getItem(STORAGE_KEY6)) _safeRemoveLegacy();
+        }
+      } else {
+        console.warn("[Calendar] window.localforage not found, using localStorage");
+        _snapshotsCache = _loadFromLocalStorageSync();
+      }
+    } catch (e) {
+      console.warn("[Calendar] init failed, fallback to localStorage:", e);
+      _snapshotsCache = _loadFromLocalStorageSync();
+    }
+    _initialized = true;
+    try {
+      cleanOldSnapshots();
+    } catch (e) {
+    }
+  }
+  function _persist() {
+    if (_saveTimer) clearTimeout(_saveTimer);
+    _saveTimer = setTimeout(() => {
+      _saveTimer = null;
+      const payload = { version: CURRENT_VERSION, snapshots: _snapshotsCache || {} };
+      const store2 = lf();
+      try {
+        if (store2) {
+          store2.setItem(STORAGE_KEY6, payload).catch((e) => {
+            console.error("[Calendar] localforage persist failed:", e);
+          });
+        } else {
+          localStorage.setItem(STORAGE_KEY6, JSON.stringify(payload));
+        }
+      } catch (e) {
+        console.error("[Calendar] persist failed:", e);
+      }
+    }, 500);
+  }
+  function loadSnapshots(_forceRefresh = false) {
+    if (_snapshotsCache !== null) return _snapshotsCache;
+    _snapshotsCache = _loadFromLocalStorageSync();
     return _snapshotsCache;
   }
   function getSnapshot(date) {
@@ -6716,8 +6902,7 @@ ${message}` : message;
     return snapshots[date] || null;
   }
   function cleanOldSnapshots() {
-    console.debug("[Calendar] Cleaning old snapshots (2 years+)");
-    const snapshots = loadSnapshots(true);
+    const snapshots = loadSnapshots();
     const twoYearsAgo = /* @__PURE__ */ new Date();
     twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
     const cutoff = getLocalDateString(twoYearsAgo);
@@ -6730,45 +6915,34 @@ ${message}` : message;
     }
     if (deleted > 0) {
       console.debug("[Calendar] Deleted", deleted, "old snapshots (2+ years)");
-      localStorage.setItem(STORAGE_KEY6, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
+      _persist();
     }
   }
   function saveSnapshot(date, total, topChar, byChar = {}, lastChatTimes = {}, isBaseline = false) {
     const thisYear = (/* @__PURE__ */ new Date()).getFullYear();
     const jan1 = `${thisYear}-01-01`;
     if (!isBaseline && date < jan1) return;
-    _snapshotsCache = null;
-    try {
-      const snapshots = loadSnapshots(true);
-      const existingTimes = snapshots[date]?.lastChatTimes || {};
-      const mergedLastChatTimes = { ...existingTimes, ...lastChatTimes };
-      snapshots[date] = { total, topChar, byChar, lastChatTimes: mergedLastChatTimes };
-      localStorage.setItem(STORAGE_KEY6, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
-      console.debug("[Calendar] saveSnapshot:", date, "| total:", total, "| topChar:", topChar, "| lastChatTimes count:", Object.keys(mergedLastChatTimes).length);
-    } catch (e) {
-      if (e.name === "QuotaExceededError") {
-        console.warn("[Calendar] QuotaExceededError - cleaning old data");
-        cleanOldSnapshots();
-        try {
-          const snapshots = loadSnapshots(true);
-          const existingTimes = snapshots[date]?.lastChatTimes || {};
-          const mergedLastChatTimes = { ...existingTimes, ...lastChatTimes };
-          snapshots[date] = { total, topChar, byChar, lastChatTimes: mergedLastChatTimes };
-          localStorage.setItem(STORAGE_KEY6, JSON.stringify({ version: CURRENT_VERSION, snapshots }));
-        } catch (e2) {
-          console.error("[Calendar] Still failed after cleanup:", e2);
-        }
-      } else {
-        console.error("[Calendar] Failed to save snapshot:", e);
-      }
-    }
+    const snapshots = loadSnapshots();
+    const existingTimes = snapshots[date]?.lastChatTimes || {};
+    const mergedLastChatTimes = { ...existingTimes, ...lastChatTimes };
+    snapshots[date] = { total, topChar, byChar, lastChatTimes: mergedLastChatTimes };
+    _persist();
   }
   function clearAllSnapshots() {
+    _snapshotsCache = {};
+    if (_saveTimer) {
+      clearTimeout(_saveTimer);
+      _saveTimer = null;
+    }
+    const store2 = lf();
     try {
-      _snapshotsCache = null;
+      if (store2) store2.removeItem(STORAGE_KEY6).catch(() => {
+      });
+    } catch (e) {
+    }
+    try {
       localStorage.removeItem(STORAGE_KEY6);
     } catch (e) {
-      console.error("[Calendar] Failed to clear snapshots:", e);
     }
   }
 
@@ -11609,6 +11783,7 @@ ${message}` : message;
       startBackgroundPreload();
       addLobbyToOptionsMenu();
       setTimeout(() => initCustomThemeIntegration(openLobby), CONFIG.timing.initDelay);
+      await initCalendarStorage();
       updateFabPreview();
       api.getCurrentPersona().then((p) => {
         if (p) lastKnownPersona = p;

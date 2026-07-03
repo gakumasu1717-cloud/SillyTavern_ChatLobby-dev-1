@@ -7492,3 +7492,75 @@ body.light-mode #chat-lobby-debug-modal .debug-modal-pre {
 #remind-hl-clear:active {
     background: rgba(255, 255, 255, 0.1);
 }
+
+/* ============================================
+   🔖 리마인드 뷰어 - 커스텀 스크롤 핸들 + 빈 응답 표시
+   ============================================ */
+
+/* 본문: 네이티브 스크롤바 숨김 (커스텀 핸들로 대체) + 핸들 공간 확보 */
+.remind-viewer-body {
+    scrollbar-width: none;          /* Firefox */
+    -ms-overflow-style: none;
+    padding-right: 18px;
+}
+.remind-viewer-body::-webkit-scrollbar {
+    width: 0 !important;
+    display: none !important;
+}
+
+/* 커스텀 스크롤 트랙 (본문 우측, 헤더 아래) */
+.remind-scrollbar {
+    position: absolute;
+    top: 104px;
+    right: 4px;
+    bottom: 10px;
+    width: 12px;
+    z-index: 6;
+    border-radius: 8px;
+    display: none;               /* 스크롤 필요 시 JS가 block */
+}
+
+/* 드래그 핸들 (홀드해서 내리는 부분) */
+.remind-scroll-thumb {
+    position: absolute;
+    top: 0;
+    left: 1px;
+    width: 10px;
+    min-height: 44px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.32);
+    cursor: grab;
+    touch-action: none;          /* 드래그가 페이지 스크롤로 새지 않게 */
+    transition: background 0.15s ease;
+}
+.remind-scroll-thumb:hover {
+    background: rgba(255, 255, 255, 0.5);
+}
+.remind-scroll-thumb.dragging {
+    background: var(--lobby-accent, #ff7a6e);
+    cursor: grabbing;
+    width: 12px;
+    left: 0;
+}
+
+/* 모바일: 손가락으로 잡기 쉽게 더 두껍게 */
+@media (max-width: 768px) {
+    .remind-scrollbar { width: 16px; right: 2px; top: 96px; }
+    .remind-scroll-thumb { width: 14px; min-height: 56px; }
+    .remind-viewer-body { padding-right: 20px; }
+}
+
+/* 읽기 테마별 핸들 색 */
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-scroll-thumb { background: rgba(120, 95, 50, 0.4); }
+.remind-viewer-panel[data-reader-theme="sepia"] .remind-scroll-thumb:hover { background: rgba(120, 95, 50, 0.6); }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-scroll-thumb { background: rgba(0, 0, 0, 0.3); }
+.remind-viewer-panel[data-reader-theme="paper"] .remind-scroll-thumb:hover { background: rgba(0, 0, 0, 0.5); }
+
+/* 빈 응답 메시지 표시 */
+.remind-empty-msg {
+    color: var(--lobby-text-secondary, #888);
+    font-size: 0.85em;
+    font-style: italic;
+    opacity: 0.6;
+    padding: 4px 0;
+}
