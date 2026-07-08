@@ -3636,6 +3636,10 @@ ${message}` : message;
     });
     return text;
   }
+  function stripToPlainText(mes) {
+    if (!mes) return "";
+    return mes.replace(/<img[^>]*>/gi, "").replace(/\{\{img::[^}]*\}\}/gi, "").replace(/!\[[^\]]*\]\([^)]*\)/g, "").replace(/<[^>]+>/g, "").replace(/&nbsp;/gi, " ").trim();
+  }
   function renderExtraImagesHtml(message) {
     if (!message?.extra) return "";
     const images = [];
@@ -3971,9 +3975,12 @@ ${message}` : message;
     text = styleDialogue(text);
     const extraImgHtml = renderExtraImagesHtml(message);
     if (extraImgHtml) {
-      if (message.extra?.inline_image) {
+      const rawMes = message.mes || "";
+      const mesHasText = stripToPlainText(rawMes).length > 0;
+      const mesHasImg = /<img[\s/>]/i.test(rawMes);
+      if (message.extra?.inline_image && !mesHasText) {
         text = extraImgHtml;
-      } else {
+      } else if (!mesHasImg) {
         text += extraImgHtml;
       }
     }

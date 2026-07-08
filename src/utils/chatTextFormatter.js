@@ -228,6 +228,21 @@ function processImages(text, characterName) {
 }
 
 /**
+ * 원본 mes에서 HTML 태그/이미지 매크로를 제거한 순수 텍스트 추출
+ * (실제 대사/서술 텍스트가 있는지 판단용)
+ */
+function stripToPlainText(mes) {
+    if (!mes) return '';
+    return mes
+        .replace(/<img[^>]*>/gi, '')
+        .replace(/\{\{img::[^}]*\}\}/gi, '')
+        .replace(/!\[[^\]]*\]\([^)]*\)/g, '')  // 마크다운 이미지
+        .replace(/<[^>]+>/g, '')
+        .replace(/&nbsp;/gi, ' ')
+        .trim();
+}
+
+/**
  * message.extra의 이미지 렌더링 (SD 생성/붙여넣기/auto-pic 등)
  * extra.media[] (현행) / extra.image, extra.image_swipes (구형) 모두 지원
  */
@@ -738,13 +753,23 @@ export function renderMessageHtml(message, options) {
     text = styleDialogue(text);
 
     // 9. extra 이미지 (SD 생성/붙여넣기 등)
+    // ⚠️ inline_image=true라도 본문에 실제 텍스트가 있으면 절대 텍스트를 버리지 않는다!
+    // (일부 이미지 생성 확장이 텍스트를 유지한 채 inline_image를 켜서, 예전엔
+    //  텍스트가 통째로 이미지로 교체돼 "이미지만 보이고 글 안 보이던" 버그가 있었음)
     const extraImgHtml = renderExtraImagesHtml(message);
     if (extraImgHtml) {
-        if (message.extra?.inline_image) {
-            text = extraImgHtml; // 이미지 자체가 메시지인 경우
-        } else {
+        const rawMes = message.mes || '';
+        const mesHasText = stripToPlainText(rawMes).length > 0;
+        const mesHasImg = /<img[\s/>]/i.test(rawMes);
+
+        if (message.extra?.inline_image && !mesHasText) {
+            // 진짜 순수 이미지 메시지(텍스트 없음) → 이미지로 대체
+            text = extraImgHtml;
+        } else if (!mesHasImg) {
+            // 본문에 이미지가 없을 때만 extra 이미지 추가 (본문 이미지와 중복 방지)
             text += extraImgHtml;
         }
+        // (텍스트 + 본문 이미지 케이스는 본문을 그대로 두고 extra 스킵)
     }
 
     // 10. sanitize
